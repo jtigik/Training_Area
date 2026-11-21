@@ -35,7 +35,7 @@ describe("decideProvisioning", () => {
       decideProvisioning(
         "a@Escola.edu.br",
         [],
-        [{ id: "t1", emailDomains: ["escola.edu.br"] }],
+        [{ id: "t1", emailDomains: ["escola.edu.br"], autoJoinByDomain: true, active: true }],
         now,
       ),
     ).toEqual({
@@ -47,11 +47,27 @@ describe("decideProvisioning", () => {
 
   it("domínio ambíguo ou desconhecido → recusado", () => {
     const tenants = [
-      { id: "t1", emailDomains: ["x.com"] },
-      { id: "t2", emailDomains: ["x.com"] },
+      { id: "t1", emailDomains: ["x.com"], autoJoinByDomain: true, active: true },
+      { id: "t2", emailDomains: ["x.com"], autoJoinByDomain: true, active: true },
     ];
     expect(decideProvisioning("a@x.com", [], tenants, now)).toBeNull();
     expect(decideProvisioning("a@gmail.com", [], [], now)).toBeNull();
+  });
+
+  it("autoJoinByDomain desligado (padrão) ou instituição inativa → exige convite", () => {
+    const off = { id: "t1", emailDomains: ["x.com"], autoJoinByDomain: false, active: true };
+    const inactive = { id: "t2", emailDomains: ["x.com"], autoJoinByDomain: true, active: false };
+    expect(decideProvisioning("a@x.com", [], [off], now)).toBeNull();
+    expect(decideProvisioning("a@x.com", [], [inactive], now)).toBeNull();
+    // Com convite, entra com o papel do convite mesmo com autoJoin desligado.
+    expect(decideProvisioning("a@x.com", [inv()], [off], now)?.role).toBe("PROFESSOR");
+    // Só uma instituição com autoJoin ligado no domínio → ALUNO (as outras não contam).
+    const on = { id: "t3", emailDomains: ["x.com"], autoJoinByDomain: true, active: true };
+    expect(decideProvisioning("a@x.com", [], [off, on], now)).toEqual({
+      tenantId: "t3",
+      role: "ALUNO",
+      invitationId: null,
+    });
   });
 
   it("emailDomain", () => {

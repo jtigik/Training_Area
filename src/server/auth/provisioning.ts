@@ -19,6 +19,9 @@ export interface PendingInvitation {
 export interface DomainTenant {
   id: string;
   emailDomains: readonly string[];
+  /** Opcional por instituição; padrão false (schema). Só true permite entrar por domínio. */
+  autoJoinByDomain: boolean;
+  active: boolean;
 }
 
 export type ProvisioningDecision = {
@@ -48,8 +51,11 @@ export function decideProvisioning(
   }
 
   const domain = emailDomain(email);
-  const matches = domainTenants.filter((t) =>
-    t.emailDomains.some((d) => d.trim().toLowerCase() === domain),
+  const matches = domainTenants.filter(
+    (t) =>
+      t.active &&
+      t.autoJoinByDomain &&
+      t.emailDomains.some((d) => d.trim().toLowerCase() === domain),
   );
   // Domínio ambíguo (mais de uma instituição) exige convite.
   if (matches.length === 1) {

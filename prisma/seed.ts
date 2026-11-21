@@ -28,6 +28,9 @@ const DEMO_TENANT = {
   name: "Escola Demo",
   slug: "escola-demo",
   emailDomains: ["escola-demo.local"],
+  // Entrada automática por domínio é opcional e DESLIGADA por padrão (PO/MVP):
+  // o domínio fica cadastrado, mas só entra quem tiver convite.
+  autoJoinByDomain: false,
 };
 
 interface SeedUser {
@@ -204,7 +207,11 @@ async function main() {
 
   await prisma.tenant.upsert({
     where: { id: DEMO_TENANT.id },
-    update: { name: DEMO_TENANT.name, emailDomains: DEMO_TENANT.emailDomains },
+    update: {
+      name: DEMO_TENANT.name,
+      emailDomains: DEMO_TENANT.emailDomains,
+      autoJoinByDomain: DEMO_TENANT.autoJoinByDomain,
+    },
     create: DEMO_TENANT,
   });
 
