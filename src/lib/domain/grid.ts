@@ -31,6 +31,16 @@ export function isFormula(value: string): boolean {
   return value.trim().startsWith("=") && value.trim().length > 1;
 }
 
+/** Interpreta o texto digitado no gabarito: "=..." é fórmula; o resto, valor. */
+export function inferAnswer(text: string, previous?: AnswerCell): AnswerCell | null {
+  const expected = text.trim();
+  if (expected === "") return null;
+  const kind = isFormula(expected) ? "FORMULA" : "VALUE";
+  return kind === "VALUE"
+    ? { kind, expected: text, tolerance: previous?.tolerance ?? 0 }
+    : { kind, expected: text };
+}
+
 export function createEmptyGrid(rows = 10, cols = 6): SpreadsheetGrid {
   return { rows, cols, cells: {} };
 }
@@ -73,7 +83,7 @@ export function validateAnswers(
     const expected = answer.expected.trim();
     if (expected === "") {
       issues.push({ address, message: `${address}: informe o resultado esperado.` });
-    } else if (answer.kind === "formula" && !isFormula(expected)) {
+    } else if (answer.kind === "FORMULA" && !isFormula(expected)) {
       issues.push({ address, message: `${address}: a fórmula esperada deve começar com "=".` });
     }
     if (

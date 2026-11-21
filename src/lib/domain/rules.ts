@@ -1,5 +1,6 @@
 import type {
   Attempt,
+  Concept,
   Difficulty,
   Exercise,
   ExerciseSet,
@@ -9,6 +10,7 @@ import type {
   ProgressStatus,
   User,
 } from "./types";
+import { REDO_CONCEPTS } from "./types";
 import { DIFFICULTY_LABELS, LEVEL_LABELS } from "./labels";
 
 /* ------------------------------------------------------------------ */
@@ -32,7 +34,7 @@ export function poolSize(
 ): number {
   return exercises.filter(
     (e) =>
-      e.published &&
+      e.status === "PUBLISHED" &&
       e.level === level &&
       (difficulty ? e.difficulty === difficulty : set.difficulties.includes(e.difficulty)),
   ).length;
@@ -65,12 +67,40 @@ export function getPublishIssues(set: ExerciseSet, exercises: Exercise[]): Publi
           difficulty: rule.difficulty,
           required: rule.quantity,
           available,
-          message: `${recorte}: quantidade ${rule.quantity} maior que os ${available} exercício(s) publicado(s).`,
+          message: `${recorte}: quantidade ${rule.quantity} maior que os ${available} exercício(s) disponíveis.`,
         });
       }
     }
   }
   return issues;
+}
+
+/* ------------------------------------------------------------------ */
+/* Conceitos ND / ED / D / PD e refazer nível                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Faixas padrão de conceito por taxa de acerto (inclusivas).
+ * Pendente de confirmação do PO; o backend é a fonte oficial do conceito.
+ */
+export const CONCEPT_THRESHOLDS: { concept: Concept; min: number }[] = [
+  { concept: "PD", min: 90 },
+  { concept: "D", min: 70 },
+  { concept: "ED", min: 50 },
+  { concept: "ND", min: 0 },
+];
+
+export function conceptFor(accuracyPercent: number): Concept {
+  return CONCEPT_THRESHOLDS.find((t) => accuracyPercent >= t.min)?.concept ?? "ND";
+}
+
+/** O aluno pode refazer o nível se a tentativa concluída mais recente teve ND ou ED. */
+export function canRedoLevel(progress: Pick<LevelProgress, "status" | "concept">): boolean {
+  return (
+    progress.status === "COMPLETED" &&
+    !!progress.concept &&
+    REDO_CONCEPTS.includes(progress.concept)
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -123,26 +153,50 @@ export function pickBand<T extends Pick<FeedbackBand, "minPercent" | "maxPercent
 
 /** Substitui {{variaveis}} do template; variáveis desconhecidas ficam como estão. */
 export function renderTemplate(template: string, vars: FeedbackVars): string {
+  const pct = percent(vars.acertos, vars.total);
   const values: Record<string, string> = {
     nome: vars.nome,
     nivel: vars.nivel,
     acertos: String(vars.acertos),
     total: String(vars.total),
-    percentual: `${percent(vars.acertos, vars.total)}%`,
+    percentual: `${pct}%`,
+    conceito: conceptFor(pct),
   };
   return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (whole, key: string) => values[key] ?? whole);
 }
 
-export const TEMPLATE_VARIABLES = ["nome", "nivel", "acertos", "total", "percentual"] as const;
+export const TEMPLATE_VARIABLES = [
+  "nome",
+  "nivel",
+  "acertos",
+  "total",
+  "percentual",
+  "conceito",
+] as const;
 
 /* ------------------------------------------------------------------ */
 /* Usuários (TA-002)                                                    */
 /* ------------------------------------------------------------------ */
 
-/** Impede rebaixar/desativar o último administrador ativo. */
+/** Impede rebaixar/desativar o último admin ativo da instituição. */
 export function isLastActiveAdmin(users: User[], userId: string): boolean {
-  const admins = users.filter((u) => u.role === "ADMIN" && u.active);
+  const target = users.find((u) => u.id === userId);
+  if (!target || target.role !== "INSTITUTION_ADMIN") return false;
+  const admins = users.filter(
+    (u) => u.role === "INSTITUTION_ADMIN" && u.active && u.institutionId === target.institutionId,
+  );
   return admins.length === 1 && admins[0].id === userId;
+}
+
+/** Slug a partir do nome: minúsculas, sem acentos, hífens. */
+export function slugify(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
 }
 
 /* ------------------------------------------------------------------ */
@@ -159,13 +213,13 @@ export interface ResultsFilter {
   search?: string;
 }
 
-/** Converte data local (America/Sao_Paulo, UTC-3) em limites UTC. */
+/** Converte data local (America/Sao_Paulo, UTC-3) em limite UTC (ms). */
 export function dayBoundsUtc(date: string, end: boolean): number {
   const time = end ? "T23:59:59.999-03:00" : "T00:00:00.000-03:00";
   return new Date(`${date}${time}`).getTime();
 }
 
-export function filterAttempts(attempts: Attempt[], f: ResultsFilter): Attempt[] {
+export function filterAttempts<T extends Attempt>(attempts: T[], f: ResultsFilter): T[] {
   const from = f.from ? dayBoundsUtc(f.from, false) : -Infinity;
   const to = f.to ? dayBoundsUtc(f.to, true) : Infinity;
   return attempts.filter((a) => {
@@ -180,18 +234,32 @@ export function filterAttempts(attempts: Attempt[], f: ResultsFilter): Attempt[]
   });
 }
 
+export interface LevelCell {
+  status: ProgressStatus;
+  concept: Concept | null;
+  levelAttempt: number;
+  canRedo: boolean;
+}
+
 export interface StudentResultRow {
   student: Pick<User, "id" | "name" | "email">;
   attempts: number;
   correct: number;
   accuracy: number;
-  levels: Partial<Record<Level, ProgressStatus>>;
+  levels: Partial<Record<Level, LevelCell>>;
   lastActivity: string | null;
 }
 
+const EMPTY_CELL: LevelCell = {
+  status: "NOT_STARTED",
+  concept: null,
+  levelAttempt: 0,
+  canRedo: false,
+};
+
 /**
  * Agrega uma linha por aluno — alunos sem tentativas aparecem como
- * "não iniciado" (TA-028).
+ * "Não iniciado" (TA-028). Com vários conjuntos, mostra o progresso mais avançado.
  */
 export function buildStudentRows(
   students: Pick<User, "id" | "name" | "email">[],
@@ -202,6 +270,7 @@ export function buildStudentRows(
 ): StudentResultRow[] {
   const filtered = filterAttempts(attempts, filter);
   const term = filter.search?.trim().toLowerCase();
+  const rank: Record<ProgressStatus, number> = { NOT_STARTED: 0, IN_PROGRESS: 1, COMPLETED: 2 };
   return students
     .filter(
       (s) => !term || s.name.toLowerCase().includes(term) || s.email.toLowerCase().includes(term),
@@ -209,19 +278,24 @@ export function buildStudentRows(
     .map((student) => {
       const mine = filtered.filter((a) => a.studentId === student.id);
       const correct = mine.filter((a) => a.correct).length;
-      const levelStatus: Partial<Record<Level, ProgressStatus>> = {};
+      const cells: Partial<Record<Level, LevelCell>> = {};
       for (const level of levels) {
-        const p = progress.filter(
-          (pr) =>
-            pr.studentId === student.id &&
-            pr.level === level &&
-            (!filter.setId || pr.setId === filter.setId),
-        );
-        levelStatus[level] = p.some((x) => x.status === "concluido")
-          ? "concluido"
-          : p.some((x) => x.status === "em_andamento")
-            ? "em_andamento"
-            : "nao_iniciado";
+        const best = progress
+          .filter(
+            (p) =>
+              p.studentId === student.id &&
+              p.level === level &&
+              (!filter.setId || p.setId === filter.setId),
+          )
+          .sort((a, b) => rank[b.status] - rank[a.status] || b.levelAttempt - a.levelAttempt)[0];
+        cells[level] = best
+          ? {
+              status: best.status,
+              concept: best.concept,
+              levelAttempt: best.levelAttempt,
+              canRedo: canRedoLevel(best),
+            }
+          : EMPTY_CELL;
       }
       const last = mine.reduce<string | null>(
         (acc, a) => (!acc || a.submittedAt > acc ? a.submittedAt : acc),
@@ -232,16 +306,23 @@ export function buildStudentRows(
         attempts: mine.length,
         correct,
         accuracy: percent(correct, mine.length),
-        levels: levelStatus,
+        levels: cells,
         lastActivity: last,
       };
     });
 }
 
+/** "dd/mm/aaaa hh:mm" em America/Sao_Paulo. */
 export function formatDateTimeBR(iso: string): string {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
     timeZone: "America/Sao_Paulo",
-  }).format(new Date(iso));
+  }).formatToParts(new Date(iso));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
 }

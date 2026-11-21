@@ -34,12 +34,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export function createHttpServices(): Services {
   const get = <T>(p: string, q?: Query) => request<T>("GET", p + qs(q));
   return {
+    institutions: {
+      list: (q) => get("/api/superadmin/institutions", { ...q }),
+      create: (i) => request("POST", "/api/superadmin/institutions", i),
+      update: (id, i) => request("PATCH", `/api/superadmin/institutions/${id}`, i),
+    },
     users: {
       list: (q) => get("/api/admin/users", { ...q }),
       create: (i) => request("POST", "/api/admin/users", i),
       update: (id, i) => request("PATCH", `/api/admin/users/${id}`, i),
     },
-    instance: {
+    settings: {
       get: () => get("/api/admin/config"),
       update: (i) => request("PUT", "/api/admin/config", i),
     },
@@ -67,13 +72,34 @@ export function createHttpServices(): Services {
       update: (id, i) => request("PATCH", `/api/teacher/exercises/${id}`, i),
       remove: (id) => request("DELETE", `/api/teacher/exercises/${id}`),
     },
+    bank: {
+      list: (q) => get("/api/teacher/bank", { ...q }),
+      get: (id) => get(`/api/teacher/bank/${id}`),
+      create: (i) => request("POST", "/api/teacher/bank", i),
+      importMany: (items) => request("POST", "/api/teacher/bank/import", { items }),
+      update: (id, i) => request("PATCH", `/api/teacher/bank/${id}`, i),
+      remove: (id) => request("DELETE", `/api/teacher/bank/${id}`),
+      copyToSet: (id, setId) => request("POST", `/api/teacher/bank/${id}/copy`, { setId }),
+    },
     feedback: {
       get: (setId) => get("/api/teacher/feedback-templates", { setId }),
       save: (i) => request("PUT", "/api/teacher/feedback-templates", i),
     },
+    reviews: {
+      list: (q) => get("/api/teacher/feedback-reviews", { ...q }),
+      get: (id) => get(`/api/teacher/feedback-reviews/${id}`),
+      saveDraft: (id, finalText) =>
+        request("PATCH", `/api/teacher/feedback-reviews/${id}`, { finalText }),
+      approve: (id, finalText) =>
+        request("POST", `/api/teacher/feedback-reviews/${id}/approve`, { finalText }),
+      reject: (id, reason) =>
+        request("POST", `/api/teacher/feedback-reviews/${id}/reject`, { reason }),
+    },
     results: {
       list: (q) => get("/api/teacher/results", { ...q }),
       student: (id) => get(`/api/teacher/results/students/${id}`),
+      redoLevel: (studentId, setId, level) =>
+        request("POST", `/api/teacher/results/students/${studentId}/redo`, { setId, level }),
     },
     people: {
       students: () => get("/api/teacher/students"),

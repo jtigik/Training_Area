@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   columnLabel,
+  inferAnswer,
   moveFocus,
   normalizeGrid,
   parseAddress,
@@ -41,16 +42,26 @@ describe("grid helpers", () => {
   it("valida gabarito", () => {
     const grid = { rows: 3, cols: 3, cells: { A1: { value: "1", locked: true } } };
     expect(validateAnswers(grid, {})[0].message).toMatch(/pelo menos uma/);
-    expect(validateAnswers(grid, { A2: { kind: "valor", expected: "" } })).toHaveLength(1);
+    expect(validateAnswers(grid, { A2: { kind: "VALUE", expected: "" } })).toHaveLength(1);
     expect(
-      validateAnswers(grid, { A2: { kind: "formula", expected: "SOMA(A1)" } })[0].message,
+      validateAnswers(grid, { A2: { kind: "FORMULA", expected: "SOMA(A1)" } })[0].message,
     ).toMatch(/"="/);
-    expect(validateAnswers(grid, { D9: { kind: "valor", expected: "1" } })[0].message).toMatch(
+    expect(validateAnswers(grid, { D9: { kind: "VALUE", expected: "1" } })[0].message).toMatch(
       /fora/,
     );
-    expect(validateAnswers(grid, { A1: { kind: "valor", expected: "1" } })[0].message).toMatch(
+    expect(validateAnswers(grid, { A1: { kind: "VALUE", expected: "1" } })[0].message).toMatch(
       /bloqueada/,
     );
-    expect(validateAnswers(grid, { A2: { kind: "formula", expected: "=A1*2" } })).toEqual([]);
+    expect(validateAnswers(grid, { A2: { kind: "FORMULA", expected: "=A1*2" } })).toEqual([]);
+  });
+
+  it("infere tipo do gabarito", () => {
+    expect(inferAnswer("  ")).toBeNull();
+    expect(inferAnswer("=SOMA(A1:A3)")).toEqual({ kind: "FORMULA", expected: "=SOMA(A1:A3)" });
+    expect(inferAnswer("60", { kind: "VALUE", expected: "1", tolerance: 0.5 })).toEqual({
+      kind: "VALUE",
+      expected: "60",
+      tolerance: 0.5,
+    });
   });
 });
