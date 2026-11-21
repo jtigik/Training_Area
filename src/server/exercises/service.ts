@@ -234,8 +234,7 @@ export class ExerciseService {
     input: SubmissionInput,
   ): Promise<StudentAttemptResult> {
     assertTenant(actor, tenantId);
-    if (actor.role !== "ALUNO")
-      throw new DomainError("FORBIDDEN", "Only students submit attempts");
+    if (actor.role !== "ALUNO") throw new DomainError("FORBIDDEN", "Only students submit attempts");
     const data = parse(submissionSchema, input);
     const exercise = await this.deps.exercises.findById(tenantId, data.exerciseId);
     if (!exercise || exercise.status !== "PUBLISHED")
