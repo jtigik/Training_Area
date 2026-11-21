@@ -13,9 +13,24 @@ concurrency:
 permissions:
   contents: read
 
+# Valores fictícios: build e testes não precisam de credenciais reais.
+# Se secrets de mesmo nome forem configurados no repositório, eles têm precedência.
 env:
   NEXT_TELEMETRY_DISABLED: 1
   DATABASE_URL: postgresql://training:training@localhost:5432/training_area?schema=public
+  AUTH_SECRET: ${{ secrets.AUTH_SECRET || 'ci-only-insecure-auth-secret-do-not-use' }}
+  AUTH_URL: http://localhost:3000
+  AUTH_GOOGLE_ID: ${{ secrets.AUTH_GOOGLE_ID || 'ci-google-client-id' }}
+  AUTH_GOOGLE_SECRET: ${{ secrets.AUTH_GOOGLE_SECRET || 'ci-google-client-secret' }}
+  AUTH_MICROSOFT_ENTRA_ID_ID: ${{ secrets.AUTH_MICROSOFT_ENTRA_ID_ID || 'ci-entra-client-id' }}
+  AUTH_MICROSOFT_ENTRA_ID_SECRET: ${{ secrets.AUTH_MICROSOFT_ENTRA_ID_SECRET || 'ci-entra-client-secret' }}
+  AUTH_MICROSOFT_ENTRA_ID_ISSUER: https://login.microsoftonline.com/common/v2.0
+  AI_PROVIDER: mock
+  AI_API_KEY: ""
+  AI_MODEL: ""
+  TENANT_RESOLUTION: single
+  DEFAULT_TENANT_SLUG: default
+  APP_ROOT_DOMAIN: ""
 
 jobs:
   quality:

@@ -1,0 +1,37 @@
+{
+  "$comment": "Metadados do exercício de UI e SELEÇÃO de casos para os e2e. Os casos vêm de e2e/data/qa/formulas.json (cópia de qa/excel_formulas/formulas.json, 149 casos; sincronizar com e2e/data/sync_qa_data.sh). A paridade completa do motor roda no nível unitário (qa/excel_formulas/run_against_engine.ts); aqui fica um caso representativo por código de feedback + todos os casos de valor fixo (decisão do PO de 21/11: INCORRETO com feedback \"use uma fórmula\").",
+  "exercise": {
+    "context": "EX-SUM",
+    "slug": "e2e-soma-basica",
+    "title": "e2e — Soma básica",
+    "level": "Fundamental",
+    "difficulty": "Muito fácil",
+    "hint": "Use a função SOMA com o intervalo A1:A3."
+  },
+  "fixedValueFeedback": "use uma fórmula",
+  "fixedValueCases": ["F-065", "F-066", "F-067", "F-069"],
+  "e2eCases": [
+    "F-001",
+    "F-002",
+    "F-003",
+    "F-007",
+    "F-013",
+    "F-065",
+    "F-066",
+    "F-067",
+    "F-069",
+    "F-070",
+    "F-073",
+    "F-078",
+    "F-079",
+    "F-084",
+    "F-082",
+    "F-129",
+    "F-085",
+    "F-108",
+    "F-110",
+    "F-133",
+    "F-134",
+    "F-142"
+  ]
+}
