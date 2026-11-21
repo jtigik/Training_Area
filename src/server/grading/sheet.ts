@@ -44,7 +44,11 @@ function normalizeCell(value: CellInput, limits: GradingLimits): RawCellContent 
     throw new GradingFailure("LIMIT", "CELL_TEXT_TOO_LONG", "Sheet cell text exceeds limit");
   }
   if (value.trim().startsWith("=")) return normalizeFormula(value, "auto").formula;
-  return value;
+  // Text stays text: without the apostrophe prefix HyperFormula would parse "10" as a number
+  // or "21/11/2026" as a date. The prefix is not part of the cell value. A value that already
+  // starts with an apostrophe follows Excel's typing convention ("'10" is the text "10"); use
+  // two apostrophes for a literal leading apostrophe.
+  return value.startsWith("'") ? value : `'${value}`;
 }
 
 /** Converts SheetData (2D array or A1 map) into a validated, bounded 2D array. */

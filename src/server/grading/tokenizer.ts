@@ -92,6 +92,8 @@ export interface NormalizedFormula {
   locale: "en" | "pt-BR";
   /** Maximum parenthesis nesting depth. */
   maxDepth: number;
+  /** A decimal comma was inferred outside function arguments in auto mode without ';'. */
+  decimalCommaHeuristic: boolean;
 }
 
 function nextNonWs(tokens: Token[], from: number): Token | undefined {
@@ -136,14 +138,25 @@ export function normalizeFormula(
   let braces = 0;
   let depth = 0;
   let maxDepth = 0;
+  /** For each open parenthesis: true when it opens a function call. */
+  const parens: boolean[] = [];
+  let pendingCall = false;
+  let decimalCommaHeuristic = false;
 
   for (let k = 0; k < input.length; k += 1) {
     const t = input[k]!;
     if (t.kind === "punct") {
       if (t.text === "{") braces += 1;
       if (t.text === "}") braces = Math.max(0, braces - 1);
-      if (t.text === "(") maxDepth = Math.max(maxDepth, ++depth);
-      if (t.text === ")") depth = Math.max(0, depth - 1);
+      if (t.text === "(") {
+        maxDepth = Math.max(maxDepth, ++depth);
+        parens.push(pendingCall);
+      }
+      if (t.text === ")") {
+        depth = Math.max(0, depth - 1);
+        parens.pop();
+      }
+      pendingCall = false;
       if (ptMode && braces === 0 && t.text === ";") {
         out.push({ kind: "punct", text: "," });
         continue;
@@ -151,8 +164,16 @@ export function normalizeFormula(
       out.push(t);
       continue;
     }
-    if (t.kind === "number" && ptMode) {
-      // pt-BR decimal comma: 1,5 -> 1.5 (only digits directly around the comma).
+    // In auto mode without ';', a comma between digits can only be a decimal separator when it is
+    // NOT inside a function call's argument list (top level or a grouping parenthesis), e.g.
+    // =A1*0,975 or =(A1+A2)*1,5. Inside a call (=ROUND(A1,2)) it stays an argument separator.
+    const commaIsDecimal =
+      ptMode ||
+      (locale === "auto" &&
+        braces === 0 &&
+        (parens.length === 0 || parens[parens.length - 1] === false));
+    if (t.kind === "number" && commaIsDecimal) {
+      // Decimal comma: 1,5 -> 1.5 (only digits directly around the comma).
       const comma = input[k + 1];
       const frac = input[k + 2];
       if (
@@ -163,6 +184,7 @@ export function normalizeFormula(
         /^\d/.test(frac.text)
       ) {
         out.push({ kind: "number", text: `${t.text}.${frac.text}` });
+        if (!ptMode) decimalCommaHeuristic = true;
         k += 2;
         continue;
       }
@@ -175,6 +197,7 @@ export function normalizeFormula(
       const isSheetQualifier = next?.kind === "punct" && next.text === "!";
       const isQualified = prev?.kind === "punct" && prev.text === "!";
       if (next?.kind === "punct" && next.text === "(") {
+        pendingCall = true;
         const canonical = canonicalFunctionName(t.text);
         functionCalls.push(canonical);
         out.push({ kind: "ident", text: canonical });
@@ -195,5 +218,6 @@ export function normalizeFormula(
     functionCalls,
     locale: ptMode ? "pt-BR" : "en",
     maxDepth,
+    decimalCommaHeuristic,
   };
 }

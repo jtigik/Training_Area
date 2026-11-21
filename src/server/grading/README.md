@@ -3,9 +3,8 @@
 Serviço puro em TypeScript que corrige a resposta do aluno para um exercício de Excel usando
 [HyperFormula](https://hyperformula.handsontable.com/). Não depende de banco, Prisma nem Next.js.
 
-> **Licença:** HyperFormula é **GPL-3.0** (ou licença comercial da Handsoncode). Usamos a chave
-> `'gpl-v3'` (`config.ts`) por enquanto. O repositório é MIT: **é preciso decidir antes do lançamento**
-> se o projeto aceita a GPL-3.0 (ou relicencia) ou se compra a licença comercial.
+> **Licença:** HyperFormula é **GPL-3.0**. **Decidido (21/11/2026):** o repositório passa a ser
+> GPL-3.0, então a chave `'gpl-v3'` (`config.ts`) é a definitiva e não há mais bloqueio.
 
 ## Uso
 
@@ -42,8 +41,10 @@ return toStudentResult(result); // nunca envie expectedValue ao aluno (TA-022)
 `normalizedFormula`, `elapsedMs`.
 
 `feedbackCode` (ordem de prioridade): `INVALID_EXERCISE`, `EMPTY_SUBMISSION`, `LIMIT_EXCEEDED`,
-`FORMULA_REQUIRED`, `PARSE_ERROR`, `UNSUPPORTED_FUNCTION`, `FORBIDDEN_FUNCTION`, `HARDCODED_VALUE`,
-`FORMULA_ERROR`, `WRONG_TYPE`, `WRONG_VALUE`, `MISSING_REQUIRED_FUNCTION`, `CORRECT`.
+`FORMULA_REQUIRED`, `PARSE_ERROR`, `UNSUPPORTED_FUNCTION`, `FORBIDDEN_FUNCTION`, `VOLATILE_FUNCTION`,
+`HARDCODED_VALUE`,
+`FORMULA_ERROR`, `WRONG_TYPE`, `WRONG_VALUE`, `INPUT_INSENSITIVE`, `MISSING_REQUIRED_FUNCTION`,
+`CORRECT`.
 
 ## Regras de correção
 
@@ -51,19 +52,52 @@ return toStudentResult(result); // nunca envie expectedValue ao aluno (TA-022)
 - Cada correção usa uma instância nova e isolada de HyperFormula (destruída ao final).
 - `requiredFunctions` (modo `all` ou `any`) e `forbiddenFunctions`: detectados por tokenização que ignora
   strings e nomes de planilha entre aspas; sem diferenciar maiúsculas; nomes pt-BR são traduzidos.
-- Valor fixo: sem `=` → `FORMULA_REQUIRED` (salvo `allowConstants`); fórmula sem referência a células →
-  `HARDCODED_VALUE` (salvo `requireCellReference: false`); `forbidLiteralExpectedValue` pega `=A1*0+60`.
+- Valor fixo: sem `=` → `FORMULA_REQUIRED` (salvo `allowConstants`). Fórmula sem referência a células →
+  `HARDCODED_VALUE`; o padrão de `requireCellReference` é "o gabarito usa células?" — então um gabarito
+  `=TODAY()`/`=PI()*2` aceita respostas sem referência e passa em `validateExercise`.
+- `forbidLiteralExpectedValue` (**ligado por padrão**, decisão do PO; desligado com `allowConstants`):
+  um literal igual ao valor esperado (`=A1*0+60`) → `HARDCODED_VALUE`. Se o próprio gabarito contém um
+  literal igual ao esperado (`=A1*2` com A1=1, `=SE(C1>=60;"Aprovado";…)`), a regra não se aplica.
+- **Teste de sensibilidade** (`sensitivityCheck`, padrão `true`, decisão do PO): depois que o valor bate,
+  as células de entrada numéricas e lógicas (não fórmula, não texto, fora a célula-alvo, até 2000) são
+  perturbadas de forma determinística em 3 variações — `x+1`, `2x+3`, `3x+(k mod 4)+1` (preservam sinal e
+  inteiros; lógicos invertidos na 2ª) — e a fórmula do aluno e a de referência são reavaliadas. Qualquer
+  divergência → `INPUT_INSENSITIVE` (`result.sensitivity` traz os detalhes). Erros só "batem" se forem o
+  mesmo código (`#N/D` × `#N/D`).
+  - Referência = `expected.formula`, ou `referenceFormula` quando o gabarito é só valor.
+  - **Gabarito só com valor e sem `referenceFormula`: o teste é pulado** (`skippedReason:
+"NO_REFERENCE_FORMULA"`); sobram só as regras de valor fixo. Funções voláteis (`HOJE`, `ALEATÓRIO`,
+    `DESLOC`, `INDIRETO`…) também pulam (`VOLATILE_FUNCTION`).
+  - Efeito pedagógico: coincidências de valor deixam de passar (`=TRUNCAR(B1/3;2)` × `=ARRED(B1/3;2)`,
+    `=SE(C1>=70;"B";"C")` sem o ramo "A", `PROCV(...;VERDADEIRO)` × `FALSO`, arredondar quando o gabarito
+    não arredonda).
 - Números: tolerância absoluta `numberTolerance` (padrão `1e-9`) e/ou `relativeTolerance`.
 - Textos: `trimStrings` (padrão `true`), `caseInsensitive` (padrão `false`, comparação pt-BR).
 - Datas: `{ date: "YYYY-MM-DD" }` vira serial do Excel (sistema 1900, a partir de 01/03/1900).
 - Célula vazia referenciada vale `0`, como no Excel.
+- **Tipos preservados:** string na planilha inicial é sempre texto (`"10"` não vira número, `"21/11/2026"`
+  não vira data). Um apóstrofo inicial segue a convenção do Excel (`"'10"` = texto `10`); use `''` para um
+  apóstrofo literal. Números, booleanos e `{ date }` mantêm seus tipos.
+- Aritmética de matriz no estilo Excel 365 (`=SOMA(A1:A3*1)`) é aceita (`useArrayArithmetic`).
+- **Funções voláteis proibidas por padrão** (decisão do PO): `ALEATÓRIO`/RAND, `ALEATÓRIOENTRE`/RANDBETWEEN,
+  `AGORA`/NOW, `HOJE`/TODAY (e RANDARRAY). Resposta do aluno com uma delas → `VOLATILE_FUNCTION`;
+  gabarito (ou `referenceFormula`) com uma delas → `validateExercise` inválido com código
+  `VOLATILE_FUNCTION` (e `gradeSubmission` → `INVALID_EXERCISE`). `allowVolatileFunctions: true` libera.
+- Todas as funções do HyperFormula são permitidas por padrão (`allowedFunctions` restringe, se informado).
 
 ## pt-BR e separadores
 
 - Nomes de função em pt-BR (dicionário `ptPT` do HyperFormula, que segue os nomes do Excel brasileiro:
   SOMA, PROCV, CONT.SE, ARRUMAR…), também sem acento (`MEDIA`).
+- Apelidos pt-BR que o dicionário não traz: `SES`→IFS, `SENÃODISP`→IFNA, `HIPERLINK`→HYPERLINK, `PARÂMETRO`→SWITCH,
+  `MÁXIMOSES`/`MÍNIMOSES`, `FILTRO`, `ÚNICO`, `CLASSIFICAR`, `SEQUÊNCIA`, `DATADIF`… (com e sem acento;
+  só os que o HyperFormula implementa — `MÉDIASES`, `CORRESPX`, `ORDEM`, `CONCAT` continuam sem suporte).
 - `locale: "auto"` (padrão): se houver `;` fora de strings/arrays, `;` vira separador de argumentos e
   `1,5` vira `1.5`. `locale: "pt-BR"` força isso; `"en"` desliga.
+- **Heurística de vírgula decimal** (modo `auto`, sem `;`): uma vírgula entre dígitos é decimal quando
+  **não** está na lista de argumentos de uma função — `=A1*0,975` → `0.975`, `=(A1+1,5)*2` → `1.5`; mas
+  `=ROUND(A1,2)` e `=ARRED(A1*1,5,2)` continuam com `,` separando argumentos (ambíguo: escreva com `;`
+  para ter decimal dentro de função). `NormalizedFormula.decimalCommaHeuristic` indica quando foi aplicada.
 - `VERDADEIRO`/`FALSO`/`TRUE`/`FALSE` soltos viram `TRUE()`/`FALSE()` (exigência do HyperFormula).
 
 ## Segurança e limites (`DEFAULT_LIMITS`)
@@ -102,3 +136,10 @@ O schema do Backend 1 guarda vários alvos por exercício (`expectedResult: [{ c
 `fromSchemaExercise(initialSheet, expectedResult, rules?)` converte esse JSON e `gradeMultiCellSubmission`
 corrige todos os alvos. Os gabaritos são resolvidos com todos os gabaritos preenchidos; as respostas do aluno
 para outros alvos entram na planilha (um alvo pode depender de outro). Células fora dos alvos são ignoradas.
+
+## Dataset de regressão do QA (`dataset.test.ts`)
+
+Cópia do dataset de 157 fórmulas (`__fixtures__/qa-dataset`, origem `qa/excel_formulas`). Divergências
+do oráculo **por design** (decisões do PO de 21/11/2026): F-050, F-118, F-120, F-122 →
+`INPUT_INSENSITIVE` (teste de sensibilidade). Todo o resto bate com o oráculo (inclusive os casos
+de `VOLATILE_FUNCTION` e de aritmética de matriz).

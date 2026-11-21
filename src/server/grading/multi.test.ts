@@ -43,15 +43,20 @@ describe("gradeMultiCellSubmission", () => {
 
 describe("fromSchemaExercise (JSON do schema do Backend 1)", () => {
   it("converte initialSheet/expectedResult", () => {
-    const ex = fromSchemaExercise(
-      { cells: { A1: { value: 2, locked: true }, A2: { value: 3 }, B1: { formula: "=A1*10" } } },
-      [
-        { cell: "A3", formula: "=SOMA(A1:A2)" },
-        { cell: "B2", value: 20.5, tolerance: 0.5 },
-      ],
-    );
+    const ex = fromSchemaExercise({ cells: { A1: 2, A2: 3, B1: { f: "=A1*10" } } }, [
+      { cell: "A3", formula: "=SOMA(A1:A2)" },
+      { cell: "B2", value: 20.5, tolerance: 0.5 },
+    ]);
     const r = gradeMultiCellSubmission(ex, { A3: "=A1+A2", B2: "=B1" });
     expect(r.correct).toBe(true);
+  });
+
+  it("ainda lê o rascunho antigo { value, formula, locked }", () => {
+    const legacy = {
+      cells: { A1: { value: 2, locked: true }, A2: { value: 3 }, B1: { formula: "=A1*10" } },
+    } as unknown as Parameters<typeof fromSchemaExercise>[0];
+    const ex = fromSchemaExercise(legacy, [{ cell: "A3", formula: "=SOMA(A1:A2)" }]);
+    expect(ex.sheet).toEqual({ A1: 2, A2: 3, B1: "=A1*10" });
   });
 });
 

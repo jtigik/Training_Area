@@ -6,6 +6,10 @@ export const FEEDBACK_MESSAGES_PT_BR: Record<FeedbackCode, string> = {
   WRONG_VALUE: "Incorreto: a fórmula funciona, mas o resultado não é o esperado.",
   WRONG_TYPE:
     "Incorreto: o resultado tem um tipo diferente do esperado (número, texto, data ou lógico).",
+  VOLATILE_FUNCTION:
+    "Funções voláteis como ALEATÓRIO, ALEATÓRIOENTRE, AGORA e HOJE não são aceitas: o resultado muda a cada cálculo e não dá para conferir a resposta.",
+  INPUT_INSENSITIVE:
+    "O resultado bate agora, mas a fórmula não acompanha os dados: mude os valores da planilha e confira. Evite números fixos.",
   MISSING_REQUIRED_FUNCTION:
     "O resultado está certo, mas este exercício pede o uso de uma função específica.",
   FORBIDDEN_FUNCTION: "Este exercício não permite uma das funções usadas.",

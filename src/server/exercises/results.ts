@@ -55,7 +55,7 @@ const pct = (num: number, den: number): number | null =>
 
 function assertStaff(actor: Actor, tenantId: TenantId): void {
   if (actor.tenantId !== tenantId) throw new DomainError("FORBIDDEN", "Cross-tenant access denied");
-  if (actor.role !== "TEACHER" && actor.role !== "ADMIN") {
+  if (actor.role !== "PROFESSOR" && actor.role !== "INSTITUTION_ADMIN") {
     throw new DomainError("FORBIDDEN", "Teacher or admin role required");
   }
 }

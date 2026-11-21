@@ -28,7 +28,9 @@ export interface ServerEnv {
     secret: string | undefined;
     url: string | undefined;
     google: OAuthProviderEnv | undefined;
-    microsoftEntraId: (OAuthProviderEnv & { issuer: string | undefined }) | undefined;
+    microsoft: (OAuthProviderEnv & { tenantId: string }) | undefined;
+    /** Provedor OAuth falso para E2E (ignorado em produção pelo auth). */
+    oauthMockBaseUrl: string | undefined;
   };
   ai: {
     provider: AiProvider;
@@ -100,19 +102,17 @@ export function validateServerEnv(source: Source = process.env): ServerEnv {
   const nodeEnv = read(source, "NODE_ENV") ?? "development";
   const isProduction = nodeEnv === "production";
 
-  // Auth.js (OAuth Google / Microsoft Entra ID)
-  const authSecret = read(source, "AUTH_SECRET");
+  // Better Auth (OAuth Google / Microsoft). Mesmos nomes lidos por src/server/auth.
+  // AUTH_SECRET é aceito como alternativa, como o próprio Better Auth faz.
+  const authSecret = read(source, "BETTER_AUTH_SECRET") ?? read(source, "AUTH_SECRET");
   if (isProduction && !authSecret) {
-    issues.push("AUTH_SECRET é obrigatória em produção (gere com `openssl rand -base64 32`)");
+    issues.push(
+      "BETTER_AUTH_SECRET é obrigatória em produção (gere com `openssl rand -base64 32`)",
+    );
   }
-  const google = oauthPair(source, "AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET", issues);
-  const entra = oauthPair(
-    source,
-    "AUTH_MICROSOFT_ENTRA_ID_ID",
-    "AUTH_MICROSOFT_ENTRA_ID_SECRET",
-    issues,
-  );
-  const entraIssuer = read(source, "AUTH_MICROSOFT_ENTRA_ID_ISSUER");
+  const google = oauthPair(source, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", issues);
+  const microsoft = oauthPair(source, "MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", issues);
+  const microsoftTenantId = read(source, "MICROSOFT_TENANT_ID") ?? "common";
 
   // Provedor de IA para feedback
   const aiProvider = oneOf(source, "AI_PROVIDER", AI_PROVIDERS, "mock", issues);
@@ -139,9 +139,10 @@ export function validateServerEnv(source: Source = process.env): ServerEnv {
     databaseUrl: read(source, "DATABASE_URL"),
     auth: {
       secret: authSecret,
-      url: read(source, "AUTH_URL"),
+      url: read(source, "BETTER_AUTH_URL"),
       google,
-      microsoftEntraId: entra ? { ...entra, issuer: entraIssuer } : undefined,
+      microsoft: microsoft ? { ...microsoft, tenantId: microsoftTenantId } : undefined,
+      oauthMockBaseUrl: read(source, "AUTH_OAUTH_MOCK_BASE_URL"),
     },
     ai: { provider: aiProvider, apiKey: aiApiKey, model: read(source, "AI_MODEL") },
     tenancy: { resolution, defaultSlug, rootDomain },

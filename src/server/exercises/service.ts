@@ -45,7 +45,7 @@ export interface ExerciseServiceDeps {
   onDivergence?: (attempt: AttemptRecord) => void | Promise<void>;
 }
 
-const STAFF = new Set(["TEACHER", "ADMIN"]);
+const STAFF = new Set(["PROFESSOR", "INSTITUTION_ADMIN"]);
 
 function assertTenant(actor: Actor, tenantId: TenantId): void {
   if (actor.tenantId !== tenantId) throw new DomainError("FORBIDDEN", "Cross-tenant access denied");
@@ -181,7 +181,7 @@ export class ExerciseService {
     },
   ): Promise<{ exercises: StudentExerciseView[]; requested: number; shortfall: number }> {
     assertTenant(actor, tenantId);
-    if (actor.role === "STUDENT" && actor.userId !== params.studentId) {
+    if (actor.role === "ALUNO" && actor.userId !== params.studentId) {
       throw new DomainError("FORBIDDEN", "Students can only draw their own exercises");
     }
     if (!Number.isInteger(params.quantity) || params.quantity <= 0) {
@@ -234,8 +234,7 @@ export class ExerciseService {
     input: SubmissionInput,
   ): Promise<StudentAttemptResult> {
     assertTenant(actor, tenantId);
-    if (actor.role !== "STUDENT")
-      throw new DomainError("FORBIDDEN", "Only students submit attempts");
+    if (actor.role !== "ALUNO") throw new DomainError("FORBIDDEN", "Only students submit attempts");
     const data = parse(submissionSchema, input);
     const exercise = await this.deps.exercises.findById(tenantId, data.exerciseId);
     if (!exercise || exercise.status !== "PUBLISHED")

@@ -199,13 +199,38 @@ export function evaluateFormula(
   }
 }
 
-function resolveExpected(
-  exercise: ExerciseDefinition,
-  ctx: Context,
-): { value: ScalarValue; unsupported: string[] } {
+interface ResolvedExpected {
+  value: ScalarValue;
+  unsupported: string[];
+  /** Normalised reference formula (answer key or `referenceFormula`), if any. */
+  reference: NormalizedFormula | null;
+  /** Whether the reference formula references cells (null when there is none). */
+  referenceUsesCells: boolean | null;
+  referenceVolatile: boolean;
+}
+
+function resolveReference(exercise: ExerciseDefinition, formula: string, ctx: Context) {
+  const ev = evaluateFormula(exercise.sheet, exercise.targetCell, formula, ctx.options);
+  return { ...ev, normalized: normalizeFormula(formula, ctx.options.locale ?? "auto") };
+}
+
+function assertNoForbiddenVolatile(exercise: ExerciseDefinition, used: readonly string[]): void {
+  if (exercise.allowVolatileFunctions) return;
+  const volatile = used.filter((f) => FORBIDDEN_VOLATILE_FUNCTIONS.has(f));
+  if (volatile.length > 0) {
+    throw new GradingFailure(
+      "EXERCISE",
+      "VOLATILE_FUNCTION",
+      `Answer key uses volatile functions (not allowed by default): ${volatile.join(", ")}`,
+    );
+  }
+}
+
+function resolveExpected(exercise: ExerciseDefinition, ctx: Context): ResolvedExpected {
   const exp = exercise.expected as { value?: unknown; formula?: unknown } | undefined;
   if (exp && typeof exp.formula === "string") {
-    const ev = evaluateFormula(exercise.sheet, exercise.targetCell, exp.formula, ctx.options);
+    const ev = resolveReference(exercise, exp.formula, ctx);
+    assertNoForbiddenVolatile(exercise, ev.usedFunctions);
     if (ev.errors.length > 0 || ev.value === null || ev.type === "error") {
       const detail = ev.errors[0]?.code ?? "no value";
       throw new GradingFailure(
@@ -214,14 +239,39 @@ function resolveExpected(
         `Answer-key formula failed: ${detail}`,
       );
     }
-    return { value: ev.value, unsupported: ev.unsupportedFunctions };
+    return {
+      value: ev.value,
+      unsupported: ev.unsupportedFunctions,
+      reference: ev.normalized,
+      referenceUsesCells: ev.referencesCells,
+      referenceVolatile: ev.usedFunctions.some((f) => VOLATILE_FUNCTIONS.has(f)),
+    };
   }
   if (exp && "value" in exp && exp.value !== undefined && exp.value !== null) {
+    let value: ScalarValue;
     try {
-      return { value: resolveExpectedValue(exp.value as never), unsupported: [] };
+      value = resolveExpectedValue(exp.value as never);
     } catch (e) {
       throw new GradingFailure("EXERCISE", "INVALID_EXPECTED_VALUE", (e as Error).message);
     }
+    if (typeof exercise.referenceFormula === "string" && exercise.referenceFormula.trim()) {
+      const ev = resolveReference(exercise, exercise.referenceFormula, ctx);
+      assertNoForbiddenVolatile(exercise, ev.usedFunctions);
+      return {
+        value,
+        unsupported: ev.unsupportedFunctions,
+        reference: ev.errors.some((e) => e.kind === "PARSE") ? null : ev.normalized,
+        referenceUsesCells: ev.referencesCells,
+        referenceVolatile: ev.usedFunctions.some((f) => VOLATILE_FUNCTIONS.has(f)),
+      };
+    }
+    return {
+      value,
+      unsupported: [],
+      reference: null,
+      referenceUsesCells: null,
+      referenceVolatile: false,
+    };
   }
   throw new GradingFailure(
     "EXERCISE",
@@ -252,8 +302,9 @@ export function validateExercise(
       });
     }
     const exp = exercise.expected as { formula?: string };
-    if (typeof exp.formula === "string" && errors.length === 0) {
-      const sanity = gradeSubmission(exercise, exp.formula, options);
+    const key = typeof exp.formula === "string" ? exp.formula : exercise.referenceFormula;
+    if (typeof key === "string" && key.trim() && errors.length === 0) {
+      const sanity = gradeSubmission(exercise, key, options);
       if (!sanity.correct) {
         errors.push({
           kind: "EXERCISE",
@@ -306,6 +357,13 @@ export function gradeSubmission(
     referencesCells: false,
     normalizedFormula: null,
     analysis: null,
+    sensitivity: {
+      checked: false,
+      variations: 0,
+      mismatchedVariations: 0,
+      perturbedCells: 0,
+      skippedReason: "NOT_APPLICABLE",
+    },
     elapsedMs: 0,
   };
   const finish = (code: FeedbackCode): GradingResult => {
@@ -316,9 +374,11 @@ export function gradeSubmission(
   };
 
   let prepared: Prepared;
+  let resolved: ResolvedExpected;
   try {
     prepared = prepare(exercise, ctx);
-    result.expectedValue = resolveExpected(exercise, ctx).value;
+    resolved = resolveExpected(exercise, ctx);
+    result.expectedValue = resolved.value;
   } catch (e) {
     const err = failureToError(e);
     result.errors.push(err);
@@ -326,7 +386,8 @@ export function gradeSubmission(
   }
   const expected = result.expectedValue;
   const allowConstants = exercise.allowConstants ?? false;
-  const requireRefs = exercise.requireCellReference ?? !allowConstants;
+  const requireRefs =
+    exercise.requireCellReference ?? (!allowConstants && (resolved.referenceUsesCells ?? true));
   const text = typeof submission === "string" ? submission.trim() : "";
 
   if (text === "" || text === "=") return finish("EMPTY_SUBMISSION");
@@ -402,21 +463,153 @@ export function gradeSubmission(
   if (ev.errors.some((e) => e.kind === "LIMIT")) return finish("LIMIT_EXCEEDED");
   if (result.unsupportedFunctions.length > 0) return finish("UNSUPPORTED_FUNCTION");
   if (result.forbiddenFunctionsUsed.length > 0) return finish("FORBIDDEN_FUNCTION");
+  if (!exercise.allowVolatileFunctions && used.some((f) => FORBIDDEN_VOLATILE_FUNCTIONS.has(f))) {
+    return finish("VOLATILE_FUNCTION");
+  }
 
+  // When the reference formula itself contains a literal equal to the expected value
+  // (e.g. `=A1*2` → 2, or `=IF(C1>=60,"Aprovado",…)` → "Aprovado"), that literal is part of
+  // the task, not a hardcoded answer, so the check is skipped.
+  const isLiteral = (t: { kind: string }) => t.kind === "number" || t.kind === "string";
+  const referenceHasAnswerLiteral = (resolved.reference?.tokens ?? []).some(
+    (t) => isLiteral(t) && literalEqualsExpected(t as never, expected, exercise),
+  );
   const hasLiteralAnswer =
-    (exercise.forbidLiteralExpectedValue ?? false) &&
+    (exercise.forbidLiteralExpectedValue ?? !allowConstants) &&
+    !referenceHasAnswerLiteral &&
     normalized.tokens.some(
-      (t) =>
-        (t.kind === "number" || t.kind === "string") &&
-        literalEqualsExpected(t as never, expected, exercise),
+      (t) => isLiteral(t) && literalEqualsExpected(t as never, expected, exercise),
     );
   if ((requireRefs && !ev.referencesCells) || hasLiteralAnswer) return finish("HARDCODED_VALUE");
 
   if (ev.type === "error") return finish("FORMULA_ERROR");
   if (cmp === "wrong_type") return finish("WRONG_TYPE");
   if (cmp !== "match") return finish("WRONG_VALUE");
+
+  if (exercise.sensitivityCheck === false) {
+    result.sensitivity.skippedReason = "DISABLED";
+  } else if (!resolved.reference) {
+    result.sensitivity.skippedReason = "NO_REFERENCE_FORMULA";
+  } else if (resolved.referenceVolatile || used.some((f) => VOLATILE_FUNCTIONS.has(f))) {
+    result.sensitivity.skippedReason = "VOLATILE_FUNCTION";
+  } else {
+    result.sensitivity = checkSensitivity(
+      prepared,
+      normalized.formula,
+      resolved.reference.formula,
+      exercise,
+      ctx,
+    );
+    if (result.sensitivity.mismatchedVariations > 0) return finish("INPUT_INSENSITIVE");
+  }
   if (!requiredOk) return finish("MISSING_REQUIRED_FUNCTION");
   return finish("CORRECT");
+}
+
+/** Volatile functions forbidden by default (`allowVolatileFunctions`). */
+export const FORBIDDEN_VOLATILE_FUNCTIONS: ReadonlySet<string> = new Set([
+  "RAND",
+  "RANDBETWEEN",
+  "RANDARRAY",
+  "NOW",
+  "TODAY",
+]);
+
+/** Functions whose result does not depend only on the cell inputs (sensitivity check skips). */
+const VOLATILE_FUNCTIONS = new Set([
+  "NOW",
+  "TODAY",
+  "RAND",
+  "RANDBETWEEN",
+  "RANDARRAY",
+  "OFFSET",
+  "INDIRECT",
+]);
+
+/**
+ * Deterministic perturbations (k = index of the perturbed cell). They keep integers integral
+ * and preserve the sign of each input (0 counts as positive), so domain assumptions such as
+ * "values are positive" still hold; the third one is non-uniform so relative order can change.
+ */
+const NUMBER_VARIATIONS: Array<(x: number, k: number) => number> = [
+  (x) => (x < 0 ? x - 1 : x + 1),
+  (x) => (x < 0 ? 2 * x - 3 : 2 * x + 3),
+  (x, k) => (x < 0 ? 3 * x - (k % 4) - 1 : 3 * x + (k % 4) + 1),
+];
+export const MAX_PERTURBED_CELLS = 2000;
+
+type RawValue = ReturnType<HyperFormula["getCellValue"]>;
+
+function sameOutcome(a: RawValue, b: RawValue, rules: ExerciseDefinition): boolean {
+  const aErr = a instanceof DetailedCellError;
+  const bErr = b instanceof DetailedCellError;
+  if (aErr || bErr) return aErr && bErr && a.value === b.value;
+  return compareValues((a ?? 0) as ScalarValue, (b ?? 0) as ScalarValue, rules) === "match";
+}
+
+/**
+ * Re-evaluates the submission and the reference formula on perturbed copies of the sheet
+ * (numbers and booleans only; text, empty cells and formulas are kept) and counts variations
+ * where they disagree. Catches formulas that ignore the input, e.g. `=A1*0+60`.
+ */
+function checkSensitivity(
+  prepared: Prepared,
+  studentFormula: string,
+  referenceFormula: string,
+  rules: ExerciseDefinition,
+  ctx: Context,
+): GradingResult["sensitivity"] {
+  const positions: Array<[number, number]> = [];
+  prepared.data.forEach((row, r) =>
+    row.forEach((v, c) => {
+      if (r === prepared.target.row && c === prepared.target.col) return;
+      if (typeof v === "number" || typeof v === "boolean") positions.push([r, c]);
+    }),
+  );
+  if (positions.length === 0) {
+    return {
+      checked: false,
+      variations: 0,
+      mismatchedVariations: 0,
+      perturbedCells: 0,
+      skippedReason: "NO_NUMERIC_INPUTS",
+    };
+  }
+  const cells = positions.slice(0, MAX_PERTURBED_CELLS);
+  let mismatched = 0;
+  NUMBER_VARIATIONS.forEach((fn, i) => {
+    const data = prepared.data.map((row) => row.slice());
+    cells.forEach(([r, c], k) => {
+      const v = data[r]![c];
+      if (typeof v === "number") data[r]![c] = fn(v, k);
+      else if (typeof v === "boolean" && i === 1) data[r]![c] = !v;
+    });
+    const hf = HyperFormula.buildFromSheets(
+      { [ctx.sheetName]: data },
+      hyperFormulaConfig(ctx.limits),
+    );
+    try {
+      const address = {
+        sheet: hf.getSheetId(ctx.sheetName)!,
+        row: prepared.target.row,
+        col: prepared.target.col,
+      };
+      hf.setCellContents(address, [[studentFormula]]);
+      const student = hf.getCellValue(address);
+      hf.setCellContents(address, [[referenceFormula]]);
+      const reference = hf.getCellValue(address);
+      if (!sameOutcome(student, reference, rules)) mismatched += 1;
+    } finally {
+      hf.destroy();
+    }
+  });
+  return {
+    checked: true,
+    variations: NUMBER_VARIATIONS.length,
+    mismatchedVariations: mismatched,
+    perturbedCells: cells.length,
+    skippedReason: null,
+  };
 }
 
 /** Strips server-only fields (answer key, normalised formula) before sending a result to a student. */

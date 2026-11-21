@@ -21,7 +21,7 @@ describe("validateServerEnv", () => {
     const env = validateServerEnv({ NODE_ENV: "test" });
     expect(env.ai.provider).toBe("mock");
     expect(env.auth.google).toBeUndefined();
-    expect(env.auth.microsoftEntraId).toBeUndefined();
+    expect(env.auth.microsoft).toBeUndefined();
     expect(env.tenancy).toEqual({
       resolution: "single",
       defaultSlug: "default",
@@ -29,19 +29,25 @@ describe("validateServerEnv", () => {
     });
   });
 
-  it("exige AUTH_SECRET em produção", () => {
-    expect(() => validateServerEnv({ NODE_ENV: "production" })).toThrow(/AUTH_SECRET/);
-    expect(validateServerEnv({ NODE_ENV: "production", AUTH_SECRET: "x" }).auth.secret).toBe("x");
+  it("exige BETTER_AUTH_SECRET em produção (AUTH_SECRET como alternativa)", () => {
+    expect(() => validateServerEnv({ NODE_ENV: "production" })).toThrow(/BETTER_AUTH_SECRET/);
+    expect(validateServerEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: "x" }).auth.secret).toBe(
+      "x",
+    );
+    expect(validateServerEnv({ NODE_ENV: "production", AUTH_SECRET: "y" }).auth.secret).toBe("y");
   });
 
   it("exige id e secret do OAuth em par", () => {
-    expect(() => validateServerEnv({ AUTH_GOOGLE_ID: "id" })).toThrow(/AUTH_GOOGLE_SECRET/);
-    const env = validateServerEnv({
-      AUTH_MICROSOFT_ENTRA_ID_ID: "id",
-      AUTH_MICROSOFT_ENTRA_ID_SECRET: "s",
-      AUTH_MICROSOFT_ENTRA_ID_ISSUER: "https://login.microsoftonline.com/common/v2.0",
-    });
-    expect(env.auth.microsoftEntraId?.issuer).toContain("microsoftonline");
+    expect(() => validateServerEnv({ GOOGLE_CLIENT_ID: "id" })).toThrow(/GOOGLE_CLIENT_SECRET/);
+    const env = validateServerEnv({ MICROSOFT_CLIENT_ID: "id", MICROSOFT_CLIENT_SECRET: "s" });
+    expect(env.auth.microsoft).toEqual({ id: "id", secret: "s", tenantId: "common" });
+    expect(
+      validateServerEnv({
+        MICROSOFT_CLIENT_ID: "id",
+        MICROSOFT_CLIENT_SECRET: "s",
+        MICROSOFT_TENANT_ID: "org",
+      }).auth.microsoft?.tenantId,
+    ).toBe("org");
   });
 
   it("exige AI_API_KEY para provedores reais e rejeita provedor desconhecido", () => {
