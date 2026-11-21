@@ -24,13 +24,22 @@ import { errorMessage } from "@/lib/errors";
 import { getServices } from "@/lib/services";
 
 /** /professor/resultados/alunos/[id] — tentativas, conceitos por nível e refazer nível (ND/ED). */
-export function StudentDetailPage({ id }: { id: string }) {
+export function StudentDetailPage({
+  id,
+  readOnly = false,
+  basePath = "/professor/resultados",
+}: {
+  id: string;
+  /** Admin da instituição: só leitura (sem liberar refazer). */
+  readOnly?: boolean;
+  basePath?: string;
+}) {
   const params = useSearchParams();
   const detail = useResource(() => getServices().results.student(id), `student:${id}`);
   const sets = useResource(() => getServices().sets.list(), "sets");
   const [message, setMessage] = useState<{ kind: "ok" | "erro"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const back = `/professor/resultados${params.toString() ? `?${params.toString()}` : ""}`;
+  const back = `${basePath}${params.toString() ? `?${params.toString()}` : ""}`;
 
   if (detail.error) return <ErrorState error={detail.error} onRetry={detail.reload} />;
   if (!detail.data) return <LoadingState />;
@@ -106,7 +115,7 @@ export function StudentDetailPage({ id }: { id: string }) {
                         ? "Melhor conceito D ou PD: refazer não se aplica."
                         : "Refazer fica disponível ao concluir com ND ou ED."}
                   </p>
-                  {eligible ? (
+                  {eligible && !readOnly ? (
                     <Button
                       data-testid="redo-button"
                       size="sm"

@@ -13,7 +13,12 @@ const LINKS = [
   {
     href: "/admin/configuracoes",
     title: "Configurações",
-    text: "Nome da instância e cadastro aberto.",
+    text: "Nome da instância, cadastro aberto e limiares de conceito.",
+  },
+  {
+    href: "/admin/resultados",
+    title: "Resultados",
+    text: "Desempenho dos alunos por nível (somente leitura).",
   },
 ];
 

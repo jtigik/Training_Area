@@ -179,6 +179,7 @@ export const PROFESSOR_NAV: NavItem[] = [
 export const ADMIN_NAV: NavItem[] = [
   { href: "/admin", label: "Visão geral", exact: true },
   { href: "/admin/usuarios", label: "Usuários e papéis" },
+  { href: "/admin/resultados", label: "Resultados" },
   { href: "/admin/configuracoes", label: "Configurações" },
 ];
 

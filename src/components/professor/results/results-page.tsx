@@ -46,7 +46,12 @@ export function readFilter(params: URLSearchParams): ResultsFilter {
   };
 }
 
-export function ResultsPage() {
+export function ResultsPage({
+  basePath = "/professor/resultados",
+}: {
+  /** Rota base (o admin da instituição usa /admin/resultados, só leitura). */
+  basePath?: string;
+} = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -178,7 +183,7 @@ export function ResultsPage() {
                 <TableRow key={r.student.id}>
                   <TableCell>
                     <Link
-                      href={`/professor/resultados/alunos/${r.student.id}${query ? `?${query}` : ""}`}
+                      href={`${basePath}/alunos/${r.student.id}${query ? `?${query}` : ""}`}
                       className="font-medium hover:underline"
                     >
                       {r.student.name}
