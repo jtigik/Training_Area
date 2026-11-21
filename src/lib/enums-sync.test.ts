@@ -4,6 +4,8 @@ import * as prismaEnums from "@/generated/prisma/enums";
 
 import {
   DIFFICULTIES,
+  EXERCISE_IMPORT_STATUSES,
+  FEEDBACK_GENERATION_STATUSES,
   FEEDBACK_STATUSES,
   GRADE_CONCEPTS,
   KNOWLEDGE_LEVELS,
@@ -21,6 +23,8 @@ describe("enums puros espelham o schema Prisma", () => {
     ["GradeConcept", GRADE_CONCEPTS],
     ["LevelAttemptStatus", LEVEL_ATTEMPT_STATUSES],
     ["FeedbackStatus", FEEDBACK_STATUSES],
+    ["FeedbackGenerationStatus", FEEDBACK_GENERATION_STATUSES],
+    ["ExerciseImportStatus", EXERCISE_IMPORT_STATUSES],
   ] as const)("%s", (name, values) => {
     expect(Object.values(prismaEnums[name])).toEqual([...values]);
   });

@@ -3,13 +3,13 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { ApiError } from "@/lib/api-error";
 import type { ExerciseInput } from "@/lib/validation/content";
+import { toExerciseData } from "@/server/content/exercise-data";
 import { prisma } from "@/server/db";
 
 /**
  * Banco GLOBAL de exercícios (tenantId nulo, isGlobal) — escrita exclusiva do
  * SUPER_ADMIN, pelo cliente base. Instituições só leem (forTenant).
  */
-const json = (v: unknown) => v as Prisma.InputJsonValue;
 
 export function listGlobalExercises() {
   return prisma.exercise.findMany({
@@ -21,9 +21,9 @@ export function listGlobalExercises() {
 export function createGlobalExercise(authorId: string, input: ExerciseInput) {
   return prisma.exercise.create({
     data: {
-      ...input,
-      initialSheet: json(input.initialSheet),
-      expectedResult: json(input.expectedResult),
+      ...toExerciseData(input),
+      initialSheet: input.initialSheet as Prisma.InputJsonValue,
+      expectedResult: input.expectedResult as Prisma.InputJsonValue,
       tenantId: null,
       isGlobal: true,
       authorId,
@@ -32,14 +32,9 @@ export function createGlobalExercise(authorId: string, input: ExerciseInput) {
 }
 
 export async function updateGlobalExercise(id: string, input: Partial<ExerciseInput>) {
-  const { initialSheet, expectedResult, ...rest } = input;
   const result = await prisma.exercise.updateMany({
     where: { id, tenantId: null, isGlobal: true },
-    data: {
-      ...rest,
-      ...(initialSheet !== undefined && { initialSheet: json(initialSheet) }),
-      ...(expectedResult !== undefined && { expectedResult: json(expectedResult) }),
-    },
+    data: toExerciseData(input),
   });
   if (result.count === 0) throw new ApiError(404, "NOT_FOUND", "Exercício global não encontrado");
   return prisma.exercise.findUniqueOrThrow({ where: { id } });

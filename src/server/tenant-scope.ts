@@ -37,6 +37,9 @@ export const MODEL_SCOPES = {
   ConceptOverride: "tenant",
   ExerciseAttempt: "tenant",
   Feedback: "tenant",
+  SetExercise: "tenant",
+  LevelAttemptExercise: "tenant",
+  ExerciseImport: "tenant",
 } as const satisfies Record<string, ScopeKind>;
 
 export type ScopedModel = keyof typeof MODEL_SCOPES;

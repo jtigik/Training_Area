@@ -86,6 +86,20 @@ enum FeedbackStatus {
   REJECTED
 }
 
+/// Geração do texto pela IA — independente da revisão (FeedbackStatus).
+enum FeedbackGenerationStatus {
+  PENDING
+  GENERATED
+  FAILED
+}
+
+/// Importação de planilha de exercícios (BE2).
+enum ExerciseImportStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // Instituições (tenants)
 // ---------------------------------------------------------------------------
@@ -105,20 +119,23 @@ model Tenant {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  users                User[]
-  invitations          Invitation[]
-  classrooms           Classroom[]
-  classroomMembers     ClassroomMember[]
-  contentSections      ContentSection[]
-  exerciseSets         ExerciseSet[]
-  levels               Level[]
-  exercises            Exercise[]
-  quotas               ExerciseQuota[]
-  levelAttempts        LevelAttempt[]
-  exerciseAttempts     ExerciseAttempt[]
-  feedbacks            Feedback[]
-  tenantGradingConfigs TenantGradingConfig[]
-  conceptOverrides     ConceptOverride[]
+  users                 User[]
+  invitations           Invitation[]
+  classrooms            Classroom[]
+  classroomMembers      ClassroomMember[]
+  contentSections       ContentSection[]
+  exerciseSets          ExerciseSet[]
+  levels                Level[]
+  exercises             Exercise[]
+  quotas                ExerciseQuota[]
+  levelAttempts         LevelAttempt[]
+  exerciseAttempts      ExerciseAttempt[]
+  feedbacks             Feedback[]
+  tenantGradingConfigs  TenantGradingConfig[]
+  conceptOverrides      ConceptOverride[]
+  setExercises          SetExercise[]
+  levelAttemptExercises LevelAttemptExercise[]
+  exerciseImports       ExerciseImport[]
 
   @@map("tenants")
 }
@@ -155,6 +172,7 @@ model User {
   levelAttempts           LevelAttempt[]    @relation("LevelAttemptStudent")
   overriddenLevelAttempts LevelAttempt[]    @relation("LevelAttemptOverrider")
   conceptOverrides        ConceptOverride[]
+  exerciseImports         ExerciseImport[]  @relation("ExerciseImportCreator")
   exerciseAttempts        ExerciseAttempt[]
   feedbacks               Feedback[]        @relation("FeedbackStudent")
   reviewedFeedbacks       Feedback[]        @relation("FeedbackReviewer")
@@ -328,6 +346,9 @@ model Exercise {
   /// Pelo menos uma célula (TA-016). Nunca enviado ao aluno.
   expectedResult Json              @map("expected_result")
   hint           String?
+  /// Regras extras de correção (src/lib/validation/grading-rules.ts): funções
+  /// exigidas/proibidas, tolerância, sensibilidade a maiúsculas, voláteis...
+  gradingRules   Json?             @map("grading_rules")
   level          KnowledgeLevel
   difficulty     Difficulty
   status         PublicationStatus @default(DRAFT)
@@ -335,9 +356,12 @@ model Exercise {
   createdAt      DateTime          @default(now()) @map("created_at")
   updatedAt      DateTime          @updatedAt @map("updated_at")
 
-  tenant   Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  author   User?             @relation("ExerciseAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  attempts ExerciseAttempt[]
+  tenant            Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  author            User?                  @relation("ExerciseAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  attempts          ExerciseAttempt[]
+  /// Cópias congeladas em conjuntos publicados (origem).
+  setCopies         SetExercise[]
+  levelAttemptDraws LevelAttemptExercise[]
 
   @@index([tenantId, status, level, difficulty])
   @@index([level, difficulty], map: "exercises_global_pool_idx", where: { tenantId: null })
@@ -358,9 +382,11 @@ model ExerciseSet {
   createdAt    DateTime          @default(now()) @map("created_at")
   updatedAt    DateTime          @updatedAt @map("updated_at")
 
-  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  author User?   @relation("ExerciseSetAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  levels Level[]
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  author       User?         @relation("ExerciseSetAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  levels       Level[]
+  /// Cópias congeladas ao publicar (vazio em rascunho).
+  setExercises SetExercise[]
 
   @@index([tenantId, status])
   @@map("exercise_sets")
@@ -382,6 +408,7 @@ model Level {
   set           ExerciseSet     @relation(fields: [setId], references: [id], onDelete: Cascade)
   quotas        ExerciseQuota[]
   levelAttempts LevelAttempt[]
+  setExercises  SetExercise[]
 
   @@unique([setId, knowledgeLevel])
   @@index([tenantId])
@@ -459,13 +486,15 @@ model LevelAttempt {
   createdAt       DateTime           @default(now()) @map("created_at")
   updatedAt       DateTime           @updatedAt @map("updated_at")
 
-  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  student          User              @relation("LevelAttemptStudent", fields: [studentId], references: [id], onDelete: Cascade)
-  level            Level             @relation(fields: [levelId], references: [id], onDelete: Cascade)
-  overriddenBy     User?             @relation("LevelAttemptOverrider", fields: [overriddenById], references: [id], onDelete: SetNull)
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  student          User                   @relation("LevelAttemptStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  level            Level                  @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  overriddenBy     User?                  @relation("LevelAttemptOverrider", fields: [overriddenById], references: [id], onDelete: SetNull)
   exerciseAttempts ExerciseAttempt[]
   feedback         Feedback?
   conceptOverrides ConceptOverride[]
+  /// Sorteio congelado da rodada (ordem = position).
+  exercises        LevelAttemptExercise[]
 
   @@unique([studentId, levelId, attemptNumber])
   /// No máximo uma tentativa em andamento por aluno e nível.
@@ -519,7 +548,10 @@ model ExerciseAttempt {
   tenantId        String     @map("tenant_id")
   studentId       String     @map("student_id")
   levelAttemptId  String     @map("level_attempt_id")
-  exerciseId      String     @map("exercise_id")
+  /// Exatamente um: exerciseId (conjunto em rascunho/pool) OU setExerciseId
+  /// (conjunto publicado, cópia congelada) — CHECK no banco.
+  exerciseId      String?    @map("exercise_id")
+  setExerciseId   String?    @map("set_exercise_id")
   /// Denormalizado para filtros (TA-030).
   difficulty      Difficulty
   /// Células enviadas: { "B4": { formula?: "=SOMA(B1:B3)", value?: 42 } }.
@@ -537,11 +569,14 @@ model ExerciseAttempt {
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   student      User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
   levelAttempt LevelAttempt @relation(fields: [levelAttemptId], references: [id], onDelete: Cascade)
-  exercise     Exercise     @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+  exercise     Exercise?    @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+  setExercise  SetExercise? @relation(fields: [setExerciseId], references: [id], onDelete: Restrict)
 
   @@unique([levelAttemptId, exerciseId, attemptNumber])
+  @@unique([levelAttemptId, setExerciseId, attemptNumber])
   @@index([tenantId, studentId, createdAt])
   @@index([exerciseId])
+  @@index([setExerciseId])
   @@map("exercise_attempts")
 }
 
@@ -549,24 +584,33 @@ model ExerciseAttempt {
 /// O aluno só lê APPROVED (getApprovedFeedbackForStudent). Texto exibido =
 /// editedText ?? aiText. aiText é imutável após a geração.
 model Feedback {
-  id              String         @id @default(cuid())
-  tenantId        String         @map("tenant_id")
-  studentId       String         @map("student_id")
-  levelAttemptId  String         @unique @map("level_attempt_id")
-  status          FeedbackStatus @default(DRAFT)
-  aiText          String         @map("ai_text")
+  id               String                   @id @default(cuid())
+  tenantId         String                   @map("tenant_id")
+  studentId        String                   @map("student_id")
+  levelAttemptId   String                   @unique @map("level_attempt_id")
+  status           FeedbackStatus           @default(DRAFT)
+  /// Geração pela IA (PENDING → GENERATED | FAILED); separada da revisão (status).
+  generationStatus FeedbackGenerationStatus @default(PENDING) @map("generation_status")
+  /// Motivo da falha na geração (obrigatório quando FAILED).
+  generationError  String?                  @map("generation_error")
+  /// Texto gerado pela IA; nulo enquanto PENDING ou se FAILED.
+  aiText           String?                  @map("ai_text")
+  /// Pontos fortes (itens curtos, gerados pela IA).
+  strengths        String[]                 @default([])
+  /// O que revisar (itens curtos, gerados pela IA).
+  toReview         String[]                 @default([]) @map("to_review")
   /// Edição do professor (nula = aprovado sem edição).
-  editedText      String?        @map("edited_text")
+  editedText       String?                  @map("edited_text")
   /// Modelo/versão do prompt usados na geração (auditoria).
-  aiModel         String?        @map("ai_model")
-  promptVersion   String?        @map("prompt_version")
+  aiModel          String?                  @map("ai_model")
+  promptVersion    String?                  @map("prompt_version")
   /// Métricas de entrada (taxa de acerto, dificuldades, erros frequentes...).
-  metrics         Json
-  reviewedById    String?        @map("reviewed_by_id")
-  reviewedAt      DateTime?      @map("reviewed_at")
-  rejectionReason String?        @map("rejection_reason")
-  createdAt       DateTime       @default(now()) @map("created_at")
-  updatedAt       DateTime       @updatedAt @map("updated_at")
+  metrics          Json
+  reviewedById     String?                  @map("reviewed_by_id")
+  reviewedAt       DateTime?                @map("reviewed_at")
+  rejectionReason  String?                  @map("rejection_reason")
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  updatedAt        DateTime                 @updatedAt @map("updated_at")
 
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   student      User         @relation("FeedbackStudent", fields: [studentId], references: [id], onDelete: Cascade)
@@ -576,4 +620,86 @@ model Feedback {
   @@index([tenantId, status])
   @@index([studentId, status])
   @@map("feedbacks")
+}
+
+/// Cópia CONGELADA de um exercício num conjunto publicado (publishSet). Conjunto
+/// publicado sorteia só daqui; edições no banco não o afetam.
+model SetExercise {
+  id               String         @id @default(cuid())
+  tenantId         String         @map("tenant_id")
+  setId            String         @map("set_id")
+  levelId          String         @map("level_id")
+  /// Exercício de origem (tenant ou global); nulo se ele for removido depois.
+  sourceExerciseId String?        @map("source_exercise_id")
+  /// Ordem dentro do nível (0, 1, 2...).
+  position         Int
+  /// Denormalizados do snapshot para filtrar o sorteio.
+  level            KnowledgeLevel
+  difficulty       Difficulty
+  /// { title, statement, initialSheet, expectedResult, gradingRules, hint, level, difficulty }
+  snapshot         Json
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  set              ExerciseSet            @relation(fields: [setId], references: [id], onDelete: Cascade)
+  levelRef         Level                  @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  sourceExercise   Exercise?              @relation(fields: [sourceExerciseId], references: [id], onDelete: SetNull)
+  exerciseAttempts ExerciseAttempt[]
+  draws            LevelAttemptExercise[]
+
+  @@unique([levelId, position])
+  @@index([tenantId])
+  @@index([setId])
+  @@index([levelId, difficulty])
+  @@map("set_exercises")
+}
+
+/// Sorteio congelado de uma rodada (LevelAttempt): exatamente um entre
+/// exerciseId (rascunho/pool) e setExerciseId (publicado) — CHECK no banco.
+model LevelAttemptExercise {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  levelAttemptId String   @map("level_attempt_id")
+  exerciseId     String?  @map("exercise_id")
+  setExerciseId  String?  @map("set_exercise_id")
+  position       Int
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  levelAttempt LevelAttempt @relation(fields: [levelAttemptId], references: [id], onDelete: Cascade)
+  exercise     Exercise?    @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+  setExercise  SetExercise? @relation(fields: [setExerciseId], references: [id], onDelete: Restrict)
+
+  @@unique([levelAttemptId, position])
+  @@unique([levelAttemptId, exerciseId])
+  @@unique([levelAttemptId, setExerciseId])
+  @@index([tenantId])
+  @@index([exerciseId])
+  @@index([setExerciseId])
+  @@map("level_attempt_exercises")
+}
+
+/// Importação de planilha (BE2): fileHash único por instituição detecta
+/// duplicidade e importações concorrentes.
+model ExerciseImport {
+  id          String               @id @default(cuid())
+  tenantId    String               @map("tenant_id")
+  /// SHA-256 (hex) do arquivo.
+  fileHash    String               @map("file_hash")
+  fileName    String               @map("file_name")
+  createdById String?              @map("created_by_id")
+  /// Exercícios criados.
+  count       Int                  @default(0)
+  status      ExerciseImportStatus @default(PROCESSING)
+  /// Erros de validação/processamento ({ row, message }[]) quando FAILED.
+  errors      Json?
+  createdAt   DateTime             @default(now()) @map("created_at")
+  completedAt DateTime?            @map("completed_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User?  @relation("ExerciseImportCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, fileHash])
+  @@index([tenantId, createdAt])
+  @@map("exercise_imports")
 }

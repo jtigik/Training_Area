@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { gradingRulesSchema } from "@/lib/validation/grading-rules";
 import {
   DIFFICULTIES,
   KNOWLEDGE_LEVELS,
@@ -62,6 +63,7 @@ export const exerciseInputSchema = z.object({
   initialSheet: initialSheetSchema,
   expectedResult: expectedResultSchema,
   hint: z.string().trim().max(2_000).nullish(),
+  gradingRules: gradingRulesSchema.nullish(),
   level: mvpLevelSchema,
   difficulty: difficultySchema,
   status: z.enum(PUBLICATION_STATUSES).optional(),

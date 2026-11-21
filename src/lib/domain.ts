@@ -69,3 +69,10 @@ export type LevelAttemptStatus = (typeof LEVEL_ATTEMPT_STATUSES)[number];
 
 export const FEEDBACK_STATUSES = ["DRAFT", "APPROVED", "REJECTED"] as const;
 export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
+
+/** Geração do feedback pela IA (independente da revisão). */
+export const FEEDBACK_GENERATION_STATUSES = ["PENDING", "GENERATED", "FAILED"] as const;
+export type FeedbackGenerationStatus = (typeof FEEDBACK_GENERATION_STATUSES)[number];
+
+export const EXERCISE_IMPORT_STATUSES = ["PROCESSING", "COMPLETED", "FAILED"] as const;
+export type ExerciseImportStatus = (typeof EXERCISE_IMPORT_STATUSES)[number];

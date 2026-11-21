@@ -7,12 +7,14 @@ export interface StudentFeedbackView {
   id: string;
   levelAttemptId: string;
   text: string;
+  strengths: string[];
+  toReview: string[];
   reviewedAt: Date | null;
 }
 
 /**
  * Feedbacks que o ALUNO pode ler: só APPROVED, só os dele, só do tenant.
- * Nunca expõe aiText cru, status de revisão ou rejectionReason.
+ * Nunca expõe aiText cru, status de revisão/geração, generationError ou rejectionReason.
  * Use SEMPRE este helper nas rotas/telas do aluno.
  */
 export async function listApprovedFeedbackForStudent(
@@ -25,13 +27,23 @@ export async function listApprovedFeedbackForStudent(
       status: "APPROVED",
       ...(filter.levelAttemptId && { levelAttemptId: filter.levelAttemptId }),
     },
-    select: { id: true, levelAttemptId: true, aiText: true, editedText: true, reviewedAt: true },
+    select: {
+      id: true,
+      levelAttemptId: true,
+      aiText: true,
+      editedText: true,
+      strengths: true,
+      toReview: true,
+      reviewedAt: true,
+    },
     orderBy: { reviewedAt: "desc" },
   });
   return rows.map((row) => ({
     id: row.id,
     levelAttemptId: row.levelAttemptId,
     text: feedbackDisplayText(row),
+    strengths: row.strengths,
+    toReview: row.toReview,
     reviewedAt: row.reviewedAt,
   }));
 }

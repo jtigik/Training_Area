@@ -9,6 +9,11 @@ describe("feedback", () => {
     expect(feedbackDisplayText({ aiText: "IA", editedText: null })).toBe("IA");
   });
 
+  it("sem texto da IA (PENDING/FAILED) usa só a edição do professor", () => {
+    expect(feedbackDisplayText({ aiText: null, editedText: "Professor" })).toBe("Professor");
+    expect(feedbackDisplayText({ aiText: null, editedText: null })).toBe("");
+  });
+
   it("aluno só vê APPROVED", () => {
     expect(studentVisibleFeedbackText({ status: "APPROVED", aiText: "IA", editedText: null })).toBe(
       "IA",
