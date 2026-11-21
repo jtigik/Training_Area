@@ -172,12 +172,11 @@ Notas:
 
 ### Dependências (`npm audit`)
 
-Em 21/11/2026, `npm audit` reporta **3 vulnerabilidades altas**, todas na mesma cadeia: `prisma` → `@prisma/config` → `effect` ([GHSA-7589-6fvf-x4pw](https://github.com/advisories/GHSA-7589-6fvf-x4pw), ReDoS em `Schema.TemplateLiteral`).
+Em 21/11/2026, `npm audit` (e `npm audit --omit=dev`) reporta **0 vulnerabilidades**.
 
-- **Escopo:** `prisma` é dependência de desenvolvimento (CLI de generate, migrate e seed). O `effect` é usado só pelo carregamento de configuração da CLI. Não é importado pelo `@prisma/client` nem pelo `@prisma/adapter-pg`, e não aparece na saída `.next/standalone` que vai para a imagem de produção (`runner`).
-- **Por que `npm audit --omit=dev` ainda mostra 3:** o `@prisma/client` declara `prisma` como _peerDependency_ opcional. Por isso o npm marca o pacote como `devOptional`, e o `--omit=dev` não o exclui do relatório. Na prática, ele não é carregado em runtime.
-- **Onde existe:** na máquina de dev, na CI e na imagem `migrator`, que roda só `prisma migrate deploy` com o schema do próprio repositório, sem entrada de usuário.
-- **Decisão:** manter o Prisma 7. A correção sugerida (`npm audit fix --force`) faria downgrade para o Prisma 6.12, o que é uma quebra. Vamos reavaliar quando a Prisma publicar uma versão com `effect` ≥ 3.22.1 (a primeira corrigida). Alternativa, se for preciso zerar o relatório antes disso: um `overrides` no `package.json` forçando `effect` `^3.22.1` (não testado com a CLI do Prisma). Responsável: DevOps.
+- **GHSA-7589-6fvf-x4pw** (ReDoS em `Schema.TemplateLiteral` do `effect` ≤ 3.22.0) chegava pela cadeia `prisma` → `@prisma/config` → `effect@3.20.0`. Ela gerava 3 alertas altos, inclusive com `--omit=dev`, porque o `@prisma/client` declara `prisma` como peer opcional.
+- **Correção:** um `overrides` no `package.json` força `effect` `^3.22.1` só dentro de `@prisma/config` (versão resolvida: 3.22.5). Testado com `prisma generate`, `migrate status`/`migrate dev`, seed, lint, typecheck, testes unitários, build e e2e.
+- **Manutenção:** ao atualizar o Prisma, verifique se a nova versão já traz `effect` ≥ 3.22.1. Se trouxer, remova o override. Se `npm ci` ou a CLI do Prisma quebrarem depois de um upgrade, o override é o primeiro suspeito. Responsável: DevOps.
 
 ## Licença
 
