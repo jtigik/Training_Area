@@ -21,9 +21,9 @@ import {
 } from "./index";
 
 const T = "t1";
-const teacher: Actor = { userId: "prof", role: "TEACHER", tenantId: T };
-const alice: Actor = { userId: "alice", role: "STUDENT", tenantId: T };
-const bob: Actor = { userId: "bob", role: "STUDENT", tenantId: T };
+const teacher: Actor = { userId: "prof", role: "PROFESSOR", tenantId: T };
+const alice: Actor = { userId: "alice", role: "ALUNO", tenantId: T };
+const bob: Actor = { userId: "bob", role: "ALUNO", tenantId: T };
 
 const content: MultiCellExercise = {
   sheet: { A1: 10, A2: 20, A3: 30 },
@@ -204,7 +204,7 @@ describe("máquina de estados da revisão", () => {
     });
     expect(ed).toMatchObject({
       status: "EDITED_APPROVED",
-      finalSource: "TEACHER",
+      finalSource: "PROFESSOR",
       final: { strengths: ["Usou SOMA"], improvements: [] },
     });
     expect(await service.listQueue(teacher, T)).toEqual([]);

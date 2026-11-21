@@ -72,7 +72,7 @@ export const MAX_GENERATIONS = 5;
 // Records and repository port
 // ---------------------------------------------------------------------------
 
-export type FeedbackSource = "AI" | "RULES" | "TEACHER";
+export type FeedbackSource = "AI" | "RULES" | "PROFESSOR";
 
 export interface DraftGeneration {
   generation: number;
@@ -190,7 +190,7 @@ export interface FeedbackServiceDeps {
 
 function assertStaff(actor: Actor, tenantId: TenantId): void {
   if (actor.tenantId !== tenantId) throw new DomainError("FORBIDDEN", "Cross-tenant access denied");
-  if (actor.role !== "TEACHER" && actor.role !== "ADMIN") {
+  if (actor.role !== "PROFESSOR" && actor.role !== "INSTITUTION_ADMIN") {
     throw new DomainError("FORBIDDEN", "Teacher or admin role required");
   }
 }
@@ -429,7 +429,7 @@ export class FeedbackReviewService {
       ...r,
       status: "EDITED_APPROVED",
       final: parsed.data,
-      finalSource: "TEACHER",
+      finalSource: "PROFESSOR",
       reviewerId: actor.userId,
       reviewedAt: this.clock.now(),
     });
@@ -485,7 +485,7 @@ export class FeedbackReviewService {
   ): Promise<StudentFeedbackView[]> {
     if (actor.tenantId !== tenantId)
       throw new DomainError("FORBIDDEN", "Cross-tenant access denied");
-    if (actor.role === "STUDENT" && actor.userId !== studentId) {
+    if (actor.role === "ALUNO" && actor.userId !== studentId) {
       throw new DomainError("FORBIDDEN", "Students can only read their own feedback");
     }
     const rows = await this.deps.reviews.list(tenantId, {
