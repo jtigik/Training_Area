@@ -16,7 +16,14 @@ import { ALL_USERS, E2E_PASSWORD, TENANTS, type TestUser } from "./support/users
 const SCHEMA_CANDIDATES = {
   tenantTable: ["tenants", "institutions", "instituicoes"],
   userTenantColumn: ["tenant_id", "institution_id"],
-  superAdminRole: ["SUPER_ADMIN", "SUPERADMIN"],
+  /** Papel lógico da suíte → rótulos possíveis do enum Role (main: ADMIN/TEACHER/STUDENT;
+   *  feat/auth-modelo b82f851: SUPER_ADMIN/INSTITUTION_ADMIN/PROFESSOR/ALUNO). */
+  roles: {
+    SUPER_ADMIN: ["SUPER_ADMIN", "SUPERADMIN"],
+    ADMIN: ["INSTITUTION_ADMIN", "ADMIN"],
+    TEACHER: ["PROFESSOR", "TEACHER"],
+    STUDENT: ["ALUNO", "STUDENT"],
+  },
 };
 
 const LEGACY_E2E_EMAILS = ["aluno", "aluno2", "professor", "admin"].map(
@@ -120,15 +127,19 @@ export async function seed(db: Client): Promise<SeedReport> {
   const tenantCol = SCHEMA_CANDIDATES.userTenantColumn.find((c) => userCols.has(c)) ?? null;
   if (!tenantCol) pending.push("users.tenant_id (usuários semeados sem instituição)");
   const roles = await enumLabels(db, "Role");
-  const superRole = SCHEMA_CANDIDATES.superAdminRole.find((r) => roles.includes(r)) ?? null;
+  const roleLabel = (role: TestUser["role"]) =>
+    SCHEMA_CANDIDATES.roles[role].find((r) => roles.includes(r)) ?? null;
+  const superRole = roleLabel("SUPER_ADMIN");
   if (!superRole) pending.push("Super Admin (enum Role sem SUPER_ADMIN)");
 
+  // feat/auth-modelo usa Better Auth: a senha fica em accounts.password (scrypt), não em
+  // users.password_hash. TODO: quando o schema chegar, gravar a conta "credential" aqui.
   const passwordHash = process.env.E2E_PASSWORD_HASH ?? null;
   if (!passwordHash) pending.push("password_hash (login por senha no auth.setup)");
   void E2E_PASSWORD; // o hash deve corresponder a esta senha
 
   let count = 0;
-  const dbRole = (u: TestUser) => (u.role === "SUPER_ADMIN" ? superRole : u.role);
+  const dbRole = (u: TestUser) => roleLabel(u.role);
   for (const u of ALL_USERS) {
     const role = dbRole(u);
     if (!role) continue;

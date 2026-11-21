@@ -160,9 +160,9 @@ test.describe("Login por e-mail e senha (somente dev/teste) [TA-001]", () => {
       await expect(loginPage.google).toBeVisible();
       await expect(loginPage.microsoft).toBeVisible();
       await expect(loginPage.password).toHaveCount(0);
-      // Contrato a confirmar com o Backend 1 (ex.: Auth.js credentials callback).
-      const res = await page.request.post("/api/auth/callback/credentials", {
-        form: { email: USERS.aluno.email, password: E2E_PASSWORD },
+      // Better Auth (feat/auth-modelo): endpoint de e-mail+senha.
+      const res = await page.request.post("/api/auth/sign-in/email", {
+        data: { email: USERS.aluno.email, password: E2E_PASSWORD },
         maxRedirects: 0,
       });
       expect([400, 401, 403, 404]).toContain(res.status());
