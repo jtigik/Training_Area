@@ -29,7 +29,7 @@ cp .env.example .env         # ajuste se precisar (porta, senha)
 npm ci                       # instala dependências e gera o Prisma Client (postinstall)
 npm run db:up                # sobe o PostgreSQL e espera o healthcheck
 npm run db:migrate           # aplica as migrações (prisma migrate dev)
-npm run db:seed              # opcional: cria o admin inicial admin@training-area.local
+npm run db:seed              # instituição demo, 1 usuário por papel e banco global de exercícios
 npm run dev                  # http://localhost:3000
 ```
 
@@ -73,6 +73,62 @@ Com `CI=1`, o Playwright usa o build de produção (rode `npm run build` antes).
 | `db:seed`                               | Executa `prisma/seed.ts`                                                        |
 | `db:studio`                             | Abre o Prisma Studio                                                            |
 | `db:reset`                              | Recria o banco do zero (apaga dados!)                                           |
+
+## Autenticação, papéis e multi-tenant
+
+Login via [Better Auth](https://www.better-auth.com) (`src/server/auth/auth.ts`, rota `/api/auth/*`).
+
+- **Lançamento:** Google e Microsoft. Cada provedor liga quando `GOOGLE_CLIENT_ID/SECRET` ou `MICROSOFT_CLIENT_ID/SECRET` estão no `.env` (veja `.env.example`; URIs de callback `${BETTER_AUTH_URL}/api/auth/callback/google|microsoft`).
+- **E-mail e senha:** só para dev/teste, com `AUTH_EMAIL_PASSWORD_ENABLED=true` (ignorado em produção). Cadastro por e-mail fica desligado; as contas vêm do seed.
+- **Primeiro login social:** o usuário entra na instituição de um convite pendente (`invitations`) ou, se a instituição tiver `autoJoinByDomain`, pelo domínio do e-mail (como Aluno). Sem vínculo, o login é recusado.
+- `BETTER_AUTH_SECRET` é obrigatório (gere com `openssl rand -base64 32`); `BETTER_AUTH_URL` é a URL pública do app.
+
+**Papéis:** `SUPER_ADMIN` (plataforma, sem instituição), `INSTITUTION_ADMIN`, `PROFESSOR`, `ALUNO`.
+
+| Rota                               | Acesso                                            |
+| ---------------------------------- | ------------------------------------------------- |
+| `/super-admin`, `/api/super-admin` | SUPER_ADMIN                                       |
+| `/admin`, `/api/admin`             | INSTITUTION_ADMIN, SUPER_ADMIN                    |
+| `/professor`, `/api/professor`     | PROFESSOR, INSTITUTION_ADMIN                      |
+| `/aluno`, `/api/aluno`             | qualquer usuário de instituição (não SUPER_ADMIN) |
+| `/api/me`                          | qualquer sessão                                   |
+
+As regras ficam em `src/lib/authz/route-rules.ts` e são aplicadas por `src/proxy.ts` (página sem sessão → `/login?callbackUrl=…`; API sem sessão → 401; papel insuficiente → 403). **A proxy não basta:** todo route handler e server action deve chamar:
+
+```ts
+import { requireTenant } from "@/server/auth/tenant";
+const { tenantId, user } = await requireTenant(["PROFESSOR", "INSTITUTION_ADMIN"]);
+await prisma.exerciseSet.findMany({ where: { tenantId } }); // sempre filtre pelo tenant
+```
+
+`requireTenant` usa o `tenantId` da sessão; só o SUPER_ADMIN atravessa instituições e precisa informar `requestedTenantId`. Também existem `requireSession`/`requireRole` (`src/server/auth/session.ts`). Feedback para o aluno: use `listApprovedFeedbackForStudent` (`src/server/feedback/student.ts`), que só devolve feedback `APPROVED`.
+
+### Contas de desenvolvimento (seed)
+
+Senhas **apenas para dev** (sobrescreva com `SEED_*_PASSWORD`; em produção o seed exige as variáveis). Login por senha exige `AUTH_EMAIL_PASSWORD_ENABLED=true`.
+
+| Papel             | E-mail                        | Senha               | Instituição |
+| ----------------- | ----------------------------- | ------------------- | ----------- |
+| SUPER_ADMIN       | `admin@training-area.local`   | `SuperAdmin@Dev123` | —           |
+| INSTITUTION_ADMIN | `admin@escola-demo.local`     | `Admin@Dev123`      | Escola Demo |
+| PROFESSOR         | `professor@escola-demo.local` | `Professor@Dev123`  | Escola Demo |
+| ALUNO             | `aluno@escola-demo.local`     | `Aluno@Dev123`      | Escola Demo |
+
+O seed também cria 5 exercícios e 1 seção de conteúdo **globais** e a "Trilha Demo" (nível Fundamental, cota padrão 3) na Escola Demo.
+
+## Modelo de dados
+
+`prisma/schema.prisma` (comentado). Resumo:
+
+- **Tenant** (instituição). Toda entidade de domínio tem `tenantId`, indexado, e unicidades escopadas por tenant.
+- **User / Session / Account / Verification**: tabelas do Better Auth. `users.tenant_id` é nulo só para SUPER_ADMIN (CHECK). **Invitation**: convite com papel.
+- **Classroom / ClassroomMember**: turmas.
+- **ContentSection / Exercise**: `tenantId` nulo + `isGlobal = true` = **global** (banco inicial da plataforma): toda instituição lê, só o SUPER_ADMIN escreve. Com tenant = exclusivo da instituição.
+- **ExerciseSet → Level → ExerciseQuota**: trilha da instituição, níveis participantes e quantidade (padrão, por turma ou por aluno; precedência em `src/lib/quota.ts`). O pool de um Level são os exercícios publicados do mesmo nível, nas dificuldades do conjunto, da instituição **ou globais**.
+- **LevelAttempt**: tentativa do aluno num nível, com conceito `ND | ED | D | PD`. Refazer só após ND/ED (`src/lib/grading.ts`). **ExerciseAttempt**: cada envio, ligado à LevelAttempt.
+- **Feedback** (1:1 com LevelAttempt): gerado por IA (`aiText`), revisado pelo professor (`editedText`, `reviewedById`, `reviewedAt`), status `DRAFT | APPROVED | REJECTED`.
+
+Restrições que o Prisma não modela (CHECKs) estão no SQL da migração `*_multitenant_auth_core_model`.
 
 ## Estrutura de pastas
 
