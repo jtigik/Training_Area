@@ -9,8 +9,8 @@ export function useSessionExpiredRedirect() {
   const router = useRouter();
   const pathname = usePathname();
   return useCallback(() => {
-    const voltar = encodeURIComponent(pathname || "/aluno");
-    router.replace(`/login?motivo=sessao-expirada&voltar=${voltar}`);
+    const callbackUrl = encodeURIComponent(pathname || "/aluno");
+    router.replace(`/login?motivo=sessao-expirada&callbackUrl=${callbackUrl}`);
   }, [router, pathname]);
 }
 
@@ -46,13 +46,18 @@ export function useApiResource<T>(key: string | null, load: () => Promise<T>) {
       (error: unknown) => {
         if (cancelled) return;
         if (isUnauthenticated(error)) onUnauthenticated();
-        setState({ key: fullKey, error });
+        // Keep the last data of the same resource (e.g. a failed background refresh).
+        setState((prev) => ({
+          key: fullKey,
+          error,
+          data: key !== null && prev.key?.startsWith(`${key}#`) ? prev.data : undefined,
+        }));
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [fullKey, onUnauthenticated]);
+  }, [fullKey, key, onUnauthenticated]);
 
   const current = state.key === fullKey;
   const sameResource = key !== null && state.key?.startsWith(`${key}#`);

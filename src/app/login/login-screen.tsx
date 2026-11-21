@@ -28,7 +28,11 @@ export function LoginScreen() {
         <p className="text-sm opacity-80">Plataforma de treinamento em Excel</p>
       </section>
       <main id="conteudo" className="flex items-center justify-center p-6">
-        <LoginPanel startLogin={api.startLogin} currentUser={api.me} />
+        <LoginPanel
+          startLogin={api.startLogin}
+          loginOptions={api.getLoginOptions}
+          currentUser={api.me}
+        />
       </main>
     </div>
   );

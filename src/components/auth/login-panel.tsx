@@ -5,7 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AUTH_PROVIDER_LABELS, type AuthProvider, type StudentApi } from "@/lib/api";
-import { postLoginPath } from "@/lib/auth/redirect";
+
+const DEFAULT_PROVIDERS = (Object.keys(AUTH_PROVIDER_LABELS) as AuthProvider[]).map((id) => ({
+  id,
+  label: AUTH_PROVIDER_LABELS[id],
+}));
+import { callbackTarget, postLoginPath } from "@/lib/auth/redirect";
 
 function GoogleIcon() {
   return (
@@ -45,19 +50,27 @@ const ICONS: Record<AuthProvider, () => React.ReactElement> = {
 
 /**
  * Login with Google or Microsoft only (no e-mail/password, no sign-up page).
- * Handles ?voltar= (safe redirect), ?motivo=sessao-expirada and ?erro= (OAuth callback error).
+ * Buttons come from GET /api/login-options (Backend 1); the dev/test e-mail+password
+ * option is never shown. Handles ?callbackUrl= (legacy ?voltar=) with a safe redirect,
+ * ?motivo=sessao-expirada and ?erro=/?error= (OAuth callback error).
  */
 export function LoginPanel({
   startLogin,
+  loginOptions,
   currentUser,
 }: {
   startLogin: StudentApi["startLogin"];
+  /** Enabled providers; when missing or failing, Google and Microsoft are offered. */
+  loginOptions?: StudentApi["getLoginOptions"];
   /** Optional: if a session already exists (e.g. back from the OAuth provider), forward the user. */
   currentUser?: StudentApi["me"];
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const voltar = params.get("voltar");
+  const voltar = callbackTarget(params);
+  const [providers, setProviders] = useState<{ id: AuthProvider; label: string }[] | null>(
+    loginOptions ? null : DEFAULT_PROVIDERS,
+  );
   const expired = params.get("motivo") === "sessao-expirada";
   const [pending, setPending] = useState<AuthProvider | null>(null);
   const [failed, setFailed] = useState(params.has("erro") || params.has("error"));
@@ -66,6 +79,24 @@ export function LoginPanel({
   useEffect(() => {
     if (failed) alertRef.current?.focus();
   }, [failed]);
+
+  useEffect(() => {
+    if (!loginOptions) return;
+    let cancelled = false;
+    loginOptions().then(
+      (opts) => {
+        if (cancelled) return;
+        const known = opts.providers.filter((p) => p.id in AUTH_PROVIDER_LABELS);
+        setProviders(known);
+      },
+      () => {
+        if (!cancelled) setProviders(DEFAULT_PROVIDERS);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [loginOptions]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -87,8 +118,8 @@ export function LoginPanel({
     setPending(provider);
     setFailed(false);
     try {
-      // Better Auth returns to callbackURL; /login then forwards to ?voltar= or the role's home.
-      const callbackURL = `/login${voltar ? `?voltar=${encodeURIComponent(voltar)}` : ""}`;
+      // Better Auth returns to callbackURL; /login then forwards to ?callbackUrl= or the role's home.
+      const callbackURL = `/login${voltar ? `?callbackUrl=${encodeURIComponent(voltar)}` : ""}`;
       const res = await startLogin(provider, callbackURL);
       if (res.kind === "redirect") {
         window.location.assign(res.url);
@@ -130,25 +161,36 @@ export function LoginPanel({
         </div>
       )}
 
-      <div className="space-y-3" aria-busy={pending !== null}>
-        {(Object.keys(AUTH_PROVIDER_LABELS) as AuthProvider[]).map((provider) => {
-          const Icon = ICONS[provider];
-          const busy = pending === provider;
-          return (
-            <Button
-              key={provider}
-              type="button"
-              variant="outline"
-              className="h-11 w-full justify-center gap-3 text-base"
-              disabled={pending !== null}
-              aria-busy={busy}
-              onClick={() => void login(provider)}
-            >
-              {busy ? <Loader2 aria-hidden="true" className="size-5 animate-spin" /> : <Icon />}
-              {busy ? "Entrando…" : `Entrar com ${AUTH_PROVIDER_LABELS[provider]}`}
-            </Button>
-          );
-        })}
+      <div className="space-y-3" aria-busy={pending !== null || providers === null}>
+        {providers === null ? (
+          <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Carregando opções de
+            acesso…
+          </p>
+        ) : providers.length === 0 ? (
+          <p role="alert" className="text-sm">
+            Nenhuma forma de acesso está habilitada. Fale com a sua instituição.
+          </p>
+        ) : (
+          providers.map(({ id: provider, label }) => {
+            const Icon = ICONS[provider];
+            const busy = pending === provider;
+            return (
+              <Button
+                key={provider}
+                type="button"
+                variant="outline"
+                className="h-11 w-full justify-center gap-3 text-base"
+                disabled={pending !== null}
+                aria-busy={busy}
+                onClick={() => void login(provider)}
+              >
+                {busy ? <Loader2 aria-hidden="true" className="size-5 animate-spin" /> : <Icon />}
+                {busy ? "Entrando…" : `Entrar com ${label}`}
+              </Button>
+            );
+          })
+        )}
       </div>
 
       <p className="text-xs text-muted-foreground">

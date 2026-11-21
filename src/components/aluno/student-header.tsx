@@ -35,6 +35,8 @@ export function StudentHeader({ user }: { user: SessionUser }) {
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
+  /** Institution name (multi-tenant); tenant is null only for SUPER_ADMIN. */
+  const institution = user.tenant?.name ?? null;
 
   async function logout() {
     setLeaving(true);
@@ -57,14 +59,16 @@ export function StudentHeader({ user }: { user: SessionUser }) {
           </span>
           Training Area
         </Link>
-        <p
-          className="flex items-center gap-1.5 text-sm text-muted-foreground"
-          data-testid="institution-name"
-        >
-          <Building2 aria-hidden="true" className="size-4" />
-          <span className="sr-only">Instituição: </span>
-          {user.institution.name}
-        </p>
+        {institution && (
+          <p
+            className="flex items-center gap-1.5 text-sm text-muted-foreground"
+            data-testid="institution-name"
+          >
+            <Building2 aria-hidden="true" className="size-4" />
+            <span className="sr-only">Instituição: </span>
+            {institution}
+          </p>
+        )}
         <nav aria-label="Principal" className="order-last w-full sm:order-none sm:w-auto">
           <ul className="flex gap-1">
             {NAV.map((item) => {
@@ -108,9 +112,11 @@ export function StudentHeader({ user }: { user: SessionUser }) {
                 <span className="block text-xs font-normal text-muted-foreground">
                   {user.email}
                 </span>
-                <span className="block text-xs font-normal text-muted-foreground">
-                  {user.institution.name}
-                </span>
+                {institution && (
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    {institution}
+                  </span>
+                )}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={leaving} onSelect={() => void logout()}>

@@ -68,7 +68,7 @@ export function StudentShell({ children }: { children: ReactNode }) {
       </>
     );
   }
-  if (me.data.role !== "STUDENT") {
+  if (me.data.role !== "ALUNO") {
     return <ForbiddenView home={ROLE_HOME[me.data.role]} />;
   }
   return (
