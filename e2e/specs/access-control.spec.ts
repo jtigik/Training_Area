@@ -5,7 +5,9 @@
  * Matriz (página → papéis com acesso):
  *   /aluno                 → aluno
  *   /professor/*           → professor (admin: a confirmar na matriz de permissões)
- *   /admin/*               → admin
+ *   /admin/*               → Admin da instituição (escopo do próprio tenant)
+ *   /superadmin/*          → Super Admin (global, tenantId nulo)
+ * Isolamento ENTRE instituições: specs/tenant-isolation.spec.ts.
  */
 import { asAnonymous, asRole, expect, test } from "../fixtures";
 import { API, PROTECTED_PAGES, ROUTES } from "../support/routes";
@@ -15,6 +17,7 @@ const ALL_PROTECTED = [
   ...PROTECTED_PAGES.aluno,
   ...PROTECTED_PAGES.professor,
   ...PROTECTED_PAGES.admin,
+  ...PROTECTED_PAGES.superadmin,
 ];
 
 const PROTECTED_APIS = [
@@ -23,6 +26,7 @@ const PROTECTED_APIS = [
   { method: "GET", url: API.teacher.sections },
   { method: "GET", url: API.teacher.sets },
   { method: "GET", url: API.teacher.results },
+  { method: "GET", url: API.superAdmin.institutions },
 ] as const;
 
 test.describe("Visitante anônimo [TA-003 AC3]", () => {
@@ -56,7 +60,11 @@ test.describe("Visitante anônimo [TA-003 AC3]", () => {
 test.describe("Aluno [TA-003 AC1]", () => {
   asRole("aluno");
 
-  for (const path of [...PROTECTED_PAGES.professor, ...PROTECTED_PAGES.admin]) {
+  for (const path of [
+    ...PROTECTED_PAGES.professor,
+    ...PROTECTED_PAGES.admin,
+    ...PROTECTED_PAGES.superadmin,
+  ]) {
     test.fixme(`[TA-003 AC1] aluno abrindo ${path} por URL recebe 403`, async ({ page }) => {
       const res = await page.goto(path);
       expect(res?.status()).toBe(403);
@@ -103,7 +111,7 @@ test.describe("Aluno [TA-003 AC1]", () => {
 test.describe("Professor [TA-003]", () => {
   asRole("professor");
 
-  for (const path of PROTECTED_PAGES.admin) {
+  for (const path of [...PROTECTED_PAGES.admin, ...PROTECTED_PAGES.superadmin]) {
     test.fixme(`[TA-003] professor abrindo ${path} por URL recebe 403`, async ({ page }) => {
       const res = await page.goto(path);
       expect(res?.status()).toBe(403);
@@ -135,11 +143,41 @@ test.describe("Professor [TA-003]", () => {
   });
 });
 
-test.describe("Administrador [TA-003]", () => {
+test.describe("Admin da instituição [TA-003]", () => {
   asRole("admin");
 
   for (const path of PROTECTED_PAGES.admin) {
-    test.fixme(`[TA-003] admin acessa ${path}`, async ({ page }) => {
+    test.fixme(`[TA-003] Admin da instituição acessa ${path}`, async ({ page }) => {
+      const res = await page.goto(path);
+      expect(res?.status()).toBe(200);
+    });
+  }
+
+  for (const path of PROTECTED_PAGES.superadmin) {
+    test.fixme(`[TA-003] Admin da instituição abrindo ${path} por URL recebe 403`, async ({
+      page,
+    }) => {
+      const res = await page.goto(path);
+      expect(res?.status()).toBe(403);
+    });
+  }
+
+  test.fixme("[TA-003] Admin da instituição: API do Super Admin → 403 e menu sem Instituições", async ({
+    page,
+    request,
+    shell,
+  }) => {
+    expect((await request.get(API.superAdmin.institutions)).status()).toBe(403);
+    await page.goto(ROUTES.admin.users);
+    await expect(shell.navLink(/Instituições/)).toHaveCount(0);
+  });
+});
+
+test.describe("Super Admin [TA-003]", () => {
+  asRole("superadmin");
+
+  for (const path of PROTECTED_PAGES.superadmin) {
+    test.fixme(`[TA-003] Super Admin acessa ${path}`, async ({ page }) => {
       const res = await page.goto(path);
       expect(res?.status()).toBe(200);
     });

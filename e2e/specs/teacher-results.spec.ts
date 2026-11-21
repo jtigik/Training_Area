@@ -3,6 +3,7 @@
  */
 import { EXERCISE } from "../data/formulas";
 import { asRole, expect, test } from "../fixtures";
+import { ROUTES } from "../support/routes";
 import { OTHER_STUDENT, USERS } from "../support/users";
 
 test.describe("Resultados da turma [TA-028, TA-029, TA-030]", () => {
@@ -66,7 +67,7 @@ test.describe("Faixas de feedback [TA-027]", () => {
   asRole("professor");
 
   test.fixme("[TA-027 AC1] cadastra faixas 0–50 / 51–80 / 81–100 com textos", async ({ page }) => {
-    await page.goto("/professor/feedback");
+    await page.goto(ROUTES.teacher.feedbackBands);
     const bands = [
       ["0", "50", "e2e revise os intervalos"],
       ["51", "80", "e2e bom progresso"],

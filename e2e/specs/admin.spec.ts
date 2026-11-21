@@ -1,11 +1,16 @@
 /**
- * E2 — Área administrativa: usuários, papéis e parâmetros.
+ * E2 — Área administrativa da INSTITUIÇÃO (Admin com tenant): usuários, papéis e parâmetros.
+ * "admin" = Admin da e2e-inst-a. Escopo entre instituições: specs/tenant-isolation.spec.ts.
  * Histórias: TA-002, TA-006, TA-007, TA-008.
  */
 import { asAnonymous, asRole, expect, test } from "../fixtures";
 import { LoginPage } from "../pages/login-page";
 import { API } from "../support/routes";
-import { E2E_PASSWORD, OTHER_STUDENT, USERS, uniqueEmail } from "../support/users";
+import { E2E_PASSWORD, OTHER_STUDENT, TENANT_USERS, USERS, uniqueEmail } from "../support/users";
+
+// Os testes deste arquivo alteram papéis/status de usuários semeados (último admin por
+// instituição): rodam em sequência num só worker para não colidirem entre si.
+test.describe.configure({ mode: "default" });
 
 test.describe("Gestão de usuários [TA-006, TA-007]", () => {
   asRole("admin");
@@ -35,13 +40,13 @@ test.describe("Gestão de usuários [TA-006, TA-007]", () => {
     const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     const login = new LoginPage(await ctx.newPage());
     await login.goto();
-    await login.login(OTHER_STUDENT.email, E2E_PASSWORD);
+    await login.loginWithPassword(OTHER_STUDENT.email, E2E_PASSWORD);
     await expect(login.errorAlert).toBeVisible();
 
     await adminUsers.toggleActive(OTHER_STUDENT.email).click(); // Reativar
     await expect(adminUsers.row(OTHER_STUDENT.email)).toContainText("Ativo");
     await login.goto();
-    await login.login(OTHER_STUDENT.email, E2E_PASSWORD);
+    await login.loginWithPassword(OTHER_STUDENT.email, E2E_PASSWORD);
     await expect(login.page).toHaveURL(/\/aluno$/);
     await ctx.close();
   });
@@ -79,20 +84,61 @@ test.describe("Papéis [TA-002]", () => {
     await adminUsers.roleSelect(OTHER_STUDENT.email).selectOption({ label: "Aluno" });
   });
 
-  test.fixme("[TA-002 AC3] rebaixar o último administrador é recusado", async ({ request }) => {
-    // Pré-condição: banco e2e com um único ADMIN ativo (seed do app + e2e.admin → ajustar).
-    const res = await request.patch(API.admin.user(USERS.admin.id), { data: { role: "TEACHER" } });
+  test.fixme("[TA-002 AC3] Admin A não pode rebaixar o único Admin da instituição A (ele mesmo)", async ({
+    request,
+  }) => {
+    const res = await request.patch(API.admin.user(TENANT_USERS.a.admin.id), {
+      data: { role: "TEACHER" },
+    });
     expect(res.status()).toBe(409);
     expect(await res.json()).toMatchObject({ code: "ultimo_admin" });
   });
+
+  test.fixme("[TA-002 AC3] Admin A não pode desativar o único Admin da instituição A", async ({
+    request,
+  }) => {
+    const res = await request.patch(API.admin.user(TENANT_USERS.a.admin.id), {
+      data: { active: false },
+    });
+    expect(res.status()).toBe(409);
+  });
+
+  test.fixme("[TA-002 AC3] com dois Admins na inst-a, rebaixar um deles é permitido", async ({
+    request,
+  }) => {
+    // A regra é "último admin DA INSTITUIÇÃO": com um segundo admin na inst-a, rebaixar passa.
+    const promote = await request.patch(API.admin.user(TENANT_USERS.a.professor.id), {
+      data: { role: "ADMIN" },
+    });
+    expect(promote.ok()).toBeTruthy();
+    const demote = await request.patch(API.admin.user(TENANT_USERS.a.professor.id), {
+      data: { role: "TEACHER" },
+    });
+    expect(demote.ok()).toBeTruthy();
+  });
+});
+
+test.describe("Último admin por instituição — Super Admin [TA-002 AC3]", () => {
+  asRole("superadmin");
+
+  for (const key of ["a", "b"] as const) {
+    test.fixme(`[TA-002 AC3] nem o Super Admin rebaixa o único Admin da inst-${key}`, async ({
+      request,
+    }) => {
+      const res = await request.patch(API.admin.user(TENANT_USERS[key].admin.id), {
+        data: { role: "TEACHER" },
+      });
+      expect(res.status()).toBe(409);
+      expect(await res.json()).toMatchObject({ code: "ultimo_admin" });
+    });
+  }
 });
 
 test.describe("Parâmetros da instância [TA-008]", () => {
   test.describe("como admin", () => {
     asRole("admin");
 
-    test.fixme("[TA-008 AC1] nome da instância aparece no cabeçalho e no login", async ({
-      browser,
+    test.fixme("[TA-008 AC1] nome da instituição aparece no cabeçalho", async ({
       page,
       adminSettings,
     }) => {
@@ -102,31 +148,11 @@ test.describe("Parâmetros da instância [TA-008]", () => {
       await adminSettings.instanceName.fill(name);
       await adminSettings.save.click();
       await expect(page.getByRole("banner")).toContainText(name);
-
-      const anon = await browser.newPage({ storageState: { cookies: [], origins: [] } });
-      await anon.goto("/login");
-      await expect(anon.getByRole("heading", { level: 1 })).toContainText(name);
-      await anon.close();
+      // Multi-tenant: a tela de login é comum a todas as instituições, então o nome da
+      // instituição no login fica a confirmar com o PO (não testado aqui).
 
       await adminSettings.instanceName.fill(original);
       await adminSettings.save.click();
-    });
-
-    test.fixme("[TA-008 AC2] política de cadastro controla o botão Criar conta no login", async ({
-      browser,
-      adminSettings,
-    }) => {
-      await adminSettings.goto();
-      await adminSettings.openSignup.check();
-      await adminSettings.save.click();
-      const anon = await browser.newPage({ storageState: { cookies: [], origins: [] } });
-      await anon.goto("/login");
-      await expect(anon.getByRole("link", { name: "Criar conta" })).toBeVisible();
-      await adminSettings.openSignup.uncheck();
-      await adminSettings.save.click();
-      await anon.reload();
-      await expect(anon.getByRole("link", { name: "Criar conta" })).toHaveCount(0);
-      await anon.close();
     });
   });
 

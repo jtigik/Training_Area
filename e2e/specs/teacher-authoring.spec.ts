@@ -5,6 +5,7 @@
  */
 import { EXERCISE } from "../data/formulas";
 import { asRole, expect, test } from "../fixtures";
+import { MVP_LEVELS } from "../support/levels";
 import { ROUTES } from "../support/routes";
 
 /** Conjunto semeado no banco e2e (só nível Fundamental) usado pelos testes de exercício. */
@@ -78,7 +79,7 @@ test.describe("Conjunto de exercícios [TA-014, TA-015, TA-019]", () => {
   test.fixme("[TA-014 AC3] sem nível selecionado não salva", async ({ teacherSet }) => {
     await teacherSet.gotoNew();
     await teacherSet.name.fill(`${stamp()} sem nível`);
-    for (const level of ["Fundamental", "Profissional", "Avançado", "Dashboard"]) {
+    for (const level of MVP_LEVELS) {
       await teacherSet.levelCheckbox(level).uncheck();
     }
     await teacherSet.save.click();
@@ -156,7 +157,7 @@ test.describe("Exercício [TA-016, TA-017, TA-018]", () => {
 
   test.fixme("[TA-017 AC2] nível fora do conjunto é recusado", async ({ page, exerciseEditor }) => {
     await exerciseEditor.title.fill(`${stamp()} nível errado`);
-    await exerciseEditor.level.selectOption("Dashboard"); // conjunto só com Fundamental
+    await exerciseEditor.level.selectOption("Avançado"); // conjunto só com Fundamental
     await exerciseEditor.saveDraft.click();
     await expect(page.getByRole("alert")).toContainText(/nível/i);
   });

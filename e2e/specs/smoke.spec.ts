@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { MVP_LEVELS } from "../support/levels";
 import { API } from "../support/routes";
 
 // TA-032 — Fundação: o app sobe e o health check responde.
@@ -10,11 +11,13 @@ test.describe("Smoke [TA-032]", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Training Area" })).toBeVisible();
   });
 
-  test("home lista os quatro níveis de conhecimento", async ({ page }) => {
+  test("home lista os níveis de conhecimento do MVP", async ({ page }) => {
+    // Dashboard foi para a v1.1: o MVP só verifica Fundamental, Profissional e Avançado.
     await page.goto("/");
-    await expect(
-      page.getByRole("list", { name: "Níveis de conhecimento" }).getByRole("listitem"),
-    ).toHaveText(["Fundamental", "Profissional", "Avançado", "Dashboard"]);
+    const levels = page.getByRole("list", { name: "Níveis de conhecimento" });
+    for (const level of MVP_LEVELS) {
+      await expect(levels.getByRole("listitem").filter({ hasText: level })).toHaveCount(1);
+    }
   });
 
   test("health check responde ok", async ({ request }) => {

@@ -7,7 +7,7 @@
  * a ser semeado no banco isolado pelo global-setup quando os modelos de conjunto/exercício
  * existirem (rota esperada: /aluno/exercicios/<slug>).
  */
-import { EXERCISE, casesBy } from "../data/formulas";
+import { EXERCISE, FIXED_VALUE_FEEDBACK, casesBy } from "../data/formulas";
 import { asRole, expect, test } from "../fixtures";
 import { ROUTES } from "../support/routes";
 
@@ -133,6 +133,21 @@ test.describe("Envio e correção [TA-022]", () => {
     });
   }
 
+  for (const c of casesBy("fixed_value")) {
+    test.fixme(`[TA-022 AC2] ${c.id} valor fixo ${c.input} → Incorreto + "${FIXED_VALUE_FEEDBACK}"`, async ({
+      page,
+      exercise,
+    }) => {
+      // Decisão do PO (21/11): digitar o resultado (ex.: 60) sem fórmula é incorreto,
+      // mesmo com o valor certo. O corretor do Backend 2 já bloqueia isso.
+      await page.goto(EXERCISE_URL);
+      await exercise.enter(EXERCISE.answerCell, c.input);
+      await exercise.submit.click();
+      await exercise.expectIncorrect();
+      await expect(exercise.feedback).toContainText(new RegExp(FIXED_VALUE_FEEDBACK, "i"));
+    });
+  }
+
   test.fixme("[TA-022 AC3] servidor é a fonte da verdade quando diverge do cliente", async ({
     page,
     exercise,
@@ -168,7 +183,7 @@ test.describe("Conclusão do nível e feedback [TA-025, TA-026]", () => {
   asRole("aluno");
   test.describe.configure({ mode: "serial" });
 
-  test.fixme("[TA-025 AC1 + TA-026 AC1] concluir a quantidade marca o nível e mostra feedback", async ({
+  test.fixme("[TA-025 AC1] concluir a quantidade marca o nível; feedback aguarda o professor", async ({
     page,
     exercise,
     levelFeedback,
@@ -179,8 +194,10 @@ test.describe("Conclusão do nível e feedback [TA-025, TA-026]", () => {
     await exercise.expectCorrect();
     await page.getByRole("link", { name: /Ver feedback|Concluir nível/ }).click();
     await expect(levelFeedback.title).toContainText(EXERCISE.level);
-    await expect(levelFeedback.message).toContainText(/%/); // considera taxa de acerto
     await expect(levelFeedback.summary).toBeVisible();
+    // Feedback de IA só aparece após aprovação do professor (specs/ai-feedback-review.spec.ts).
+    await expect(levelFeedback.message).toHaveCount(0);
+    await expect(page.getByText(/em revisão|aguardando o professor/i)).toBeVisible();
   });
 
   test.fixme("[TA-025 AC2 / TA-020 AC3] nível concluído permanece concluído após nova tentativa", async ({

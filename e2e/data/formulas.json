@@ -1,11 +1,15 @@
 {
-  "$comment": "Dataset e2e do motor de correção (TA-021/TA-022/TA-034). Subconjunto mínimo para fluxos de UI; a suíte de paridade completa vive em qa/excel_formulas/formulas.json (plano de testes) e deve ser sincronizada aqui quando publicada. expected: correct | incorrect | invalid | unsupported | ambiguous (decisão de produto pendente: pergunta em aberto 5).",
+  "$comment": "Dataset e2e do motor de correção (TA-021/TA-022/TA-034). Subconjunto mínimo para fluxos de UI; a suíte de paridade completa vive em qa/excel_formulas/formulas.json (plano de testes) e deve ser sincronizada aqui quando publicada. expected: correct | incorrect | invalid | unsupported | fixed_value (valor fixo digitado sem fórmula: INCORRETO com feedback \"use uma fórmula\" — decisão do PO de 21/11/2026).",
   "exercise": {
     "slug": "e2e-soma-basica",
     "title": "e2e — Soma básica",
     "level": "Fundamental",
     "difficulty": "Muito fácil",
-    "grid": { "A1": 10, "A2": 20, "A3": 30 },
+    "grid": {
+      "A1": 10,
+      "A2": 20,
+      "A3": 30
+    },
     "answerCell": "A4",
     "answerFormula": "=SOMA(A1:A3)",
     "answerValue": 60,
@@ -93,8 +97,16 @@
       "id": "F-EDGE-02",
       "input": "60",
       "value": 60,
-      "expected": "ambiguous",
-      "note": "valor digitado sem fórmula — pergunta em aberto 5"
+      "expected": "fixed_value",
+      "note": "valor fixo sem fórmula → incorreto + \"use uma fórmula\" (PO, 21/11)"
+    },
+    {
+      "id": "F-EDGE-03",
+      "input": "60,0",
+      "value": 60,
+      "expected": "fixed_value",
+      "note": "valor fixo com decimal pt-BR também é recusado"
     }
-  ]
+  ],
+  "fixedValueFeedback": "use uma fórmula"
 }

@@ -1,113 +1,172 @@
 /**
  * E1 — Autenticação (TA-001, TA-005) e cookies de sessão (TA-033).
- * Status: fixme até TA-001/TA-005 entrarem (o scaffold não tem /login nem sessão).
+ *
+ * Escopo do PO (21/11/2026): NÃO há auto-cadastro. Login de produção só com Google ou
+ * Microsoft (OAuth). E-mail+senha existe só como opção de dev/teste, desligada por padrão.
+ * O OAuth é testado contra o provedor falso de support/mock-oauth.ts (iniciado no
+ * global-setup); o app precisa aceitar issuer configurável (ver e2e/README.md).
+ * Status: fixme até o login (Backend 1) existir.
  */
 import { asAnonymous, asRole, expect, test } from "../fixtures";
+import type { OAuthProvider } from "../pages/login-page";
+import { PASSWORD_LOGIN_ENABLED } from "../support/env";
 import { ROUTES } from "../support/routes";
-import { E2E_PASSWORD, USERS, uniqueEmail } from "../support/users";
+import {
+  E2E_PASSWORD,
+  SESSION_USERS,
+  UNPROVISIONED_EMAIL,
+  USERS,
+  uniqueEmail,
+} from "../support/users";
 
-test.describe("Login por papel [TA-001]", () => {
+const PROVIDERS: { id: OAuthProvider; label: string }[] = [
+  { id: "google", label: "Google" },
+  { id: "microsoft", label: "Microsoft" },
+];
+
+test.describe("Login com Google/Microsoft (OAuth mockado) [TA-001]", () => {
   asAnonymous();
 
-  for (const user of Object.values(USERS)) {
-    test.fixme(`[TA-001 AC2] ${user.key} entra e vai para ${user.home}`, async ({
+  for (const provider of PROVIDERS) {
+    test.fixme(`[TA-001 AC2] ${provider.label}: aluno provisionado entra e vai para /aluno`, async ({
       page,
       loginPage,
     }) => {
       await loginPage.goto();
-      await expect(loginPage.email).toBeFocused();
-      await loginPage.login(user.email, E2E_PASSWORD);
-      await expect(page).toHaveURL(new RegExp(`${user.home}$`));
+      await loginPage.loginWithOAuth(provider.id, USERS.aluno.email);
+      await expect(page).toHaveURL(new RegExp(`${USERS.aluno.home}$`));
+    });
+
+    test.fixme(`[TA-001] ${provider.label}: consentimento negado volta ao login com aviso, sem sessão`, async ({
+      page,
+      context,
+      loginPage,
+    }) => {
+      await loginPage.goto();
+      await loginPage.loginWithOAuth(provider.id, USERS.aluno.email, { deny: true });
+      await expect(page).toHaveURL((url) => url.pathname === ROUTES.login);
+      await expect(loginPage.errorAlert).toContainText(/cancelad|negad|não autoriz/i);
+      const session = (await context.cookies()).filter(
+        (c) => /session|auth/i.test(c.name) && c.value,
+      );
+      expect(session.filter((c) => !/csrf|state|callback|pkce|nonce/i.test(c.name))).toEqual([]);
+    });
+
+    test.fixme(`[TA-001 AC3] ${provider.label}: conta não provisionada é recusada e nada é criado`, async ({
+      page,
+      loginPage,
+    }) => {
+      // Sem auto-cadastro: e-mail válido no provedor, mas sem usuário na instituição.
+      await loginPage.goto();
+      await loginPage.loginWithOAuth(provider.id, UNPROVISIONED_EMAIL);
+      await expect(page).toHaveURL((url) => url.pathname === ROUTES.login);
+      await expect(loginPage.errorAlert).toContainText(
+        /não (está )?(cadastrad|provisionad|liberad)|administrador/i,
+      );
+      // Tentar de novo dá o mesmo resultado (a 1ª tentativa não criou conta).
+      await loginPage.loginWithOAuth(provider.id, UNPROVISIONED_EMAIL);
+      await expect(page).toHaveURL((url) => url.pathname === ROUTES.login);
     });
   }
 
-  test.fixme("[TA-001 AC3] senha errada mostra erro genérico", async ({ page, loginPage }) => {
-    await loginPage.goto();
-    await loginPage.login(USERS.aluno.email, "senha-errada-123");
-    await expect(loginPage.errorAlert).toContainText("E-mail ou senha incorretos");
-    await expect(page).toHaveURL(new RegExp(`${ROUTES.login}`));
-  });
-
-  test.fixme("[TA-001 AC3] e-mail inexistente mostra exatamente o mesmo erro (sem enumeração)", async ({
-    loginPage,
-  }) => {
-    await loginPage.goto();
-    await loginPage.login(USERS.aluno.email, "senha-errada-123");
-    const knownEmailMsg = await loginPage.errorAlert.innerText();
-
-    await loginPage.goto();
-    await loginPage.login(uniqueEmail("inexistente"), "senha-errada-123");
-    await expect(loginPage.errorAlert).toHaveText(knownEmailMsg);
-  });
-
-  test.fixme("[TA-001] campos obrigatórios vazios não enviam e mostram validação", async ({
+  test.fixme("[TA-001] não existe auto-cadastro: sem link 'Criar conta' e /cadastro → 404", async ({
     page,
     loginPage,
   }) => {
     await loginPage.goto();
-    await loginPage.submit.click();
-    await expect(page).toHaveURL(new RegExp(ROUTES.login));
-    await expect(page.getByText("Informe sua senha.")).toBeVisible();
-  });
-
-  test.fixme("[TA-001] respeita ?voltar= quando o papel tem acesso ao destino", async ({
-    page,
-    loginPage,
-  }) => {
-    await loginPage.goto(`?voltar=${encodeURIComponent(ROUTES.admin.settings)}`);
-    await loginPage.login(USERS.admin.email, E2E_PASSWORD);
-    await expect(page).toHaveURL(new RegExp(`${ROUTES.admin.settings}$`));
-  });
-
-  test.fixme("[TA-001] ?voltar= para rota de outro papel cai no painel do próprio papel", async ({
-    page,
-    loginPage,
-  }) => {
-    await loginPage.goto(`?voltar=${encodeURIComponent(ROUTES.admin.users)}`);
-    await loginPage.login(USERS.aluno.email, E2E_PASSWORD);
-    await expect(page).toHaveURL(new RegExp(`${ROUTES.student.trail}$`));
-  });
-
-  test.fixme("[TA-001 AC4] sessão expirada volta ao login com aviso", async ({
-    page,
-    context,
-    loginPage,
-  }) => {
-    // Simula expiração apagando os cookies de uma sessão válida.
-    await loginPage.goto();
-    await loginPage.login(USERS.aluno.email, E2E_PASSWORD);
-    await expect(page).toHaveURL(/\/aluno$/);
-    await context.clearCookies();
-    await page.goto(ROUTES.student.trail);
-    await expect(page).toHaveURL(new RegExp(ROUTES.login));
-    // Aviso de sessão expirada (?motivo=sessao-expirada) quando o servidor detectar o token vencido.
+    await expect(page.getByRole("link", { name: /Criar conta|Cadastr/ })).toHaveCount(0);
+    const res = await page.goto("/cadastro");
+    expect(res?.status()).toBe(404);
   });
 });
 
-test.describe("Cadastro [TA-001 AC1, TA-007 AC3, TA-008 AC2]", () => {
+test.describe("Login por e-mail e senha (somente dev/teste) [TA-001]", () => {
   asAnonymous();
 
-  test.fixme("[TA-001 AC1] com cadastro aberto, visitante cria conta e já entra autenticado", async ({
-    page,
-  }) => {
-    await page.goto(ROUTES.signup);
-    await page.getByLabel("Nome").fill("e2e Visitante");
-    await page.getByLabel("E-mail").fill(uniqueEmail("cadastro"));
-    await page.getByLabel("Senha", { exact: true }).fill(E2E_PASSWORD);
-    await page.getByLabel("Confirmar senha").fill(E2E_PASSWORD);
-    await page.getByRole("button", { name: /Criar conta/ }).click();
-    await expect(page).toHaveURL(new RegExp(`${ROUTES.student.trail}$`));
+  test.describe("flag ligada (padrão da suíte)", () => {
+    test.skip(!PASSWORD_LOGIN_ENABLED, "rodando com E2E_PASSWORD_LOGIN=0");
+
+    for (const [key, user] of Object.entries(SESSION_USERS)) {
+      test.fixme(`[TA-001 AC2] ${key} entra e vai para ${user.home}`, async ({
+        page,
+        loginPage,
+      }) => {
+        await loginPage.goto();
+        await loginPage.loginWithPassword(user.email, E2E_PASSWORD);
+        await expect(page).toHaveURL(new RegExp(`${user.home}$`));
+      });
+    }
+
+    test.fixme("[TA-001 AC3] senha errada mostra erro genérico", async ({ page, loginPage }) => {
+      await loginPage.goto();
+      await loginPage.loginWithPassword(USERS.aluno.email, "senha-errada-123");
+      await expect(loginPage.errorAlert).toContainText("E-mail ou senha incorretos");
+      await expect(page).toHaveURL(new RegExp(`${ROUTES.login}`));
+    });
+
+    test.fixme("[TA-001 AC3] e-mail inexistente mostra exatamente o mesmo erro (sem enumeração)", async ({
+      loginPage,
+    }) => {
+      await loginPage.goto();
+      await loginPage.loginWithPassword(USERS.aluno.email, "senha-errada-123");
+      const knownEmailMsg = await loginPage.errorAlert.innerText();
+
+      await loginPage.goto();
+      await loginPage.loginWithPassword(uniqueEmail("inexistente"), "senha-errada-123");
+      await expect(loginPage.errorAlert).toHaveText(knownEmailMsg);
+    });
+
+    test.fixme("[TA-001] respeita ?voltar= quando o papel tem acesso ao destino", async ({
+      page,
+      loginPage,
+    }) => {
+      await loginPage.goto(`?voltar=${encodeURIComponent(ROUTES.admin.settings)}`);
+      await loginPage.loginWithPassword(USERS.admin.email, E2E_PASSWORD);
+      await expect(page).toHaveURL(new RegExp(`${ROUTES.admin.settings}$`));
+    });
+
+    test.fixme("[TA-001] ?voltar= para rota de outro papel cai no painel do próprio papel", async ({
+      page,
+      loginPage,
+    }) => {
+      await loginPage.goto(`?voltar=${encodeURIComponent(ROUTES.admin.users)}`);
+      await loginPage.loginWithPassword(USERS.aluno.email, E2E_PASSWORD);
+      await expect(page).toHaveURL(new RegExp(`${ROUTES.student.trail}$`));
+    });
+
+    test.fixme("[TA-001 AC4] sessão expirada volta ao login", async ({
+      page,
+      context,
+      loginPage,
+    }) => {
+      await loginPage.goto();
+      await loginPage.loginWithPassword(USERS.aluno.email, E2E_PASSWORD);
+      await expect(page).toHaveURL(/\/aluno$/);
+      await context.clearCookies();
+      await page.goto(ROUTES.student.trail);
+      await expect(page).toHaveURL(new RegExp(ROUTES.login));
+    });
   });
 
-  test.fixme("[TA-007 AC3] com cadastro fechado, o link some e a rota é bloqueada", async ({
-    page,
-    loginPage,
-  }) => {
-    // Pré-condição: parâmetro "cadastro aberto" desligado (padrão esperado da instância).
-    await loginPage.goto();
-    await expect(loginPage.signupLink).toHaveCount(0);
-    const response = await page.goto(ROUTES.signup);
-    expect([403, 404]).toContain(response?.status());
+  test.describe("flag desligada (padrão de produção)", () => {
+    // Rodar com: E2E_PASSWORD_LOGIN=0 E2E_PORT=3101 npx playwright test -g "flag desligada"
+    test.skip(PASSWORD_LOGIN_ENABLED, "só roda com E2E_PASSWORD_LOGIN=0 (app sem a flag de teste)");
+
+    test.fixme("[TA-001] sem a flag, a tela não oferece senha e o endpoint de senha recusa", async ({
+      page,
+      loginPage,
+    }) => {
+      await loginPage.goto();
+      await expect(loginPage.google).toBeVisible();
+      await expect(loginPage.microsoft).toBeVisible();
+      await expect(loginPage.password).toHaveCount(0);
+      // Contrato a confirmar com o Backend 1 (ex.: Auth.js credentials callback).
+      const res = await page.request.post("/api/auth/callback/credentials", {
+        form: { email: USERS.aluno.email, password: E2E_PASSWORD },
+        maxRedirects: 0,
+      });
+      expect([400, 401, 403, 404]).toContain(res.status());
+    });
   });
 });
 
