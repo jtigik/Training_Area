@@ -11,6 +11,7 @@ export type AuditAction =
   | "feedback.edited"
   | "feedback.approved"
   | "feedback.rejected"
+  | "feedback.generated"
   | "grading_defaults.updated";
 
 export interface AuditEntry {

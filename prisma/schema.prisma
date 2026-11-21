@@ -136,6 +136,9 @@ model Tenant {
   setExercises          SetExercise[]
   levelAttemptExercises LevelAttemptExercise[]
   exerciseImports       ExerciseImport[]
+  setPoolExercises      SetPoolExercise[]
+  feedbackTemplates     FeedbackTemplate[]
+  feedbackGenerations   FeedbackGeneration[]
   auditLogs             AuditLog[]
 
   @@map("tenants")
@@ -160,25 +163,26 @@ model User {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  tenant                  Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant                  Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   sessions                Session[]
   accounts                Account[]
-  invitationsSent         Invitation[]      @relation("InvitationInviter")
+  invitationsSent         Invitation[]       @relation("InvitationInviter")
   classroomMemberships    ClassroomMember[]
-  classroomsTaught        Classroom[]       @relation("ClassroomTeacher")
-  authoredSections        ContentSection[]  @relation("SectionAuthor")
-  authoredSets            ExerciseSet[]     @relation("ExerciseSetAuthor")
-  authoredExercises       Exercise[]        @relation("ExerciseAuthor")
-  quotas                  ExerciseQuota[]   @relation("QuotaStudent")
-  levelAttempts           LevelAttempt[]    @relation("LevelAttemptStudent")
-  overriddenLevelAttempts LevelAttempt[]    @relation("LevelAttemptOverrider")
+  classroomsTaught        Classroom[]        @relation("ClassroomTeacher")
+  authoredSections        ContentSection[]   @relation("SectionAuthor")
+  authoredSets            ExerciseSet[]      @relation("ExerciseSetAuthor")
+  authoredExercises       Exercise[]         @relation("ExerciseAuthor")
+  quotas                  ExerciseQuota[]    @relation("QuotaStudent")
+  levelAttempts           LevelAttempt[]     @relation("LevelAttemptStudent")
+  overriddenLevelAttempts LevelAttempt[]     @relation("LevelAttemptOverrider")
   conceptOverrides        ConceptOverride[]
-  exerciseImports         ExerciseImport[]  @relation("ExerciseImportCreator")
+  exerciseImports         ExerciseImport[]   @relation("ExerciseImportCreator")
   exerciseAttempts        ExerciseAttempt[]
-  feedbacks               Feedback[]        @relation("FeedbackStudent")
-  reviewedFeedbacks       Feedback[]        @relation("FeedbackReviewer")
-  editedFeedbacks         Feedback[]        @relation("FeedbackEditor")
-  auditLogs               AuditLog[]        @relation("AuditActor")
+  feedbacks               Feedback[]         @relation("FeedbackStudent")
+  reviewedFeedbacks       Feedback[]         @relation("FeedbackReviewer")
+  editedFeedbacks         Feedback[]         @relation("FeedbackEditor")
+  feedbackTemplates       FeedbackTemplate[] @relation("FeedbackTemplateAuthor")
+  auditLogs               AuditLog[]         @relation("AuditActor")
 
   @@index([tenantId, role])
   @@map("users")
@@ -343,14 +347,13 @@ model Exercise {
   title          String
   /// Enunciado em Markdown.
   statement      String
-  /// Grade inicial: { cells: { "A1": { value?: string|number|boolean, formula?: string, locked?: boolean } } }.
+  /// Grade inicial: { cells: { "A1": number|string|boolean|null|{ f: "=...", v? } } } (src/lib/validation/exercise-content.ts).
   initialSheet   Json              @map("initial_sheet")
-  /// Gabarito: [{ cell: "B4", value?: ..., formula?: "=SOMA(B1:B3)", tolerance?: number }].
+  /// Gabarito: [{ cell: "B4", value | formula: "=SOMA(B1:B3)" (um dos dois), tolerance?: number }].
   /// Pelo menos uma célula (TA-016). Nunca enviado ao aluno.
   expectedResult Json              @map("expected_result")
   hint           String?
-  /// Regras extras de correção (src/lib/validation/grading-rules.ts): funções
-  /// exigidas/proibidas, tolerância, sensibilidade a maiúsculas, voláteis...
+  /// Regras de correção { rules?, targets?: { A1: opções } } (src/lib/validation/exercise-content.ts).
   gradingRules   Json?             @map("grading_rules")
   level          KnowledgeLevel
   difficulty     Difficulty
@@ -365,6 +368,8 @@ model Exercise {
   /// Cópias congeladas em conjuntos publicados (origem).
   setCopies         SetExercise[]
   levelAttemptDraws LevelAttemptExercise[]
+  /// Conjuntos cujo pool inclui este exercício (SetPoolExercise).
+  setLinks          SetPoolExercise[]
 
   @@index([tenantId, status, level, difficulty])
   @@index([level, difficulty], map: "exercises_global_pool_idx", where: { tenantId: null })
@@ -373,23 +378,28 @@ model Exercise {
 
 /// Conjunto/trilha de uma instituição.
 model ExerciseSet {
-  id           String            @id @default(cuid())
-  tenantId     String            @map("tenant_id")
-  name         String
-  description  String?
+  id               String            @id @default(cuid())
+  tenantId         String            @map("tenant_id")
+  name             String
+  description      String?
   /// Dificuldades participantes (TA-015).
-  difficulties Difficulty[]
-  status       PublicationStatus @default(DRAFT)
-  publishedAt  DateTime?         @map("published_at")
-  authorId     String?           @map("author_id")
-  createdAt    DateTime          @default(now()) @map("created_at")
-  updatedAt    DateTime          @updatedAt @map("updated_at")
+  difficulties     Difficulty[]
+  status           PublicationStatus @default(DRAFT)
+  publishedAt      DateTime?         @map("published_at")
+  /// Versão do snapshot atual (0 = nunca publicado). Cada publishSet cria uma nova
+  /// versão de SetExercise; novos sorteios usam esta, rodadas em curso mantêm a sua.
+  publishedVersion Int               @default(0) @map("published_version")
+  authorId         String?           @map("author_id")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  author       User?         @relation("ExerciseSetAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  author       User?             @relation("ExerciseSetAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   levels       Level[]
-  /// Cópias congeladas ao publicar (vazio em rascunho).
+  /// Cópias congeladas ao publicar, por versão (nunca apagadas).
   setExercises SetExercise[]
+  /// Pool do conjunto: exercícios vinculados (filtrados por nível e dificuldade).
+  poolLinks    SetPoolExercise[]
 
   @@index([tenantId, status])
   @@map("exercise_sets")
@@ -611,6 +621,9 @@ model Feedback {
   /// Última edição do professor (cada edição também vai para AuditLog).
   editedById       String?                  @map("edited_by_id")
   editedAt         DateTime?                @map("edited_at")
+  /// Nº de gerações registradas (FeedbackGeneration.sequence da última). Os campos ai*
+  /// espelham a última geração e só mudam junto com este contador (trigger), em DRAFT.
+  generationCount  Int                      @default(0) @map("generation_count")
   /// Modelo/versão do prompt usados na geração (auditoria).
   aiModel          String?                  @map("ai_model")
   promptVersion    String?                  @map("prompt_version")
@@ -622,11 +635,12 @@ model Feedback {
   createdAt        DateTime                 @default(now()) @map("created_at")
   updatedAt        DateTime                 @updatedAt @map("updated_at")
 
-  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  student      User         @relation("FeedbackStudent", fields: [studentId], references: [id], onDelete: Cascade)
-  levelAttempt LevelAttempt @relation(fields: [levelAttemptId], references: [id], onDelete: Cascade)
-  reviewedBy   User?        @relation("FeedbackReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
-  editedBy     User?        @relation("FeedbackEditor", fields: [editedById], references: [id], onDelete: SetNull)
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  student      User                 @relation("FeedbackStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  levelAttempt LevelAttempt         @relation(fields: [levelAttemptId], references: [id], onDelete: Cascade)
+  reviewedBy   User?                @relation("FeedbackReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  editedBy     User?                @relation("FeedbackEditor", fields: [editedById], references: [id], onDelete: SetNull)
+  generations  FeedbackGeneration[]
 
   @@index([tenantId, status])
   @@index([studentId, status])
@@ -642,7 +656,9 @@ model SetExercise {
   levelId          String         @map("level_id")
   /// Exercício de origem (tenant ou global); nulo se ele for removido depois.
   sourceExerciseId String?        @map("source_exercise_id")
-  /// Ordem dentro do nível (0, 1, 2...).
+  /// Versão da publicação (ExerciseSet.publishedVersion no momento do publishSet).
+  version          Int
+  /// Ordem dentro do nível (0, 1, 2...), por versão.
   position         Int
   /// Denormalizados do snapshot para filtrar o sorteio.
   level            KnowledgeLevel
@@ -658,10 +674,9 @@ model SetExercise {
   exerciseAttempts ExerciseAttempt[]
   draws            LevelAttemptExercise[]
 
-  @@unique([levelId, position])
+  @@unique([setId, version, levelId, position])
   @@index([tenantId])
-  @@index([setId])
-  @@index([levelId, difficulty])
+  @@index([levelId, version, difficulty])
   @@map("set_exercises")
 }
 
@@ -751,4 +766,73 @@ model PlatformGradingDefaults {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("platform_grading_defaults")
+}
+
+/// Vínculo conjunto ↔ exercício (pool do conjunto). Rascunho sorteia/lista só os
+/// vinculados (filtrados por nível e dificuldade); publishSet congela só esses.
+/// O exercício pode ser da instituição ou global.
+model SetPoolExercise {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  setId      String   @map("set_id")
+  exerciseId String   @map("exercise_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  set      ExerciseSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+  exercise Exercise    @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@unique([setId, exerciseId])
+  @@index([tenantId])
+  @@index([exerciseId])
+  @@map("set_pool_exercises")
+}
+
+/// Modelo de feedback (BE2 cuida das rotas). tenantId nulo = global (todas as
+/// instituições leem; só a plataforma escreve). Nome único por instituição
+/// (e entre os globais, índice parcial na migração).
+model FeedbackTemplate {
+  id             String          @id @default(cuid())
+  tenantId       String?         @map("tenant_id")
+  name           String
+  knowledgeLevel KnowledgeLevel? @map("knowledge_level")
+  concept        GradeConcept?
+  body           String
+  active         Boolean         @default(true)
+  createdById    String?         @map("created_by_id")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("FeedbackTemplateAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, name])
+  @@unique([name], map: "feedback_templates_global_name_key", where: { tenantId: null })
+  @@index([tenantId, active])
+  @@map("feedback_templates")
+}
+
+/// Histórico append-only das gerações de IA de um Feedback (cada geração ou
+/// regeneração, sucesso ou falha). Feedback.ai* espelha a última GENERATED.
+model FeedbackGeneration {
+  id            String                   @id @default(cuid())
+  tenantId      String                   @map("tenant_id")
+  feedbackId    String                   @map("feedback_id")
+  /// 1, 2, 3... (= Feedback.generationCount após registrar).
+  sequence      Int
+  status        FeedbackGenerationStatus
+  aiText        String?                  @map("ai_text")
+  strengths     String[]                 @default([])
+  toReview      String[]                 @default([]) @map("to_review")
+  error         String?
+  aiModel       String?                  @map("ai_model")
+  promptVersion String?                  @map("prompt_version")
+  createdAt     DateTime                 @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@unique([feedbackId, sequence])
+  @@index([tenantId])
+  @@map("feedback_generations")
 }

@@ -44,6 +44,14 @@ describe.skipIf(!enabled)("startLevelAttempt / getSetProgress", () => {
     profId = (
       await prisma.level.create({ data: { tenantId: T, setId, knowledgeLevel: "PROFESSIONAL" } })
     ).id;
+    // Pool do conjunto = vinculados: liga todo o banco global.
+    const globals = await prisma.exercise.findMany({
+      where: { tenantId: null },
+      select: { id: true },
+    });
+    await prisma.setPoolExercise.createMany({
+      data: globals.map((e) => ({ tenantId: T, setId, exerciseId: e.id })),
+    });
     await prisma.exerciseQuota.createMany({
       data: [
         {

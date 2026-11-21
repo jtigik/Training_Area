@@ -78,7 +78,7 @@ export async function startLevelAttempt(
           id: true,
           setId: true,
           knowledgeLevel: true,
-          set: { select: { status: true, difficulties: true } },
+          set: { select: { status: true, difficulties: true, publishedVersion: true } },
         },
       });
       if (!level) throw new ApiError(404, "NOT_FOUND", "Nível não encontrado");
@@ -130,7 +130,9 @@ export async function startLevelAttempt(
         levelAttemptId: attempt.id,
         levelId: level.id,
         knowledgeLevel: level.knowledgeLevel,
+        setId: level.setId,
         setStatus: level.set.status,
+        setVersion: level.set.publishedVersion,
         quotas: quota.perDifficulty,
       });
       const levelAttempt = await tx.levelAttempt.update({

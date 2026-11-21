@@ -42,9 +42,16 @@ export const MODEL_SCOPES = {
   ExerciseImport: "tenant",
   AuditLog: "tenant",
   PlatformGradingDefaults: "blocked",
+  SetPoolExercise: "tenant",
+  /** tenantId nulo = modelo global (leitura para todos; escrita só pelo cliente base). */
+  FeedbackTemplate: "tenant-or-global",
+  FeedbackGeneration: "tenant",
 } as const satisfies Record<string, ScopeKind>;
 
 export type ScopedModel = keyof typeof MODEL_SCOPES;
+
+/** Modelos "tenant-or-global" que têm a coluna isGlobal (FeedbackTemplate usa só tenantId nulo). */
+const GLOBAL_FLAG_MODELS: ReadonlySet<ScopedModel> = new Set(["ContentSection", "Exercise"]);
 
 export class TenantScopeError extends Error {
   constructor(message: string) {
@@ -104,6 +111,9 @@ function stampData(model: ScopedModel, data: unknown, tenantId: string): Record<
   }
   const stamped: Record<string, unknown> = { ...record, tenantId };
   if (MODEL_SCOPES[model] === "tenant-or-global") {
+    if (record.isGlobal === true || ("tenantId" in record && record.tenantId === null))
+      throw new TenantScopeError(`Registros globais de ${model} só pelo cliente base`);
+    if (!GLOBAL_FLAG_MODELS.has(model)) return stamped;
     if (record.isGlobal === true)
       throw new TenantScopeError(`Registros globais de ${model} só pelo cliente base`);
     stamped.isGlobal = false;

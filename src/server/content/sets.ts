@@ -13,10 +13,12 @@ import type { TenantDb } from "@/server/tenant-db";
 
 /**
  * Conjunto × exercícios (decisão do PO, pedido do BE2):
- * - RASCUNHO: exercícios vêm do pool vivo (tenant + globais PUBLICADOS, nível do
- *   Level e dificuldades do conjunto).
- * - PUBLICADO: publishSet copia o pool elegível para SetExercise (snapshot) e o
- *   conjunto passa a sortear SÓ daí; edições posteriores no banco não o afetam.
+ * - POOL do conjunto = exercícios VINCULADOS (SetPoolExercise; ver pool-links.ts),
+ *   filtrados por PUBLICADO, nível do Level e dificuldades do conjunto.
+ * - RASCUNHO: lista/sorteia desse pool vivo.
+ * - PUBLICADO: publishSet congela o pool numa NOVA versão de SetExercise
+ *   (ExerciseSet.publishedVersion); novos sorteios usam a versão atual e rodadas
+ *   em curso mantêm a sua. SetExercises nunca são apagados (tentativas os referenciam).
  */
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
 type Db = TenantDb | Tx;
@@ -64,10 +66,15 @@ export function setExerciseItem(row: SetExerciseRow): SetExerciseItem {
   };
 }
 
-/** Candidatos do pool vivo para um nível (rascunho). */
-export function livePool(db: Db, level: KnowledgeLevel, difficulties: readonly Difficulty[]) {
+/** Candidatos do pool vivo (vinculados ao conjunto) para um nível. */
+export function livePool(
+  db: Db,
+  setId: string,
+  level: KnowledgeLevel,
+  difficulties: readonly Difficulty[],
+) {
   return db.exercise.findMany({
-    where: levelPoolWhere(level, difficulties),
+    where: { ...levelPoolWhere(level, difficulties), setLinks: { some: { setId } } },
     select: EXERCISE_SELECT,
     orderBy: [...POOL_ORDER],
   });
@@ -81,6 +88,7 @@ async function loadSet(db: Db, setId: string) {
       status: true,
       difficulties: true,
       publishedAt: true,
+      publishedVersion: true,
       levels: { select: { id: true, knowledgeLevel: true, position: true } },
     },
   });
@@ -89,7 +97,7 @@ async function loadSet(db: Db, setId: string) {
 }
 
 export interface SetExercisesView {
-  set: { id: string; status: string; publishedAt: Date | null };
+  set: { id: string; status: string; publishedAt: Date | null; publishedVersion: number };
   /** "pool" (rascunho, vivo) ou "snapshot" (publicado, congelado). */
   source: "pool" | "snapshot";
   levels: { levelId: string; knowledgeLevel: KnowledgeLevel; exercises: SetExerciseItem[] }[];
@@ -106,26 +114,33 @@ export async function listSetExercises(db: Db, setId: string): Promise<SetExerci
         const exercises = published
           ? (
               await db.setExercise.findMany({
-                where: { setId, levelId: level.id },
+                where: { setId, levelId: level.id, version: set.publishedVersion },
                 select: { id: true, sourceExerciseId: true, position: true, snapshot: true },
                 orderBy: { position: "asc" },
               })
             ).map(setExerciseItem)
-          : (await livePool(db, level.knowledgeLevel, set.difficulties)).map(poolItem);
+          : (await livePool(db, setId, level.knowledgeLevel, set.difficulties)).map(poolItem);
         return { levelId: level.id, knowledgeLevel: level.knowledgeLevel, exercises };
       }),
   );
   return {
-    set: { id: set.id, status: set.status, publishedAt: set.publishedAt },
+    set: {
+      id: set.id,
+      status: set.status,
+      publishedAt: set.publishedAt,
+      publishedVersion: set.publishedVersion,
+    },
     source: published ? "snapshot" : "pool",
     levels,
   };
 }
 
 /**
- * Publica o conjunto: copia o pool elegível de cada nível para SetExercise e
- * marca PUBLISHED. 409 ALREADY_PUBLISHED; 409 EMPTY_POOL (details: níveis sem
- * exercício); 409 NO_LEVELS.
+ * Publica (ou REPUBLICA, se já foi publicado e voltou a rascunho) o conjunto:
+ * congela o pool vinculado de cada nível numa nova versão de SetExercise
+ * (publishedVersion + 1) e marca PUBLISHED. Versões anteriores ficam intactas
+ * (rodadas em curso continuam nelas). 409 ALREADY_PUBLISHED se já está
+ * PUBLICADO; 409 EMPTY_POOL (details: níveis sem exercício); 409 NO_LEVELS.
  */
 export async function publishSet(db: TenantDb, tenantId: string, setId: string) {
   return db.$transaction(async (tx) => {
@@ -139,7 +154,7 @@ export async function publishSet(db: TenantDb, tenantId: string, setId: string) 
     const pools = await Promise.all(
       set.levels.map(async (level) => ({
         level,
-        rows: await livePool(tx, level.knowledgeLevel, set.difficulties),
+        rows: await livePool(tx, setId, level.knowledgeLevel, set.difficulties),
       })),
     );
     const empty = pools.filter((p) => p.rows.length === 0).map((p) => p.level.knowledgeLevel);
@@ -148,11 +163,12 @@ export async function publishSet(db: TenantDb, tenantId: string, setId: string) 
         levels: empty,
       });
     }
-    await tx.setExercise.deleteMany({ where: { setId } });
+    const version = set.publishedVersion + 1;
     const data = pools.flatMap(({ level, rows }) =>
       rows.map((row, position) => ({
         tenantId,
         setId,
+        version,
         levelId: level.id,
         sourceExerciseId: row.id,
         position,
@@ -165,12 +181,29 @@ export async function publishSet(db: TenantDb, tenantId: string, setId: string) 
     const publishedAt = new Date();
     await tx.exerciseSet.update({
       where: { id: setId },
-      data: { status: "PUBLISHED", publishedAt },
+      data: { status: "PUBLISHED", publishedAt, publishedVersion: version },
     });
     return {
       setId,
       publishedAt,
+      version,
       levels: pools.map((p) => ({ levelId: p.level.id, count: p.rows.length })),
     };
+  });
+}
+
+/**
+ * Despublica: só muda o status para DRAFT (snapshots e tentativas ficam intactos).
+ * Republicar depois cria uma nova versão. 409 NOT_PUBLISHED se não está publicado.
+ */
+export async function unpublishSet(db: TenantDb, setId: string) {
+  const set = await loadSet(db, setId);
+  if (set.status !== "PUBLISHED") {
+    throw new ApiError(409, "NOT_PUBLISHED", "O conjunto não está publicado");
+  }
+  return db.exerciseSet.update({
+    where: { id: setId },
+    data: { status: "DRAFT" },
+    select: { id: true, status: true, publishedAt: true, publishedVersion: true },
   });
 }

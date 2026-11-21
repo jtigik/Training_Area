@@ -223,20 +223,31 @@ async function main() {
       },
     });
   }
-  // Conjunto publicado sorteia só de SetExercise: congela o pool (mesma regra de publishSet).
+  // Pool do conjunto = exercícios VINCULADOS (SetPoolExercise): liga os globais elegíveis.
+  const pool = await prisma.exercise.findMany({
+    where: {
+      OR: [{ tenantId: DEMO_TENANT.id }, { tenantId: null }],
+      ...levelPoolWhere("FUNDAMENTAL", ["VERY_EASY", "EASY", "MEDIUM"]),
+    },
+    orderBy: [{ difficulty: "asc" }, { title: "asc" }, { id: "asc" }],
+  });
+  await prisma.setPoolExercise.createMany({
+    data: pool.map((e) => ({
+      tenantId: DEMO_TENANT.id,
+      setId: "demo-set-trilha",
+      exerciseId: e.id,
+    })),
+    skipDuplicates: true,
+  });
+  // Conjunto publicado sorteia só de SetExercise da versão atual: congela a versão 1
+  // com os vinculados (mesma regra de publishSet).
   const snapshots = await prisma.setExercise.count({ where: { setId: "demo-set-trilha" } });
   if (snapshots === 0) {
-    const pool = await prisma.exercise.findMany({
-      where: {
-        OR: [{ tenantId: DEMO_TENANT.id }, { tenantId: null }],
-        ...levelPoolWhere("FUNDAMENTAL", ["VERY_EASY", "EASY", "MEDIUM"]),
-      },
-      orderBy: [{ difficulty: "asc" }, { title: "asc" }, { id: "asc" }],
-    });
     await prisma.setExercise.createMany({
       data: pool.map((e, position) => ({
         tenantId: DEMO_TENANT.id,
         setId: "demo-set-trilha",
+        version: 1,
         levelId: "demo-level-fundamental",
         sourceExerciseId: e.id,
         position,
@@ -245,8 +256,14 @@ async function main() {
         snapshot: snapshotFromExercise(e) as unknown as Prisma.InputJsonValue,
       })),
     });
+    await prisma.exerciseSet.update({
+      where: { id: "demo-set-trilha" },
+      data: { publishedVersion: 1 },
+    });
   }
-  console.log("  trilha demo: 1 conjunto publicado, nível Fundamental, cota 2+1+1 por dificuldade");
+  console.log(
+    `  trilha demo: 1 conjunto publicado (v1), ${pool.length} exercícios vinculados, cota 2+1+1 por dificuldade`,
+  );
   console.log("Seed concluído.");
 }
 

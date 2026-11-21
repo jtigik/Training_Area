@@ -170,3 +170,27 @@ describe("scopeArgs — SUPER_ADMIN (access platform): só agregados", () => {
     expect(() => scopeArgs("User", "findMany", {}, T, "member")).not.toThrow();
   });
 });
+
+describe("FeedbackTemplate / SetPoolExercise / FeedbackGeneration", () => {
+  const T2 = "t-tpl";
+  it("FeedbackTemplate: lê próprio + globais; cria só no tenant, sem coluna isGlobal", () => {
+    expect(scopeArgs("FeedbackTemplate", "findMany", {}, T2).where).toEqual({
+      AND: [{ OR: [{ tenantId: T2 }, { tenantId: null }] }],
+    });
+    expect(
+      scopeArgs("FeedbackTemplate", "create", { data: { name: "n", body: "b" } }, T2).data,
+    ).toEqual({ name: "n", body: "b", tenantId: T2 });
+    expect(() =>
+      scopeArgs("FeedbackTemplate", "create", { data: { tenantId: null, name: "n" } }, T2),
+    ).toThrow();
+  });
+
+  it("SetPoolExercise e FeedbackGeneration são escopo tenant", () => {
+    expect(scopeArgs("SetPoolExercise", "findMany", {}, T2).where).toEqual({
+      AND: [{ tenantId: T2 }],
+    });
+    expect(
+      scopeArgs("FeedbackGeneration", "create", { data: { feedbackId: "f" } }, T2).data,
+    ).toMatchObject({ tenantId: T2 });
+  });
+});

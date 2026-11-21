@@ -12,7 +12,8 @@ type Db = TenantDb | Tx;
 
 /**
  * Sorteia a rodada POR DIFICULDADE (`quotas`, de resolveDifficultyQuotas) e
- * CONGELA em LevelAttemptExercise. Conjunto publicado: só SetExercise do nível.
+ * CONGELA em LevelAttemptExercise. Conjunto publicado: só SetExercise do nível
+ * na versão ATUAL (`setVersion` = ExerciseSet.publishedVersion).
  * Rascunho (uso interno/testes; aluno só inicia publicado): pool vivo.
  * Falta no pool de uma dificuldade: sorteia o que houver e devolve `shortfalls`;
  * nada sorteado → 409 EMPTY_POOL (details.shortfalls).
@@ -25,7 +26,9 @@ export async function drawForLevelAttempt(
     levelAttemptId: string;
     levelId: string;
     knowledgeLevel: KnowledgeLevel;
+    setId: string;
     setStatus: string;
+    setVersion: number;
     quotas: readonly { difficulty: Difficulty; quantity: number }[];
     random?: () => number;
   },
@@ -35,12 +38,16 @@ export async function drawForLevelAttempt(
     input.setStatus === "PUBLISHED"
       ? (
           await tx.setExercise.findMany({
-            where: { levelId: input.levelId, difficulty: { in: difficulties } },
+            where: {
+              levelId: input.levelId,
+              version: input.setVersion,
+              difficulty: { in: difficulties },
+            },
             select: { id: true, sourceExerciseId: true, position: true, snapshot: true },
             orderBy: { position: "asc" },
           })
         ).map(setExerciseItem)
-      : (await livePool(tx, input.knowledgeLevel, difficulties)).map(poolItem);
+      : (await livePool(tx, input.setId, input.knowledgeLevel, difficulties)).map(poolItem);
   const result = drawByDifficulty(candidates, input.quotas, input.random);
   if (result.drawn.length === 0) {
     throw new ApiError(409, "EMPTY_POOL", "Este nível ainda não tem exercícios disponíveis", {
