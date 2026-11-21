@@ -131,6 +131,8 @@ export function gradeMultiCellSubmission(
     const definition: ExerciseDefinition = {
       ...exercise.rules,
       ...targetRules,
+      // The answer key stays the reference for the sensitivity check and hardcode heuristics.
+      ...("formula" in t.expected ? { referenceFormula: t.expected.formula } : {}),
       sheet,
       targetCell: cell,
       expected,
