@@ -35,7 +35,7 @@ export function UserFormDialog({
   const [serverError, setServerError] = useState<string | null>(null);
   const form = useForm<UserFormValues>({
     resolver: zodResolver(userFormSchema),
-    defaultValues: { name: "", email: "", role: "STUDENT" },
+    defaultValues: { name: "", email: "", role: "ALUNO" },
   });
   const { register, handleSubmit, formState, reset } = form;
 

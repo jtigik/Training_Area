@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function Page() {
-  redirect("/superadmin/instituicoes");
+  redirect("/super-admin/instituicoes");
 }

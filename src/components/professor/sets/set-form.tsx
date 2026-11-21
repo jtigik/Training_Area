@@ -9,13 +9,13 @@ import { NativeSelect } from "@/components/common/native-select";
 import { collectErrorMessages, FormErrorSummary } from "@/components/common/form-error-summary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DIFFICULTY_LABELS, LEVEL_LABELS } from "@/lib/domain/labels";
 import {
   DIFFICULTIES,
   MVP_LEVELS,
   type Classroom,
+  type Difficulty,
   type ExerciseSet,
   type MvpLevel,
 } from "@/lib/domain/types";
@@ -59,32 +59,61 @@ export function SetForm({ set, students, classrooms, onSubmit }: SetFormProps) {
   const overrides = useFieldArray({ control: form.control, name: "overrides" });
   const levels = useWatch({ control: form.control, name: "levels" });
   const quantities = useWatch({ control: form.control, name: "quantities" });
+  const difficulties = useWatch({ control: form.control, name: "difficulties" });
   const overrideValues = useWatch({ control: form.control, name: "overrides" });
 
-  const quantityFor = (level: MvpLevel) =>
-    quantities.find((q) => q.level === level && q.difficulty === null)?.quantity;
-  const setQuantity = (level: MvpLevel, quantity: number) => {
+  const quantityFor = (level: MvpLevel, difficulty: Difficulty) =>
+    quantities.find((q) => q.level === level && q.difficulty === difficulty)?.quantity;
+  const opts = { shouldDirty: true, shouldValidate: formState.isSubmitted };
+  /** Quantidade por nível + dificuldade; preencher marca a dificuldade no conjunto. */
+  const setQuantity = (level: MvpLevel, difficulty: Difficulty, raw: string) => {
     const rest = getValues("quantities").filter(
-      (q) => !(q.level === level && q.difficulty === null),
+      (q) => !(q.level === level && q.difficulty === difficulty),
     );
-    setValue("quantities", [...rest, { level, difficulty: null, quantity }], {
-      shouldDirty: true,
-      shouldValidate: formState.isSubmitted,
-    });
+    setValue(
+      "quantities",
+      raw === "" ? rest : [...rest, { level, difficulty, quantity: Number(raw) }],
+      opts,
+    );
+    if (raw !== "" && !getValues("difficulties").includes(difficulty)) {
+      setValue(
+        "difficulties",
+        DIFFICULTIES.filter((d) => d === difficulty || getValues("difficulties").includes(d)),
+        opts,
+      );
+    }
   };
   const toggleLevel = (level: MvpLevel, checked: boolean) => {
     const current = getValues("levels");
-    const next = checked
-      ? MVP_LEVELS.filter((l) => l === level || current.includes(l))
-      : current.filter((l) => l !== level);
-    setValue("levels", next, { shouldDirty: true, shouldValidate: formState.isSubmitted });
-    if (!checked) {
+    setValue(
+      "levels",
+      checked
+        ? MVP_LEVELS.filter((l) => l === level || current.includes(l))
+        : current.filter((l) => l !== level),
+      opts,
+    );
+    if (!checked)
       setValue(
         "quantities",
         getValues("quantities").filter((q) => q.level !== level),
-        { shouldDirty: true },
+        opts,
       );
-    }
+  };
+  const toggleDifficulty = (difficulty: Difficulty, checked: boolean) => {
+    const current = getValues("difficulties");
+    setValue(
+      "difficulties",
+      checked
+        ? DIFFICULTIES.filter((d) => d === difficulty || current.includes(d))
+        : current.filter((d) => d !== difficulty),
+      opts,
+    );
+    if (!checked)
+      setValue(
+        "quantities",
+        getValues("quantities").filter((q) => q.difficulty !== difficulty),
+        opts,
+      );
   };
 
   const submit = handleSubmit(async (values) => {
@@ -113,66 +142,94 @@ export function SetForm({ set, students, classrooms, onSubmit }: SetFormProps) {
         </Field>
       </div>
 
-      <fieldset className="grid gap-3 rounded-lg border p-4">
-        <legend className="px-1 text-sm font-semibold">Níveis e quantidade por aluno</legend>
-        <p className="text-muted-foreground text-xs">
-          Marque os níveis do conjunto e quantos exercícios cada aluno recebe em cada nível.
-        </p>
-        {MVP_LEVELS.map((level) => {
-          const checked = levels.includes(level);
-          const qty = quantityFor(level);
-          const qid = `qty-${level}`;
-          return (
-            <div key={level} className="flex flex-wrap items-center gap-4">
-              <label className="inline-flex w-48 cursor-pointer items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="accent-primary size-4"
-                  checked={checked}
-                  onChange={(e) => toggleLevel(level, e.target.checked)}
-                />
-                <span>
-                  <span className="sr-only">Nível: </span>
-                  {LEVEL_LABELS[level]}
-                </span>
-              </label>
-              <div className="flex items-center gap-2">
-                <Label htmlFor={qid} className={checked ? "" : "text-muted-foreground"}>
-                  Exercícios por aluno — {LEVEL_LABELS[level]}
-                </Label>
-                <Input
-                  id={qid}
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  className="w-24"
-                  disabled={!checked}
-                  value={checked && qty !== undefined && !Number.isNaN(qty) ? qty : ""}
-                  onChange={(e) =>
-                    setQuantity(level, e.target.value === "" ? Number.NaN : Number(e.target.value))
-                  }
-                />
-              </div>
-            </div>
-          );
-        })}
-        <p className="text-muted-foreground text-xs">Dashboard chega na v1.1.</p>
-      </fieldset>
-
-      <fieldset className="grid gap-2 rounded-lg border p-4">
-        <legend className="px-1 text-sm font-semibold">Dificuldades</legend>
-        <div className="flex flex-wrap gap-x-5 gap-y-2">
+      <div className="grid gap-4 md:grid-cols-2">
+        <fieldset className="grid content-start gap-2 rounded-lg border p-4">
+          <legend className="px-1 text-sm font-semibold">Níveis</legend>
+          {MVP_LEVELS.map((level) => (
+            <label key={level} className="inline-flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="accent-primary size-4"
+                checked={levels.includes(level)}
+                onChange={(e) => toggleLevel(level, e.target.checked)}
+              />
+              <span>
+                <span className="sr-only">Nível: </span>
+                {LEVEL_LABELS[level]}
+              </span>
+            </label>
+          ))}
+          <p className="text-muted-foreground text-xs">Dashboard chega na v1.1.</p>
+        </fieldset>
+        <fieldset className="grid content-start gap-2 rounded-lg border p-4">
+          <legend className="px-1 text-sm font-semibold">Dificuldades</legend>
           {DIFFICULTIES.map((d) => (
             <label key={d} className="inline-flex cursor-pointer items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                value={d}
                 className="accent-primary size-4"
-                {...register("difficulties")}
+                checked={difficulties.includes(d)}
+                onChange={(e) => toggleDifficulty(d, e.target.checked)}
               />
               {DIFFICULTY_LABELS[d]}
             </label>
           ))}
+        </fieldset>
+      </div>
+
+      <fieldset className="grid gap-3 rounded-lg border p-4">
+        <legend className="px-1 text-sm font-semibold">Exercícios por aluno</legend>
+        <p className="text-muted-foreground text-xs">
+          Quantos exercícios cada aluno recebe em cada nível e dificuldade. Marque o nível para
+          liberar a linha; deixe em branco as dificuldades que não usar.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="text-sm">
+            <caption className="sr-only">
+              Quantidade de exercícios por aluno, por nível e dificuldade
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" className="p-2 text-left font-medium">
+                  Nível
+                </th>
+                {DIFFICULTIES.map((d) => (
+                  <th key={d} scope="col" className="p-2 text-left font-medium whitespace-nowrap">
+                    {DIFFICULTY_LABELS[d]}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {MVP_LEVELS.map((level) => {
+                const enabled = levels.includes(level);
+                return (
+                  <tr key={level} className={enabled ? "" : "text-muted-foreground"}>
+                    <th scope="row" className="p-2 text-left font-medium">
+                      {LEVEL_LABELS[level]}
+                    </th>
+                    {DIFFICULTIES.map((d) => {
+                      const qty = quantityFor(level, d);
+                      return (
+                        <td key={d} className="p-1">
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            min={1}
+                            className="w-20"
+                            aria-label={`Exercícios por aluno — ${LEVEL_LABELS[level]} — ${DIFFICULTY_LABELS[d]}`}
+                            disabled={!enabled}
+                            value={enabled && qty !== undefined && !Number.isNaN(qty) ? qty : ""}
+                            onChange={(e) => setQuantity(level, d, e.target.value)}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </fieldset>
 

@@ -79,7 +79,7 @@ function ActiveNavLinks({ nav }: { nav: NavItem[] }) {
   return <NavLinks nav={nav} pathname={usePathname() ?? ""} />;
 }
 
-export type ShellVariant = "professor" | "admin" | "superadmin";
+export type ShellVariant = "professor" | "admin" | "super-admin";
 
 const VARIANTS: Record<
   ShellVariant,
@@ -87,7 +87,7 @@ const VARIANTS: Record<
 > = {
   professor: { area: "Área do professor", tenantHeader: true, nav: () => PROFESSOR_NAV },
   admin: { area: "Admin da instituição", tenantHeader: true, nav: () => ADMIN_NAV },
-  superadmin: { area: "Super Admin", tenantHeader: false, nav: () => SUPERADMIN_NAV },
+  "super-admin": { area: "Super Admin", tenantHeader: false, nav: () => SUPER_ADMIN_NAV },
 };
 
 export function AppShell({ variant, children }: AppShellProps) {
@@ -182,6 +182,6 @@ export const ADMIN_NAV: NavItem[] = [
   { href: "/admin/configuracoes", label: "Configurações" },
 ];
 
-export const SUPERADMIN_NAV: NavItem[] = [
-  { href: "/superadmin/instituicoes", label: "Instituições" },
+export const SUPER_ADMIN_NAV: NavItem[] = [
+  { href: "/super-admin/instituicoes", label: "Instituições" },
 ];

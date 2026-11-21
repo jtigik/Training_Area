@@ -58,9 +58,9 @@ export function createHttpServices(): Services {
   const get = <T>(p: string, q?: Query) => request<T>("GET", p + qs(q));
   return {
     institutions: {
-      list: (q) => get("/api/superadmin/institutions", { ...q }),
-      create: (i) => request("POST", "/api/superadmin/institutions", i),
-      update: (id, i) => request("PATCH", `/api/superadmin/institutions/${id}`, i),
+      list: (q) => get("/api/super-admin/institutions", { ...q }),
+      create: (i) => request("POST", "/api/super-admin/institutions", i),
+      update: (id, i) => request("PATCH", `/api/super-admin/institutions/${id}`, i),
     },
     users: {
       list: (q) => get("/api/admin/users", { ...q }),
@@ -112,7 +112,7 @@ export function createHttpServices(): Services {
       save: (i) => request("PUT", "/api/professor/feedback-templates", i),
     },
     reviews: {
-      list: (q) => get("/api/professor/feedback-reviews", { ...q }),
+      list: (q) => get("/api/professor/feedback-reviews", { ...q, status: q?.status?.join(",") }),
       get: (id) => get(`/api/professor/feedback-reviews/${id}`),
       saveDraft: (id, finalText) =>
         request("PATCH", `/api/professor/feedback-reviews/${id}`, { finalText }),
@@ -120,6 +120,7 @@ export function createHttpServices(): Services {
         request("POST", `/api/professor/feedback-reviews/${id}/approve`, { finalText }),
       reject: (id, reason) =>
         request("POST", `/api/professor/feedback-reviews/${id}/reject`, { reason: reason ?? null }),
+      regenerate: (id) => request("POST", `/api/professor/feedback-reviews/${id}/regenerate`),
     },
     results: {
       list: (q) => get("/api/professor/results", { ...q }),

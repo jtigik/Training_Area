@@ -92,7 +92,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
     db.users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.id !== exceptId);
   const students = () =>
     mine(db.users)
-      .filter((u) => u.role === "STUDENT")
+      .filter((u) => u.role === "ALUNO")
       .map(({ id, name, email }) => ({ id, name, email }));
   const assertLevelInSet = (set: ExerciseSet, level: Exercise["level"]) => {
     if (!set.levels.includes(level)) {
@@ -104,8 +104,13 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
     }
   };
   const assertPending = (r: { status: string }) => {
-    if (r.status !== "PENDING")
+    if (r.status !== "DRAFT")
       throw new ApiError(409, "ja_revisado", "Este feedback já foi revisado.");
+  };
+  /** Pendente ou rejeitado: o professor ainda pode editar, aprovar ou gerar de novo. */
+  const assertOpen = (r: { status: string }) => {
+    if (r.status === "APPROVED")
+      throw new ApiError(409, "ja_revisado", "Este feedback já foi aprovado.");
   };
   const countUsers = (institutionId: string) =>
     db.users.filter((u) => u.institutionId === institutionId).length;
@@ -572,7 +577,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           return mine(db.reviews)
             .filter(
               (r) =>
-                (!q.status || r.status === q.status) &&
+                (!q.status?.length || q.status.includes(r.status)) &&
                 (!q.level || r.level === q.level) &&
                 (!term || r.studentName.toLowerCase().includes(term)),
             )
@@ -582,13 +587,13 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
       saveDraft: (id, finalText) =>
         delay(() => {
           const r = findReview(id);
-          assertPending(r);
+          assertOpen(r);
           return Object.assign(r, { finalText });
         }),
       approve: (id, finalText) =>
         delay(() => {
           const r = findReview(id);
-          assertPending(r);
+          assertOpen(r);
           if (!finalText.trim())
             throw new ApiError(422, "texto_vazio", "O feedback aprovado não pode ficar vazio.");
           return Object.assign(r, {
@@ -596,6 +601,20 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
             status: "APPROVED",
             reviewerId: actor,
             reviewedAt: now(),
+            rejectionReason: null,
+          });
+        }),
+      regenerate: (id) =>
+        delay(() => {
+          const r = findReview(id);
+          assertOpen(r);
+          const text = `${r.studentName}, revisamos seu desempenho no nível (${r.accuracyPercent}% de acerto, conceito ${r.concept}). Retome as seções do nível e pratique os exercícios em que errou.`;
+          return Object.assign(r, {
+            generatedText: text,
+            finalText: text,
+            status: "DRAFT",
+            reviewerId: null,
+            reviewedAt: null,
             rejectionReason: null,
           });
         }),
@@ -624,7 +643,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
       student: (id) =>
         delay(() => {
           const u = findUser(id);
-          if (u.role !== "STUDENT") notFound("Aluno");
+          if (u.role !== "ALUNO") notFound("Aluno");
           return {
             student: { id: u.id, name: u.name, email: u.email },
             progress: mine(db.progress)

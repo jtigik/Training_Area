@@ -55,7 +55,7 @@ const PROGRESS_CLASSES: Record<ProgressStatus, string> = {
 };
 const CONCEPT_CLASSES: Record<Concept, string> = { ND: ERROR, ED: WARNING, D: INFO, PD: SUCCESS };
 const REVIEW_CLASSES: Record<ReviewStatus, string> = {
-  PENDING: WARNING,
+  DRAFT: WARNING,
   APPROVED: SUCCESS,
   REJECTED: ERROR,
 };

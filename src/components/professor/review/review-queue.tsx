@@ -31,7 +31,8 @@ export function ReviewItem({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const pending = item.status === "PENDING";
+  const pending = item.status === "DRAFT";
+  const open = item.status !== "APPROVED";
   const textId = `review-text-${item.id}`;
 
   async function run(action: () => Promise<ReviewFeedback>, ok: string) {
@@ -85,7 +86,7 @@ export function ReviewItem({
         </div>
       ) : null}
       {error ? <p className="text-destructive text-sm">{error}</p> : null}
-      {pending ? (
+      {open ? (
         <div className="flex flex-wrap gap-2">
           {!editing ? (
             <Button
@@ -125,22 +126,39 @@ export function ReviewItem({
           >
             Aprovar
           </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            data-testid="feedback-reject"
-            disabled={busy}
-            onClick={() =>
-              run(
-                () => getServices().reviews.reject(item.id, reason || undefined),
-                `Feedback de ${item.studentName} rejeitado; não será mostrado ao aluno.`,
-              )
-            }
-          >
-            Rejeitar
-          </Button>
-          {!rejecting ? (
+          {pending ? (
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              data-testid="feedback-reject"
+              disabled={busy}
+              onClick={() =>
+                run(
+                  () => getServices().reviews.reject(item.id, reason || undefined),
+                  `Feedback de ${item.studentName} rejeitado: edite ou gere de novo. O aluno não vê o texto rejeitado.`,
+                )
+              }
+            >
+              Rejeitar
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                run(
+                  () => getServices().reviews.regenerate(item.id),
+                  `Novo texto gerado para ${item.studentName}.`,
+                )
+              }
+            >
+              Gerar novamente
+            </Button>
+          )}
+          {pending && !rejecting ? (
             <Button type="button" variant="ghost" size="sm" onClick={() => setRejecting(true)}>
               Informar motivo
             </Button>
@@ -151,10 +169,22 @@ export function ReviewItem({
   );
 }
 
+type Filter = "OPEN" | ReviewStatus;
+const FILTERS: Record<Filter, { label: string; statuses: ReviewStatus[] }> = {
+  OPEN: { label: "A revisar (pendentes e rejeitados)", statuses: ["DRAFT", "REJECTED"] },
+  ...(Object.fromEntries(
+    REVIEW_STATUSES.map((s) => [s, { label: REVIEW_STATUS_LABELS[s], statuses: [s] }]),
+  ) as Record<ReviewStatus, { label: string; statuses: ReviewStatus[] }>),
+};
+
 /** /professor/revisao-feedback — fila de revisão do feedback gerado por IA. */
 export function ReviewQueuePage() {
-  const [status, setStatus] = useState<ReviewStatus>("PENDING");
-  const reviews = useResource(() => getServices().reviews.list({ status }), `reviews:${status}`);
+  const [filter, setFilter] = useState<Filter>("OPEN");
+  const statuses = FILTERS[filter].statuses;
+  const reviews = useResource(
+    () => getServices().reviews.list({ status: statuses }),
+    `reviews:${filter}`,
+  );
   const [message, setMessage] = useState<{ kind: "ok" | "erro"; text: string } | null>(null);
 
   return (
@@ -165,10 +195,10 @@ export function ReviewQueuePage() {
       />
       <div className="mb-4 max-w-xs">
         <Field label="Situação">
-          <NativeSelect value={status} onChange={(e) => setStatus(e.target.value as ReviewStatus)}>
-            {REVIEW_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {REVIEW_STATUS_LABELS[s]}
+          <NativeSelect value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
+            {(Object.keys(FILTERS) as Filter[]).map((f) => (
+              <option key={f} value={f}>
+                {FILTERS[f].label}
               </option>
             ))}
           </NativeSelect>
@@ -181,7 +211,7 @@ export function ReviewQueuePage() {
         <LoadingState />
       ) : reviews.data.length === 0 ? (
         <EmptyState
-          title={status === "PENDING" ? "Nenhum feedback aguardando revisão." : "Nada por aqui."}
+          title={filter === "OPEN" ? "Nenhum feedback aguardando revisão." : "Nada por aqui."}
         />
       ) : (
         <ul className="grid gap-3" aria-label="Feedbacks">
@@ -193,7 +223,7 @@ export function ReviewQueuePage() {
                 setMessage({ kind: "ok", text });
                 const list = reviews.data ?? [];
                 reviews.setData(
-                  updated.status === status
+                  statuses.includes(updated.status)
                     ? list.map((x) => (x.id === updated.id ? updated : x))
                     : list.filter((x) => x.id !== updated.id),
                 );

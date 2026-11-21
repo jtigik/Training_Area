@@ -12,8 +12,8 @@ import type {
 export const ROLE_LABELS: Record<Role, string> = {
   SUPER_ADMIN: "Super Admin",
   INSTITUTION_ADMIN: "Admin da instituição",
-  TEACHER: "Professor",
-  STUDENT: "Aluno",
+  PROFESSOR: "Professor",
+  ALUNO: "Aluno",
 };
 
 export const activeLabel = (active: boolean) => (active ? "Ativo" : "Inativo");
@@ -59,7 +59,7 @@ export const CONCEPT_LABELS: Record<Concept, string> = {
 };
 
 export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
-  PENDING: "Pendente",
+  DRAFT: "Pendente",
   APPROVED: "Aprovado",
   REJECTED: "Rejeitado",
 };

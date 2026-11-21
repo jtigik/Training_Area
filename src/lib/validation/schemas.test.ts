@@ -20,7 +20,7 @@ const baseSet = {
 describe("schemas", () => {
   it("valida usuário da instituição (sem SUPER_ADMIN)", () => {
     expect(
-      userFormSchema.safeParse({ name: "Ana", email: "ana@x.com", role: "TEACHER" }).success,
+      userFormSchema.safeParse({ name: "Ana", email: "ana@x.com", role: "PROFESSOR" }).success,
     ).toBe(true);
     expect(
       userFormSchema.safeParse({ name: "Ana", email: "ana@x.com", role: "SUPER_ADMIN" }).success,

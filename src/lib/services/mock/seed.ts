@@ -33,7 +33,7 @@ export interface MockDb {
   classrooms: Classroom[];
 }
 
-export const MOCK_DB_VERSION = 2;
+export const MOCK_DB_VERSION = 3;
 /** Instituição da sessão simulada (professor e admin da instituição). */
 export const MOCK_INSTITUTION_ID = "inst-1";
 
@@ -178,15 +178,15 @@ export function createSeed(): MockDb {
   const users: User[] = [
     user("u-super", null, "Sofia Super", "sofia@training-area.app", "SUPER_ADMIN"),
     user("u-admin", "inst-1", "Ana Administradora", "ana.admin@escola.edu.br", "INSTITUTION_ADMIN"),
-    user("u-prof", "inst-1", "Paulo Professor", "paulo@escola.edu.br", "TEACHER"),
-    user("u-al1", "inst-1", "Beatriz Souza", "beatriz@escola.edu.br", "STUDENT"),
-    user("u-al2", "inst-1", "Carlos Lima", "carlos@escola.edu.br", "STUDENT"),
-    user("u-al3", "inst-1", "Daniela Rocha", "daniela@escola.edu.br", "STUDENT"),
-    user("u-al4", "inst-1", "Eduardo Alves", "eduardo@escola.edu.br", "STUDENT", false),
-    user("u-al5", "inst-1", "Fernanda Costa", "fernanda@escola.edu.br", "STUDENT"),
+    user("u-prof", "inst-1", "Paulo Professor", "paulo@escola.edu.br", "PROFESSOR"),
+    user("u-al1", "inst-1", "Beatriz Souza", "beatriz@escola.edu.br", "ALUNO"),
+    user("u-al2", "inst-1", "Carlos Lima", "carlos@escola.edu.br", "ALUNO"),
+    user("u-al3", "inst-1", "Daniela Rocha", "daniela@escola.edu.br", "ALUNO"),
+    user("u-al4", "inst-1", "Eduardo Alves", "eduardo@escola.edu.br", "ALUNO", false),
+    user("u-al5", "inst-1", "Fernanda Costa", "fernanda@escola.edu.br", "ALUNO"),
     user("u-b-admin", "inst-2", "Bruno Beta", "bruno@beta.com.br", "INSTITUTION_ADMIN"),
-    user("u-b-prof", "inst-2", "Bia Instrutora", "bia@beta.com.br", "TEACHER"),
-    user("u-b-al1", "inst-2", "Gustavo Beta", "gustavo@beta.com.br", "STUDENT"),
+    user("u-b-prof", "inst-2", "Bia Instrutora", "bia@beta.com.br", "PROFESSOR"),
+    user("u-b-al1", "inst-2", "Gustavo Beta", "gustavo@beta.com.br", "ALUNO"),
   ];
 
   const section = (
@@ -257,8 +257,9 @@ export function createSeed(): MockDb {
       levels: ["FUNDAMENTAL", "PROFESSIONAL"],
       difficulties: ["VERY_EASY", "EASY", "MEDIUM"],
       quantities: [
-        { level: "FUNDAMENTAL", difficulty: null, quantity: 2 },
-        { level: "PROFESSIONAL", difficulty: null, quantity: 1 },
+        { level: "FUNDAMENTAL", difficulty: "VERY_EASY", quantity: 1 },
+        { level: "FUNDAMENTAL", difficulty: "EASY", quantity: 1 },
+        { level: "PROFESSIONAL", difficulty: "MEDIUM", quantity: 1 },
       ],
       overrides: [
         { id: "ov-1", targetType: "STUDENT", targetId: "u-al3", level: "FUNDAMENTAL", quantity: 1 },
@@ -543,8 +544,8 @@ export function createSeed(): MockDb {
     finalText: text,
     status,
     rejectionReason: null,
-    reviewerId: status === "PENDING" ? null : "u-prof",
-    reviewedAt: status === "PENDING" ? null : "2026-11-15T10:00:00.000Z",
+    reviewerId: status === "DRAFT" ? null : "u-prof",
+    reviewedAt: status === "DRAFT" ? null : "2026-11-15T10:00:00.000Z",
     createdAt,
   });
   const reviews: ReviewFeedback[] = [
@@ -555,7 +556,7 @@ export function createSeed(): MockDb {
       "ND",
       0,
       'Carlos, você ainda não acertou os exercícios de SOMA e MÉDIA. O erro mais frequente foi o intervalo incompleto (A1:A2 em vez de A1:A3). Revise a seção "SOMA e MÉDIA" e refaça o nível.',
-      "PENDING",
+      "DRAFT",
       "2026-11-14T12:11:00.000Z",
     ),
     review(
@@ -565,7 +566,7 @@ export function createSeed(): MockDb {
       "PD",
       100,
       "Daniela, excelente! Você acertou todos os exercícios na primeira tentativa. Siga para o nível Profissional.",
-      "PENDING",
+      "DRAFT",
       "2026-11-19T18:31:00.000Z",
     ),
     review(

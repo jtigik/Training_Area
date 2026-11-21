@@ -154,7 +154,7 @@ export function InstitutionDialog({
   );
 }
 
-/** /superadmin/instituicoes — CRUD e ativação de instituições (Super Admin). */
+/** /super-admin/instituicoes — CRUD e ativação de instituições (Super Admin). */
 export function InstitutionsManager() {
   const [search, setSearch] = useState("");
   const [dialog, setDialog] = useState<{ open: boolean; institution?: Institution }>({

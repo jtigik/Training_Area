@@ -96,7 +96,7 @@ export const exerciseSetFormSchema = z
   })
   .superRefine((v, ctx) => {
     v.levels.forEach((l) => {
-      if (!v.quantities.some((q) => q.level === l && q.difficulty === null)) {
+      if (!v.quantities.some((q) => q.level === l)) {
         ctx.addIssue({
           code: "custom",
           path: ["quantities"],

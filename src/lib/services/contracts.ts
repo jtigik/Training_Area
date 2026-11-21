@@ -13,9 +13,9 @@
  * endpoint de /api/admin ou /api/professor aceita institutionId do cliente.
  *
  * Backend 1 — instituições, usuários, configurações, feedback
- *   GET    /api/superadmin/institutions?search=&active=              → Institution[]
- *   POST   /api/superadmin/institutions     body CreateInstitutionInput → 201 Institution | 409 slug_duplicado
- *   PATCH  /api/superadmin/institutions/:id body UpdateInstitutionInput → Institution
+ *   GET    /api/super-admin/institutions?search=&active=              → Institution[]
+ *   POST   /api/super-admin/institutions     body CreateInstitutionInput → 201 Institution | 409 slug_duplicado
+ *   PATCH  /api/super-admin/institutions/:id body UpdateInstitutionInput → Institution
  *   GET    /api/admin/users?search=&role=&active=&page=&pageSize=   → Page<User>
  *   POST   /api/admin/users                 body CreateUserInput     → 201 User | 409 email_duplicado
  *   PATCH  /api/admin/users/:id             body UpdateUserInput     → User | 409 ultimo_admin
@@ -23,11 +23,13 @@
  *   PUT    /api/admin/config                body UpdateSettingsInput → InstitutionSettings
  *   GET    /api/professor/feedback-templates?setId=  (sem setId = padrão) → FeedbackTemplate
  *   PUT    /api/professor/feedback-templates  body SaveFeedbackTemplateInput → FeedbackTemplate
- *   GET    /api/professor/feedback-reviews?status=&level=&search=      → ReviewFeedback[]
+ *   GET    /api/professor/feedback-reviews?status=DRAFT,REJECTED&level=&search= → ReviewFeedback[]
  *   GET    /api/professor/feedback-reviews/:id                         → ReviewFeedback
- *   PATCH  /api/professor/feedback-reviews/:id body { finalText }      → ReviewFeedback (só PENDING)
- *   POST   /api/professor/feedback-reviews/:id/approve body { finalText } → ReviewFeedback | 409 ja_revisado
- *   POST   /api/professor/feedback-reviews/:id/reject  body { reason? }   → ReviewFeedback | 409 ja_revisado
+ *   PATCH  /api/professor/feedback-reviews/:id body { finalText }      → ReviewFeedback (só DRAFT ou REJECTED)
+ *   POST   /api/professor/feedback-reviews/:id/approve body { finalText } → ReviewFeedback (DRAFT|REJECTED → APPROVED) | 409 ja_revisado
+ *   POST   /api/professor/feedback-reviews/:id/reject  body { reason? }   → ReviewFeedback (DRAFT → REJECTED) | 409 ja_revisado
+ *   POST   /api/professor/feedback-reviews/:id/regenerate             → ReviewFeedback (novo texto da IA; DRAFT|REJECTED → DRAFT)
+ *          Status = enum FeedbackStatus do BE1 (DRAFT "Pendente", APPROVED, REJECTED); o aluno só vê APPROVED.
  *
  * Backend 2 — conteúdo, conjuntos, exercícios, banco, resultados
  *   GET    /api/professor/sections                                     → ContentSection[] (por position)
@@ -278,7 +280,8 @@ export interface FeedbackService {
 }
 
 export interface ReviewQuery {
-  status?: ReviewStatus;
+  /** Uma ou mais situações (?status=DRAFT,REJECTED). Vazio = todas. */
+  status?: ReviewStatus[];
   level?: Level;
   search?: string;
 }
@@ -288,7 +291,10 @@ export interface ReviewService {
   get(id: string): Promise<ReviewFeedback>;
   saveDraft(id: string, finalText: string): Promise<ReviewFeedback>;
   approve(id: string, finalText: string): Promise<ReviewFeedback>;
+  /** Só DRAFT. O rejeitado volta ao professor (editar ou gerar de novo); nunca vai ao aluno. */
   reject(id: string, reason?: string): Promise<ReviewFeedback>;
+  /** Gera um novo texto pela IA (DRAFT ou REJECTED) e volta para DRAFT. */
+  regenerate(id: string): Promise<ReviewFeedback>;
 }
 
 /* ----------------------------- Resultados --------------------------- */

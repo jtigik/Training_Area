@@ -10,13 +10,13 @@
  * exceto o SUPER_ADMIN na gestão de instituições.
  */
 
-export const ROLES = ["SUPER_ADMIN", "INSTITUTION_ADMIN", "TEACHER", "STUDENT"] as const;
+export const ROLES = ["SUPER_ADMIN", "INSTITUTION_ADMIN", "PROFESSOR", "ALUNO"] as const;
 export type Role = (typeof ROLES)[number];
 /** Papéis que o admin da instituição pode atribuir. */
 export const INSTITUTION_ROLES = [
   "INSTITUTION_ADMIN",
-  "TEACHER",
-  "STUDENT",
+  "PROFESSOR",
+  "ALUNO",
 ] as const satisfies readonly Role[];
 export type InstitutionRole = (typeof INSTITUTION_ROLES)[number];
 
@@ -47,7 +47,7 @@ export type Concept = (typeof CONCEPTS)[number];
 /** Conceitos que permitem refazer o nível. */
 export const REDO_CONCEPTS: readonly Concept[] = ["ND", "ED"];
 
-export const REVIEW_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+export const REVIEW_STATUSES = ["DRAFT", "APPROVED", "REJECTED"] as const;
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 
 /** ISO 8601 (UTC) string. */

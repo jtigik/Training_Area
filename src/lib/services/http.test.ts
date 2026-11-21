@@ -29,7 +29,7 @@ describe("http services", () => {
       ),
     );
     const err = await createHttpServices()
-      .users.create({ name: "a", email: "a@a.com", role: "STUDENT" })
+      .users.create({ name: "a", email: "a@a.com", role: "ALUNO" })
       .catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status: 409, code: "email_duplicado" });
@@ -45,7 +45,7 @@ describe("http services", () => {
     await s.reviews.approve("r1", "ok");
     await s.results.redoLevel("u1", "s1", "FUNDAMENTAL");
     expect(fetchMock.mock.calls.map((c) => `${c[1].method} ${c[0]}`)).toEqual([
-      "PATCH /api/superadmin/institutions/i1",
+      "PATCH /api/super-admin/institutions/i1",
       "POST /api/professor/feedback-reviews/r1/approve",
       "POST /api/professor/results/students/u1/redo",
     ]);

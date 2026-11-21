@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { InstitutionsManager } from "@/components/superadmin/institutions-manager";
+import { InstitutionsManager } from "@/components/super-admin/institutions-manager";
 
 export const metadata: Metadata = { title: "Instituições · Training Area" };
 

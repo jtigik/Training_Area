@@ -56,7 +56,7 @@ describe("mock: usuários e configurações", () => {
   it("recusa e-mail duplicado", async () => {
     const s = createMockServices();
     await expect(
-      s.users.create({ name: "X", email: "PAULO@escola.edu.br", role: "STUDENT" }),
+      s.users.create({ name: "X", email: "PAULO@escola.edu.br", role: "ALUNO" }),
     ).rejects.toMatchObject({
       status: 409,
       code: "email_duplicado",
@@ -65,7 +65,7 @@ describe("mock: usuários e configurações", () => {
 
   it("recusa rebaixar o último admin da instituição", async () => {
     const s = createMockServices();
-    await expect(s.users.update("u-admin", { role: "TEACHER" })).rejects.toBeInstanceOf(ApiError);
+    await expect(s.users.update("u-admin", { role: "PROFESSOR" })).rejects.toBeInstanceOf(ApiError);
     await s.users.update("u-prof", { role: "INSTITUTION_ADMIN" });
     expect((await s.users.update("u-admin", { active: false })).active).toBe(false);
   });
@@ -256,7 +256,7 @@ describe("mock: feedback", () => {
 
   it("fila de revisão: edita, aprova, rejeita e impede revisar de novo", async () => {
     const s = createMockServices();
-    expect((await s.reviews.list({ status: "PENDING" })).map((r) => r.id)).toEqual([
+    expect((await s.reviews.list({ status: ["DRAFT"] })).map((r) => r.id)).toEqual([
       "rv-1",
       "rv-2",
     ]);
@@ -273,6 +273,14 @@ describe("mock: feedback", () => {
       status: "REJECTED",
       rejectionReason: null,
     });
+    // Rejeitado volta ao professor: continua na fila "a revisar" e pode ser regenerado.
+    expect((await s.reviews.list({ status: ["DRAFT", "REJECTED"] })).map((r) => r.id)).toEqual([
+      "rv-2",
+    ]);
+    await expect(s.reviews.reject("rv-2")).rejects.toMatchObject({ code: "ja_revisado" });
+    const again = await s.reviews.regenerate("rv-2");
+    expect(again).toMatchObject({ status: "DRAFT", reviewerId: null });
+    expect(again.finalText).toBe(again.generatedText);
   });
 });
 
