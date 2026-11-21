@@ -30,6 +30,12 @@ const authEnv = readAuthEnv();
  * Modo mock (E2E): Google/Microsoft como provedores genéricos com os MESMOS ids,
  * então signIn.social({ provider }) e o callback /api/auth/callback/{id} são
  * idênticos ao modo nativo. Só um conjunto é registrado por vez.
+ * Verificado no better-auth 1.7.27 instalado: o genericOAuth não registra
+ * endpoint próprio (node_modules/better-auth/dist/plugins/generic-oauth/index.mjs:106,
+ * "`callback/:id` core endpoints"); o callback é o core
+ * (dist/api/routes/callback.mjs:24, createAuthEndpoint("/callback/:id")) e o
+ * redirect_uri padrão vem de dist/oauth2/utils.mjs:29 (`/callback/${provider.id}`).
+ * O antigo /api/auth/oauth2/callback/{id} NÃO existe nesta versão.
  */
 const mockOAuthPlugins =
   authEnv.oauthMode === "mock"

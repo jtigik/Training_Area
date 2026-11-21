@@ -28,6 +28,12 @@ export interface OAuthProviderEnv {
 
 export interface ServerEnv {
   nodeEnv: string;
+  /** Deploy real (APP_ENV=production ou DEPLOY_ENV=production); distinto do build NODE_ENV. */
+  isDeploy: boolean;
+  /** AUTH_TEST_MODE=1 (só CI/E2E com build de produção). */
+  authTestMode: boolean;
+  /** Avisos não fatais (logados no boot por src/instrumentation.ts). */
+  warnings: string[];
   databaseUrl: string | undefined;
   auth: {
     secret: string | undefined;
@@ -101,21 +107,65 @@ function oauthPair(
   return { id, secret };
 }
 
+/** Marcador de deploy real: APP_ENV=production ou DEPLOY_ENV=production. */
+export function isRealDeploy(source: Source = process.env): boolean {
+  return [read(source, "APP_ENV"), read(source, "DEPLOY_ENV")].some(
+    (v) => v?.toLowerCase() === "production",
+  );
+}
+
+export const MIN_AUTH_SECRET_LENGTH = 32;
+/** Valores de exemplo que não podem ir para produção (ex.: o antigo placeholder do .env.example). */
+const SECRET_PLACEHOLDER =
+  /troque|change[-_ ]?me|placeholder|exemplo|example|your[-_]?secret|seu[-_]?segredo|^x+$/i;
+
+/** Problema do segredo em produção, ou null se ok. */
+export function authSecretIssue(secret: string | undefined): string | null {
+  if (!secret)
+    return "BETTER_AUTH_SECRET é obrigatória em produção (gere com `openssl rand -base64 32`)";
+  if (SECRET_PLACEHOLDER.test(secret)) {
+    return "BETTER_AUTH_SECRET parece um placeholder (ex.: 'troque-…'); gere um segredo próprio com `openssl rand -base64 32`";
+  }
+  if (secret.length < MIN_AUTH_SECRET_LENGTH) {
+    return `BETTER_AUTH_SECRET deve ter pelo menos ${MIN_AUTH_SECRET_LENGTH} caracteres em produção`;
+  }
+  return null;
+}
+
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 /** Lê e valida as variáveis do servidor. Lança `EnvValidationError` se algo for inválido. */
 export function validateServerEnv(source: Source = process.env): ServerEnv {
   const issues: string[] = [];
+  const warnings: string[] = [];
   const nodeEnv = read(source, "NODE_ENV") ?? "development";
   const isProduction = nodeEnv === "production";
+  const isDeploy = isRealDeploy(source);
+  const authTestMode = read(source, "AUTH_TEST_MODE") === "1";
+
+  // Modo de teste de autenticação (e-mail+senha e OAuth falso num build de produção).
+  // AUTH_TEST_MODE=1 é SÓ para CI/E2E; num deploy real o boot falha.
+  if (authTestMode && isDeploy) {
+    issues.push(
+      "AUTH_TEST_MODE=1 é proibido em deploy real (APP_ENV/DEPLOY_ENV=production): liberaria login por senha e OAuth falso",
+    );
+  }
+  const testVars = [
+    read(source, "AUTH_EMAIL_PASSWORD_ENABLED") === "true" && "AUTH_EMAIL_PASSWORD_ENABLED=true",
+    read(source, "AUTH_OAUTH_MOCK_BASE_URL") && "AUTH_OAUTH_MOCK_BASE_URL",
+  ].filter((v): v is string => Boolean(v));
+  if (isProduction && !authTestMode && testVars.length > 0) {
+    warnings.push(
+      `${testVars.join(" e ")} definida(s) em produção sem AUTH_TEST_MODE=1: ignorada(s). Remova do ambiente de deploy.`,
+    );
+  }
 
   // Better Auth (OAuth Google / Microsoft). Mesmos nomes lidos por src/server/auth.
   // AUTH_SECRET é aceito como alternativa, como o próprio Better Auth faz.
   const authSecret = read(source, "BETTER_AUTH_SECRET") ?? read(source, "AUTH_SECRET");
-  if (isProduction && !authSecret) {
-    issues.push(
-      "BETTER_AUTH_SECRET é obrigatória em produção (gere com `openssl rand -base64 32`)",
-    );
+  if (isProduction || isDeploy) {
+    const secretIssue = authSecretIssue(authSecret);
+    if (secretIssue) issues.push(secretIssue);
   }
   const google = oauthPair(source, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", issues);
   const microsoft = oauthPair(source, "MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", issues);
@@ -153,6 +203,9 @@ export function validateServerEnv(source: Source = process.env): ServerEnv {
 
   return {
     nodeEnv,
+    isDeploy,
+    authTestMode,
+    warnings,
     databaseUrl: read(source, "DATABASE_URL"),
     auth: {
       secret: authSecret,

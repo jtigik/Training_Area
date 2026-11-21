@@ -80,9 +80,11 @@ Login via [Better Auth](https://www.better-auth.com) (`src/server/auth/auth.ts`,
 
 - **Lançamento:** Google e Microsoft. Cada provedor liga quando `GOOGLE_CLIENT_ID/SECRET` ou `MICROSOFT_CLIENT_ID/SECRET` estão no `.env` (veja `.env.example`; URIs de callback `${BETTER_AUTH_URL}/api/auth/callback/google|microsoft`).
 - **OAuth mockado (E2E):** `AUTH_OAUTH_MOCK_BASE_URL`, veja abaixo.
-- **E-mail e senha:** só para dev/teste, com `AUTH_EMAIL_PASSWORD_ENABLED=true` (ignorado em produção). Cadastro por e-mail fica desligado; as contas vêm do seed.
+- **E-mail e senha:** só para dev/teste, com `AUTH_EMAIL_PASSWORD_ENABLED=true` (ignorado em produção, exceto com `AUTH_TEST_MODE=1` — ver abaixo). Cadastro por e-mail fica desligado; as contas vêm do seed.
 - **Primeiro login social:** o usuário entra na instituição de um convite pendente (`invitations`) ou, se a instituição tiver `autoJoinByDomain`, pelo domínio do e-mail (como Aluno). Sem vínculo, o login é recusado.
-- `BETTER_AUTH_SECRET` é obrigatório (gere com `openssl rand -base64 32`); `BETTER_AUTH_URL` é a URL pública do app.
+- `BETTER_AUTH_SECRET` é obrigatório (gere com `openssl rand -base64 32`): em produção o boot recusa vazio, placeholder (`troque…`, `changeme`, `placeholder`, `example`…) e menos de 32 caracteres. No `.env.example` ela vem vazia de propósito. `BETTER_AUTH_URL` é a URL pública do app.
+- **Modo de teste em build de produção (CI/E2E):** `AUTH_TEST_MODE=1` libera `AUTH_EMAIL_PASSWORD_ENABLED` e `AUTH_OAUTH_MOCK_BASE_URL` com `NODE_ENV=production` (o E2E da CI roda `npm run start`; `e2e/support/env.ts` já passa a variável). **Marcador de deploy real:** `APP_ENV=production` (ou `DEPLOY_ENV=production`) — defina no ambiente de staging/produção de verdade. Com o marcador, `AUTH_TEST_MODE=1` faz o boot **falhar** (`validateServerEnv`, `src/instrumentation.ts`). Variáveis de teste em produção sem `AUTH_TEST_MODE` são ignoradas e geram **aviso** no log.
+- **Callback OAuth:** `${BETTER_AUTH_URL}/api/auth/callback/{id}` nos dois modos (nativo e mock/genericOAuth). No better-auth 1.7.27 o genericOAuth usa o endpoint core `/callback/:id` (`node_modules/better-auth/dist/plugins/generic-oauth/index.mjs:106`, `dist/api/routes/callback.mjs:24`, `dist/oauth2/utils.mjs:29`); `/api/auth/oauth2/callback/{id}` não existe nesta versão.
 
 ### OAuth mockado (E2E)
 
@@ -149,19 +151,26 @@ Todas as rotas `/api/*` do app (exceto `/api/auth/*`, que é do Better Auth) res
 ## Desbloqueio de níveis (por conjunto)
 
 Ordem: **Fundamental → Profissional → Avançado** (`DASHBOARD` é ignorado no MVP).
-Regra pura em `src/lib/level-unlock.ts` (`computeLevelUnlocks`), aplicada em
-`POST /api/aluno/levels/{id}/attempts` (`src/server/levels/start.ts`):
+Regra pura em `src/lib/level-unlock.ts` (`computeLevelUnlocks`), aplicada pelos serviços
+`startLevelAttempt` / `getSetProgress` (`src/server/levels/start.ts`). **As rotas HTTP do aluno
+(`/api/aluno/...`) são do Backend 2**; este módulo exporta só os serviços
+(`startLevelAttempt`, `drawForLevelAttempt`, `listAttemptExercises`, `getSetProgress`;
+conclusão em `completeLevelAttempt(db, levelAttemptId)`, `src/server/grading/service.ts`).
 
+- só conjuntos **PUBLICADOS**: rascunho/arquivado → 404 `NOT_FOUND` (dentro dos serviços);
 - o primeiro nível existente do conjunto está sempre aberto;
-- o próximo abre quando a **última tentativa concluída** do anterior teve conceito **D ou PD**;
-- ND/ED permitem refazer o mesmo nível (nova `attemptNumber`); D/PD encerram o nível;
+- vale o **conceito efetivo** = ajuste do professor (`concept`) senão o calculado (`computedConcept`).
+  O próximo nível abre quando o **melhor conceito efetivo** do anterior é **D ou PD**;
+  ND/ED permitem refazer (nova `attemptNumber`, sem herdar ajuste); D/PD encerram o nível;
 - erros 409: `LEVEL_LOCKED`, `LEVEL_IN_PROGRESS`, `LEVEL_AWAITING_GRADE`, `LEVEL_ALREADY_PASSED`,
-  `LEVEL_NOT_AVAILABLE` (DASHBOARD), `EMPTY_POOL`;
-- ao iniciar, a cota (aluno > turma > padrão do nível; senão 10) define quantos exercícios são
-  sorteados e congelados em `LevelAttemptExercise`. A resposta traz só os campos de aluno
-  (sem `expectedResult`/`gradingRules`).
+  `LEVEL_NOT_AVAILABLE` (DASHBOARD), `EMPTY_POOL`.
 
-`GET /api/aluno/sets/{id}/progress` devolve `{ levels: LevelUnlockState[] }` para a trilha.
+**Cota por nível E por dificuldade** (`ExerciseQuota.difficulty` obrigatório; `src/lib/quota.ts`):
+para cada dificuldade do conjunto vale aluno > turma (maior) > padrão do nível. Se o nível tem
+alguma cota, dificuldade sem linha = 0; sem nenhuma cota, padrão de **3 por dificuldade**. O total
+é a soma. **Falta de exercícios:** sorteia o que existe em cada dificuldade e devolve
+`shortfalls: [{ difficulty, required, available }]`; `EMPTY_POOL` só quando nada pode ser sorteado
+(ou total 0). Sorteio congelado em `LevelAttemptExercise`; resposta só com campos de aluno.
 
 ## SUPER_ADMIN: só números agregados
 
@@ -169,7 +178,7 @@ Decisão do PO: o SUPER_ADMIN administra a plataforma, mas **nunca** vê registr
 dentro das instituições (alunos, tentativas, textos de feedback, PII).
 
 - `requireTenant()` dá ao SUPER_ADMIN `ctx.access = "platform"`: `ctx.db` só permite
-  `TenantGradingConfig` (faixas), ler o próprio `Tenant` e criar `Invitation`. Qualquer outro
+  ler o próprio `Tenant` e criar `Invitation` (faixas da instituição: só o INSTITUTION_ADMIN, Q-S1). Qualquer outro
   acesso (inclusive `count`) lança `TenantScopeError` → `403 SCOPE_DENIED`.
 - Rotas exclusivas (`/api/super-admin/*`, só SUPER_ADMIN):
   - `GET /api/super-admin/metrics` → `{ generatedAt, totals, tenants: [{ tenant: { id, name, slug, active }, users: { INSTITUTION_ADMIN, PROFESSOR, ALUNO, total }, levelAttempts: { total, inProgress, completed, abandoned }, concepts: { ND, ED, D, PD } }] }` (só `groupBy`).
@@ -212,7 +221,7 @@ Senhas **apenas para dev** (sobrescreva com `SEED_*_PASSWORD`; em produção o s
 | PROFESSOR         | `professor@escola-demo.local` | `Professor@Dev123`  | Escola Demo |
 | ALUNO             | `aluno@escola-demo.local`     | `Aluno@Dev123`      | Escola Demo |
 
-O seed também cria 5 exercícios e 1 seção de conteúdo **globais** e a "Trilha Demo" (nível Fundamental, cota padrão 3) na Escola Demo.
+O seed também cria 5 exercícios e 1 seção de conteúdo **globais** e a "Trilha Demo" (nível Fundamental, cota padrão 2 muito fácil + 1 fácil + 1 média) na Escola Demo.
 
 ## Modelo de dados
 
@@ -224,15 +233,20 @@ O seed também cria 5 exercícios e 1 seção de conteúdo **globais** e a "Tril
 - **Níveis (`KnowledgeLevel`)**: `FUNDAMENTAL`, `PROFESSIONAL`, `ADVANCED` e `DASHBOARD` (reservado para v1.1). No MVP a validação (`src/lib/validation/content.ts`) recusa DASHBOARD e a UI deve usar `SELECTABLE_LEVEL_OPTIONS` (`src/lib/domain.ts`).
 - **ContentSection / Exercise**: `tenantId` nulo + `isGlobal = true` = **global** (banco inicial da plataforma): toda instituição lê, só o SUPER_ADMIN escreve. Com tenant = exclusivo da instituição.
 - **ExerciseSet → Level → ExerciseQuota**: trilha da instituição, níveis participantes e quantidade (padrão, por turma ou por aluno; precedência em `src/lib/quota.ts`). O pool de um Level são os exercícios publicados do mesmo nível, nas dificuldades do conjunto, da instituição **ou globais**.
-- **LevelAttempt**: tentativa do aluno num nível. Ao concluir, `computedConcept` é calculado pela taxa de acerto com as faixas da instituição (**TenantGradingConfig**: ND < `edMinPercent` (50) ≤ ED < `dMinPercent` (70) ≤ D < `pdMinPercent` (90) ≤ PD; sem linha = padrão; snapshot em `gradingBands`). O professor pode ajustar o conceito final (`concept`) com justificativa obrigatória (≥ 10 caracteres): `overriddenById`, `overrideReason`, `overriddenAt` e uma linha imutável em **ConceptOverride**. Refazer só após conceito final ND/ED (`src/lib/grading.ts`). APIs: `PATCH /api/professor/level-attempts/:id/concept`, `GET|PUT /api/admin/grading-config`. **ExerciseAttempt**: cada envio, ligado à LevelAttempt.
-- **Feedback** (1:1 com LevelAttempt): gerado por IA (`aiText`), revisado pelo professor (`editedText`, `reviewedById`, `reviewedAt`), status `DRAFT | APPROVED | REJECTED`.
+- **LevelAttempt**: tentativa do aluno num nível. Ao concluir, `computedConcept` é calculado pela taxa de acerto com as faixas da instituição (**TenantGradingConfig**: ND < `edMinPercent` (50) ≤ ED < `dMinPercent` (70) ≤ D < `pdMinPercent` (90) ≤ PD; sem linha = padrão; snapshot em `gradingBands`). O professor pode ajustar o conceito final (`concept`) com justificativa obrigatória (≥ 10 caracteres): `overriddenById`, `overrideReason`, `overriddenAt` e uma linha imutável em **ConceptOverride**. Refazer só após conceito final ND/ED (`src/lib/grading.ts`). APIs: `PATCH /api/professor/level-attempts/:id/concept` (PROFESSOR), `GET|PUT /api/admin/grading-config` (INSTITUTION_ADMIN). **ExerciseAttempt**: cada envio, ligado à LevelAttempt.
+- **Feedback** (1:1 com LevelAttempt): originais da IA **imutáveis** (`aiText`, `aiStrengths`, `aiToReview`; trigger no banco) e edições do professor guardadas à parte (`editedText`, `editedStrengths`, `editedToReview`, `editedById`, `editedAt`); status `DRAFT | APPROVED | REJECTED`. O aluno vê só `APPROVED`, campo a campo: editado senão IA. APIs (PROFESSOR): `GET|PATCH /api/professor/feedbacks/:id` (`{ text?, strengths?, toReview? }`, cada um separado; `null` descarta a edição; aprovado → 409 `NOT_EDITABLE`) e `POST /api/professor/feedbacks/:id/review` (`{ action: "approve" }` | `{ action: "reject", reason }`; 409 `ALREADY_REVIEWED`/`NO_TEXT`).
+- **AuditLog** (append-only): convites criados/renovados, `PATCH` de usuário, ajuste de conceito, edição/aprovação/rejeição de feedback, faixas padrão da plataforma.
+- **Histórico de conceito:** `GET /api/professor/level-attempts/:id/concept-history` → `{ history: [{ previousConcept, concept, computedConcept, reason, adjustedBy: { id, name }, adjustedAt }] }` (mais antigo primeiro; outra instituição → 404).
+- **Usuários (INSTITUTION_ADMIN):** `PATCH /api/admin/users/:id` `{ name?, email?, active? }` (e-mail em minúsculas; 409 `EMAIL_TAKEN`; desativar revoga sessões; desativar a si mesmo → 422; outra instituição → 404; papel continua em `/role`). Convites: `POST /api/admin/invitations` → 201 (novo) ou **200 com `renewed: true`** quando substitui o convite pendente; 409 `EMAIL_IN_USE` (usuário ativo), `USER_INACTIVE` (inativo na mesma instituição).
+- **Erros de validação:** 422 `VALIDATION_ERROR` com `details`.
+- **Conteúdo de exercício** (`src/lib/validation/exercise-content.ts`, combinado com BE2/FE): célula `number | string | boolean | null | { f: "=...", v? }`, `initialSheet = { cells: { A1: célula } }`, gabarito `[{ cell, value | formula, tolerance? }]`, `gradingRules = { rules?, targets?: { A1: opções } }`.
 
 Restrições que o Prisma não modela (CHECKs) estão no SQL da migração `*_multitenant_auth_core_model`.
 
 **Pool do nível (MVP):** um Level sorteia exercícios PUBLICADOS do tenant + globais com o
-mesmo `knowledgeLevel` e uma das `difficulties` do ExerciseSet, até a cota resolvida por
-`resolveQuota` (aluno > turma > padrão). Sem exercícios fixos (v1.1). Helpers:
-`levelPoolWhere`/`drawFromPool` (`src/lib/pool.ts`) e `listLevelPool(db, levelId)`.
+mesmo `knowledgeLevel` e uma das `difficulties` do ExerciseSet, até a cota por dificuldade
+resolvida por `resolveDifficultyQuotas` (aluno > turma > padrão). Sem exercícios fixos (v1.1). Helpers:
+`levelPoolWhere`/`drawFromPool`/`drawByDifficulty` (`src/lib/pool.ts`) e `listLevelPool(db, levelId)`.
 
 ## Estrutura de pastas
 
@@ -302,7 +316,9 @@ Modelo em [`.env.example`](.env.example). A validação fica em `src/lib/env.ts`
 | `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET`     | Não (sempre em par)                    | OAuth Microsoft (Entra ID). Callback: `<BETTER_AUTH_URL>/api/auth/callback/microsoft`                               | secrets ou valores fictícios                                                |
 | `MICROSOFT_TENANT_ID`                                 | Não (padrão `common`)                  | Diretório do Entra ID: `common`, `organizations` ou o ID do diretório                                               | `common`                                                                    |
 | `AUTH_OAUTH_MOCK_BASE_URL`                            | Não (só dev/teste)                     | Provedor OAuth falso para E2E (genericOAuth); ignorado em produção                                                  | —                                                                           |
-| `AUTH_EMAIL_PASSWORD_ENABLED`                         | Não (padrão `false`)                   | Login por e-mail e senha só em dev/teste (seed/E2E); ignorado em produção                                           | —                                                                           |
+| `AUTH_EMAIL_PASSWORD_ENABLED`                         | Não (padrão `false`)                   | Login por e-mail e senha só em dev/teste (seed/E2E); ignorado em produção sem `AUTH_TEST_MODE=1`                    | —                                                                           |
+| `AUTH_TEST_MODE`                                      | Não (só CI/E2E)                        | `1` libera senha e OAuth falso num build de produção. Proibido com `APP_ENV`/`DEPLOY_ENV=production` (boot falha)   | `1` só no job E2E                                                           |
+| `APP_ENV` / `DEPLOY_ENV`                              | **Sim em deploy real** (`production`)  | Marcador de deploy real (diferente de `NODE_ENV`, que também é `production` no build da CI)                         | não definir                                                                 |
 | `AI_PROVIDER`                                         | Não (padrão `disabled`)                | Provedor de IA do feedback: `disabled` (sem IA), `mock` (texto fixo local) ou `openai-compatible`                   | `mock`                                                                      |
 | `AI_API_KEY`                                          | Sim se `AI_PROVIDER=openai-compatible` | Chave da API compatível com OpenAI                                                                                  | vazio                                                                       |
 | `AI_BASE_URL`                                         | Sim se `AI_PROVIDER=openai-compatible` | URL base da API (ex.: `https://api.openai.com/v1`)                                                                  | vazio                                                                       |

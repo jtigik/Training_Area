@@ -97,3 +97,25 @@ describe("loginOptionsFrom", () => {
     expect(options.oauthMode).toBe("mock");
   });
 });
+
+describe("AUTH_TEST_MODE (build de produção da CI/E2E)", () => {
+  const base = {
+    NODE_ENV: "production",
+    AUTH_EMAIL_PASSWORD_ENABLED: "true",
+    AUTH_OAUTH_MOCK_BASE_URL: "http://127.0.0.1:4010/",
+  };
+
+  it("em produção sem AUTH_TEST_MODE, senha e OAuth falso ficam desligados", () => {
+    expect(readAuthEnv(base)).toMatchObject({ emailPasswordEnabled: false, oauthMode: "native" });
+    expect(readAuthEnv({ ...base, AUTH_TEST_MODE: "true" })).toMatchObject({
+      emailPasswordEnabled: false,
+      oauthMode: "native",
+    });
+  });
+
+  it("com AUTH_TEST_MODE=1 liga os dois", () => {
+    const cfg = readAuthEnv({ ...base, AUTH_TEST_MODE: "1" });
+    expect(cfg).toMatchObject({ emailPasswordEnabled: true, oauthMode: "mock" });
+    expect(cfg.mockProviders[0]?.authorizationUrl).toBe("http://127.0.0.1:4010/google/authorize");
+  });
+});

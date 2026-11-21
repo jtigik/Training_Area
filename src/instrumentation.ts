@@ -8,5 +8,6 @@ export async function register() {
   if (process.env.NEXT_PHASE === "phase-production-build") return;
 
   const { validateServerEnv } = await import("@/lib/env");
-  validateServerEnv();
+  const env = validateServerEnv();
+  for (const warning of env.warnings) console.warn(`[env] ${warning}`);
 }

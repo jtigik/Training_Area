@@ -55,6 +55,8 @@ export const OAUTH_MOCK_ENABLED = process.env.E2E_OAUTH_MOCK !== "0" && !process
  */
 export function appTestEnv(): Record<string, string> {
   const env: Record<string, string> = {
+    // Na CI o app roda o build de produção (`npm run start`); sem isto, senha e OAuth falso ficam desligados.
+    AUTH_TEST_MODE: "1",
     [PASSWORD_LOGIN_APP_FLAG]: PASSWORD_LOGIN_ENABLED ? "true" : "false",
   };
   if (OAUTH_MOCK_ENABLED) {

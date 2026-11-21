@@ -10,6 +10,10 @@
  * - AUTH_OAUTH_MOCK_BASE_URL: SÓ dev/teste (E2E). Troca os provedores nativos
  *   Google/Microsoft por provedores genéricos (plugin genericOAuth) com os mesmos
  *   ids, apontando para um servidor OAuth falso. Ignorada em produção.
+ * - AUTH_TEST_MODE=1: libera as duas opções acima num BUILD de produção
+ *   (NODE_ENV=production), para o E2E da CI rodar `npm run start`. Nunca em
+ *   deploy real: validateServerEnv (src/lib/env.ts) falha no boot se
+ *   APP_ENV=production (ou DEPLOY_ENV=production) e AUTH_TEST_MODE=1.
  */
 export const LOGIN_PROVIDER_IDS = ["google", "microsoft"] as const;
 export type LoginProviderId = (typeof LOGIN_PROVIDER_IDS)[number];
@@ -38,6 +42,11 @@ export interface AuthEnvConfig {
 
 type Env = Record<string, string | undefined>;
 
+/** Recursos de teste (e-mail+senha, OAuth falso) liberados? Fora de produção, sim; em produção só com AUTH_TEST_MODE=1. */
+export function testAuthFeaturesAllowed(env: Env): boolean {
+  return env.NODE_ENV !== "production" || env.AUTH_TEST_MODE?.trim() === "1";
+}
+
 const ENV_KEYS: Record<LoginProviderId, { id: string; secret: string }> = {
   google: { id: "GOOGLE_CLIENT_ID", secret: "GOOGLE_CLIENT_SECRET" },
   microsoft: { id: "MICROSOFT_CLIENT_ID", secret: "MICROSOFT_CLIENT_SECRET" },
@@ -49,9 +58,9 @@ function pair(env: Env, provider: LoginProviderId): SocialProviderConfig | null 
   return clientId && clientSecret ? { clientId, clientSecret } : null;
 }
 
-/** URL base do mock, sem barra final; null se ausente, inválida ou em produção. */
+/** URL base do mock, sem barra final; null se ausente, inválida ou em produção sem AUTH_TEST_MODE=1. */
 export function readMockBaseUrl(env: Env): string | null {
-  if (env.NODE_ENV === "production") return null;
+  if (!testAuthFeaturesAllowed(env)) return null;
   const raw = env.AUTH_OAUTH_MOCK_BASE_URL?.trim();
   if (!raw) return null;
   try {
@@ -81,8 +90,8 @@ export function buildMockProviders(baseUrl: string, env: Env): MockOAuthProvider
 }
 
 export function readAuthEnv(env: Env = process.env): AuthEnvConfig {
-  const isProduction = env.NODE_ENV === "production";
-  const emailPasswordEnabled = !isProduction && env.AUTH_EMAIL_PASSWORD_ENABLED === "true";
+  const emailPasswordEnabled =
+    testAuthFeaturesAllowed(env) && env.AUTH_EMAIL_PASSWORD_ENABLED === "true";
   const mockBaseUrl = readMockBaseUrl(env);
 
   if (mockBaseUrl) {

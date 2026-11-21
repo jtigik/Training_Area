@@ -29,12 +29,75 @@ describe("validateServerEnv", () => {
     });
   });
 
+  const STRONG = "k3Jv9qLmZ2xR8tYwB5nC1dF6gH0sA4eP7uQ"; // 35 caracteres, fictício
+
   it("exige BETTER_AUTH_SECRET em produção (AUTH_SECRET como alternativa)", () => {
     expect(() => validateServerEnv({ NODE_ENV: "production" })).toThrow(/BETTER_AUTH_SECRET/);
-    expect(validateServerEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: "x" }).auth.secret).toBe(
-      "x",
+    expect(
+      validateServerEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: STRONG }).auth.secret,
+    ).toBe(STRONG);
+    expect(validateServerEnv({ NODE_ENV: "production", AUTH_SECRET: STRONG }).auth.secret).toBe(
+      STRONG,
     );
-    expect(validateServerEnv({ NODE_ENV: "production", AUTH_SECRET: "y" }).auth.secret).toBe("y");
+  });
+
+  it("em produção recusa placeholder e segredo com menos de 32 caracteres", () => {
+    for (const secret of [
+      "troque-por-um-segredo-aleatorio-de-32-caracteres",
+      "TROQUE_ISTO_0123456789012345678901234",
+      "changeme-changeme-changeme-changeme",
+      "placeholder-0123456789-0123456789-01",
+    ]) {
+      expect(() =>
+        validateServerEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: secret }),
+      ).toThrow(/placeholder/);
+    }
+    expect(() =>
+      validateServerEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: "a".repeat(10) + "Z9" }),
+    ).toThrow(/pelo menos 32/);
+    expect(() =>
+      validateServerEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: STRONG.slice(0, 31) }),
+    ).toThrow(/pelo menos 32/);
+    // fora de produção o segredo de dev segue aceito
+    expect(validateServerEnv({ BETTER_AUTH_SECRET: "dev" }).auth.secret).toBe("dev");
+  });
+
+  it("AUTH_TEST_MODE=1 falha no boot de deploy real (APP_ENV/DEPLOY_ENV=production)", () => {
+    for (const marker of [{ APP_ENV: "production" }, { DEPLOY_ENV: "Production" }]) {
+      expect(() =>
+        validateServerEnv({
+          NODE_ENV: "production",
+          BETTER_AUTH_SECRET: STRONG,
+          AUTH_TEST_MODE: "1",
+          ...marker,
+        }),
+      ).toThrow(/AUTH_TEST_MODE=1 é proibido em deploy real/);
+    }
+    // build de produção da CI/E2E (sem marcador de deploy): permitido, sem aviso
+    const ci = validateServerEnv({
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: STRONG,
+      AUTH_TEST_MODE: "1",
+      AUTH_EMAIL_PASSWORD_ENABLED: "true",
+      AUTH_OAUTH_MOCK_BASE_URL: "http://127.0.0.1:4010",
+    });
+    expect(ci).toMatchObject({ authTestMode: true, isDeploy: false, warnings: [] });
+  });
+
+  it("avisa quando variáveis de teste estão em produção sem AUTH_TEST_MODE", () => {
+    const env = validateServerEnv({
+      NODE_ENV: "production",
+      APP_ENV: "production",
+      BETTER_AUTH_SECRET: STRONG,
+      AUTH_EMAIL_PASSWORD_ENABLED: "true",
+      AUTH_OAUTH_MOCK_BASE_URL: "http://mock",
+    });
+    expect(env.warnings).toHaveLength(1);
+    expect(env.warnings[0]).toMatch(/AUTH_EMAIL_PASSWORD_ENABLED=true e AUTH_OAUTH_MOCK_BASE_URL/);
+    expect(
+      validateServerEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: STRONG }).warnings,
+    ).toEqual([]);
+    expect(validateServerEnv({ AUTH_EMAIL_PASSWORD_ENABLED: "true" }).warnings).toEqual([]);
   });
 
   it("exige id e secret do OAuth em par", () => {
