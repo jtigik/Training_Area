@@ -42,6 +42,13 @@ services:
       target: runner
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-training}:${POSTGRES_PASSWORD:-training}@db:5432/${POSTGRES_DB:-training_area}?schema=public
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
     ports:
       - "${APP_PORT:-3000}:3000"
     depends_on:

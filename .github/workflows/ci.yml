@@ -16,6 +16,8 @@ permissions:
 env:
   NEXT_TELEMETRY_DISABLED: 1
   DATABASE_URL: postgresql://training:training@localhost:5432/training_area?schema=public
+  # Valor fixo só para CI (não é segredo real); produção usa o secret do ambiente.
+  BETTER_AUTH_SECRET: ci-only-not-a-real-secret-0123456789abcdef
 
 jobs:
   quality:
