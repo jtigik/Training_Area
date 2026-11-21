@@ -52,7 +52,7 @@ npm run test:e2e:install     # chromium + dependências do sistema
 npm run test:e2e             # sobe o `next dev` automaticamente
 ```
 
-Com `CI=1`, o Playwright usa o build de produção (rode `npm run build` antes). Porta padrão 3000; para usar outra: `E2E_PORT=3100 npm run test:e2e`. Para testar um servidor já rodando: `E2E_BASE_URL=http://localhost:3000 npm run test:e2e`.
+Com `CI=1`, o Playwright usa o build de produção (rode `npm run build` antes). Porta padrão 3100 e banco isolado `training_area_e2e` (veja `e2e/README.md`); para usar outra porta: `E2E_PORT=3200 npm run test:e2e`. Para testar um servidor já rodando: `E2E_BASE_URL=http://localhost:3000 npm run test:e2e`.
 
 ## Scripts
 
