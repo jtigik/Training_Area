@@ -149,16 +149,22 @@ export function gradeMultiCellSubmission(
 }
 
 // ---------------------------------------------------------------------------
-// Adapter for Backend 1's JSON columns (feat/auth-modelo, uncommitted draft):
-//   initialSheet:   { cells: { "A1": { value?, formula?, locked? } } }
-//   expectedResult: [{ cell: "B4", value?, formula?, tolerance? }]
+// API / storage cell format (agreed with Frontend 1/2 and Backend 1, 21/11/2026):
+//   cell value = number | string | boolean | null | { f: "=SOMA(A1:A3)", v? }
+// Formulas exist ONLY inside `{ f }`: a plain string starting with "=" is literal text, and
+// 10 (number) ≠ "10" (text). Backend 1 JSON columns:
+//   Exercise.initialSheet   = { cells: { "A1": ApiCellValue } }
+//   Exercise.expectedResult = [{ cell: "B4", value?: scalar | {date}, formula?: "=...", tolerance? }]
+//   Exercise.gradingRules   = { rules?: GradingRules, targets?: { "B4": GradingRules } }
+// Engine convention (internal): strings starting with "=" are formulas, a leading apostrophe
+// marks text.
 // ---------------------------------------------------------------------------
 
+export type ApiScalar = number | string | boolean | null;
+export type ApiCellValue = ApiScalar | { f: string; v?: ApiScalar };
+
 export interface SchemaInitialSheet {
-  cells: Record<
-    string,
-    { value?: string | number | boolean | null; formula?: string; locked?: boolean }
-  >;
+  cells: Record<string, ApiCellValue>;
 }
 
 export interface SchemaExpectedCell {
@@ -168,63 +174,125 @@ export interface SchemaExpectedCell {
   tolerance?: number;
 }
 
+export interface SchemaGradingRules {
+  rules?: GradingRules;
+  targets?: Record<string, GradingRules>;
+}
+
+export function isFormulaCell(v: unknown): v is { f: string; v?: ApiScalar } {
+  return typeof v === "object" && v !== null && typeof (v as { f?: unknown }).f === "string";
+}
+
+/** API cell → engine cell. */
+export function apiCellToEngine(v: ApiCellValue | undefined): CellInput {
+  if (v === undefined || v === null) return null;
+  if (isFormulaCell(v)) {
+    const f = v.f.trim();
+    return f.startsWith("=") ? f : `=${f}`;
+  }
+  if (typeof v === "string") return v.startsWith("=") || v.startsWith("'") ? `'${v}` : v;
+  if (typeof v === "number" || typeof v === "boolean") return v;
+  return null;
+}
+
+/** Engine cell → API cell. */
+export function engineCellToApi(v: CellInput): ApiCellValue {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string") {
+    if (v.trim().startsWith("=")) return { f: v.trim() };
+    if (v.startsWith("'")) return v.slice(1);
+    return v;
+  }
+  return v as ApiScalar;
+}
+
+/** Legacy draft shape `{ value?, formula?, locked? }` is still accepted on read. */
+function legacyCell(v: unknown): ApiCellValue | undefined {
+  if (typeof v !== "object" || v === null || isFormulaCell(v)) return v as ApiCellValue;
+  const o = v as { value?: ApiScalar; formula?: string };
+  if (typeof o.formula === "string") return { f: o.formula };
+  return o.value ?? null;
+}
+
 export function fromSchemaExercise(
   initialSheet: SchemaInitialSheet,
   expectedResult: SchemaExpectedCell[],
-  rules?: GradingRules,
+  gradingRules?: SchemaGradingRules | GradingRules | null,
 ): MultiCellExercise {
   const sheet: Record<string, CellInput> = {};
   for (const [addr, cell] of Object.entries(initialSheet?.cells ?? {})) {
     if (!parseA1(addr)) continue;
-    const value = cell.formula ?? cell.value ?? null;
-    // A text value that looks like a formula (or starts with the apostrophe marker) stays text.
-    sheet[canonicalAddress(addr)] =
-      cell.formula === undefined &&
-      typeof value === "string" &&
-      (value.trimStart().startsWith("=") || value.startsWith("'"))
-        ? `'${value}`
-        : value;
+    const engine = apiCellToEngine(legacyCell(cell));
+    if (engine !== null) sheet[canonicalAddress(addr)] = engine;
   }
-  const targets: ExerciseTarget[] = (expectedResult ?? []).map((e) => ({
-    cell: e.cell,
-    expected: e.formula !== undefined ? { formula: e.formula } : { value: e.value ?? "" },
-    ...(e.tolerance !== undefined ? { numberTolerance: e.tolerance } : {}),
-  }));
-  return { sheet, targets, rules };
+  const wrapped =
+    gradingRules && ("rules" in gradingRules || "targets" in gradingRules)
+      ? (gradingRules as SchemaGradingRules)
+      : { rules: (gradingRules as GradingRules | null | undefined) ?? undefined };
+  const targets: ExerciseTarget[] = (expectedResult ?? []).map((e) => {
+    const cell = canonicalAddress(e.cell);
+    return {
+      ...(wrapped.targets?.[cell] ?? {}),
+      cell,
+      expected: e.formula !== undefined ? { formula: e.formula } : { value: e.value ?? "" },
+      ...(e.tolerance !== undefined ? { numberTolerance: e.tolerance } : {}),
+    };
+  });
+  return { sheet, targets, ...(wrapped.rules ? { rules: wrapped.rules } : {}) };
 }
 
 /**
- * Inverse of `fromSchemaExercise`: engine content → Backend 1's JSON columns
- * (`Exercise.initialSheet` / `Exercise.expectedResult`). Strings starting with "=" become
- * `formula`; the Excel apostrophe marker is removed from text values. Target cells are
- * omitted from the initial sheet. Per-target rules other than tolerance are dropped (they need
- * a `gradingRules` column — requested from Backend 1).
+ * Inverse of `fromSchemaExercise`: engine content → Backend 1's JSON columns. Target cells are
+ * omitted from the initial sheet; per-target rules go to `gradingRules.targets`.
  */
 export function toSchemaExercise(exercise: MultiCellExercise): {
   initialSheet: SchemaInitialSheet;
   expectedResult: SchemaExpectedCell[];
+  gradingRules: SchemaGradingRules | null;
 } {
   const targets = new Set(exercise.targets.map((t) => canonicalAddress(t.cell)));
   const cells: SchemaInitialSheet["cells"] = {};
   for (const [addr, v] of Object.entries(toA1Map(exercise.sheet))) {
     if (targets.has(addr) || v === null || v === undefined || v === "") continue;
-    if (typeof v === "string" && v.trim().startsWith("="))
-      cells[addr] = { formula: v.trim(), locked: true };
-    else if (typeof v === "string" && v.startsWith("'"))
-      cells[addr] = { value: v.slice(1), locked: true };
-    else cells[addr] = { value: v as string | number | boolean, locked: true };
+    cells[addr] = engineCellToApi(v);
   }
+  const perTarget: Record<string, GradingRules> = {};
   const expectedResult = exercise.targets.map((t): SchemaExpectedCell => {
-    const tol = t.numberTolerance ?? exercise.rules?.numberTolerance;
+    const cell = canonicalAddress(t.cell);
+    const { cell: _c, expected, numberTolerance, ...rest } = t;
+    void _c;
+    if (Object.keys(rest).length > 0) perTarget[cell] = rest;
+    const tol = numberTolerance ?? exercise.rules?.numberTolerance;
     return {
-      cell: canonicalAddress(t.cell),
-      ...("formula" in t.expected
-        ? { formula: t.expected.formula }
-        : { value: t.expected.value as SchemaExpectedCell["value"] }),
+      cell,
+      ...("formula" in expected
+        ? { formula: expected.formula }
+        : { value: expected.value as SchemaExpectedCell["value"] }),
       ...(tol !== undefined ? { tolerance: tol } : {}),
     };
   });
-  return { initialSheet: { cells }, expectedResult };
+  const gradingRules: SchemaGradingRules = {
+    ...(exercise.rules && Object.keys(exercise.rules).length > 0 ? { rules: exercise.rules } : {}),
+    ...(Object.keys(perTarget).length > 0 ? { targets: perTarget } : {}),
+  };
+  return {
+    initialSheet: { cells },
+    expectedResult,
+    gradingRules: Object.keys(gradingRules).length > 0 ? gradingRules : null,
+  };
+}
+
+/** Student-facing sheet in the API format (answer cells removed). */
+export function toApiStudentSheet(exercise: MultiCellExercise): {
+  cells: Record<string, ApiCellValue>;
+  targetCells: string[];
+} {
+  const { sheet, targetCells } = toStudentSheet(exercise);
+  const cells: Record<string, ApiCellValue> = {};
+  for (const [addr, v] of Object.entries(sheet as Record<string, CellInput>)) {
+    if (v !== null && v !== undefined && v !== "") cells[addr] = engineCellToApi(v);
+  }
+  return { cells, targetCells };
 }
 
 export interface TargetValidationError {
