@@ -166,6 +166,10 @@ Notas:
 
 ## Segurança
 
+### Headers HTTP (TA-033)
+
+`next.config.ts` aplica a todas as rotas os headers definidos em `src/lib/security-headers.ts`: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` e uma CSP básica (`default-src 'self'`, `frame-ancestors 'none'`, `base-uri 'self'`, `form-action` com `'self'` mais os endpoints OAuth do Google e da Microsoft, `img-src 'self' data: blob:`, `style-src`/`script-src` com `'unsafe-inline'`, `connect-src 'self'`). `'unsafe-eval'` e `ws:` só entram em desenvolvimento. Os testes unitários (`security-headers.test.ts`) e o e2e (`e2e/security-headers.spec.ts`) verificam os headers e a ausência de erros de CSP na home. Ao adicionar um domínio externo (CDN, analytics, provedor de IA chamado do navegador), atualize a CSP.
+
 ### Dependências (`npm audit`)
 
 Em 21/11/2026, `npm audit` reporta **3 vulnerabilidades altas**, todas na mesma cadeia: `prisma` → `@prisma/config` → `effect` ([GHSA-7589-6fvf-x4pw](https://github.com/advisories/GHSA-7589-6fvf-x4pw), ReDoS em `Schema.TemplateLiteral`).
