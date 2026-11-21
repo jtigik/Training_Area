@@ -9,7 +9,8 @@
  */
 
 /**
- * `disabled`: sem IA (feedback só manual); `mock`: texto fixo local (padrão em dev e CI);
+ * `disabled` (padrão, igual a src/server/ai/factory): sem IA, feedback por regras/templates;
+ * `mock`: texto fixo local (usado no .env.example e na CI);
  * `openai-compatible`: qualquer API no formato OpenAI (`AI_BASE_URL` + `AI_API_KEY`).
  */
 export const AI_PROVIDERS = ["disabled", "mock", "openai-compatible"] as const;
@@ -121,9 +122,13 @@ export function validateServerEnv(source: Source = process.env): ServerEnv {
   const microsoftTenantId = read(source, "MICROSOFT_TENANT_ID") ?? "common";
 
   // Provedor de IA para feedback
-  const aiProvider = oneOf(source, "AI_PROVIDER", AI_PROVIDERS, "mock", issues);
+  const aiProvider = oneOf(source, "AI_PROVIDER", AI_PROVIDERS, "disabled", issues);
   const aiApiKey = read(source, "AI_API_KEY");
   const aiBaseUrl = read(source, "AI_BASE_URL");
+  const aiTimeout = read(source, "AI_TIMEOUT_MS");
+  if (aiTimeout !== undefined && !(Number(aiTimeout) > 0)) {
+    issues.push("AI_TIMEOUT_MS deve ser um número positivo (ms)");
+  }
   if (aiProvider === "openai-compatible") {
     if (!aiApiKey) issues.push("AI_API_KEY é obrigatória quando AI_PROVIDER=openai-compatible");
     if (!aiBaseUrl) {

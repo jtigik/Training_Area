@@ -19,7 +19,7 @@ describe("requireEnv", () => {
 describe("validateServerEnv", () => {
   it("aceita ambiente vazio em dev/teste com padrões seguros", () => {
     const env = validateServerEnv({ NODE_ENV: "test" });
-    expect(env.ai.provider).toBe("mock");
+    expect(env.ai.provider).toBe("disabled");
     expect(env.auth.google).toBeUndefined();
     expect(env.auth.microsoft).toBeUndefined();
     expect(env.tenancy).toEqual({
@@ -51,7 +51,8 @@ describe("validateServerEnv", () => {
   });
 
   it("AI_PROVIDER: disabled | mock | openai-compatible", () => {
-    expect(validateServerEnv({}).ai.provider).toBe("mock");
+    expect(validateServerEnv({}).ai.provider).toBe("disabled");
+    expect(() => validateServerEnv({ AI_TIMEOUT_MS: "0" })).toThrow(/AI_TIMEOUT_MS/);
     expect(validateServerEnv({ AI_PROVIDER: "disabled" }).ai.provider).toBe("disabled");
     // mock/disabled não exigem chave nem URL
     expect(validateServerEnv({ AI_PROVIDER: "mock" }).ai.apiKey).toBeUndefined();
