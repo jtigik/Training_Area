@@ -56,6 +56,9 @@ export type DomainErrorCode =
   | "CONFLICT"
   | "INVALID_TRANSITION"
   | "NOT_ALLOWED"
+  // teacher feedback review (contract with Frontend 2)
+  | "ALREADY_REVIEWED"
+  | "GENERATION_NOT_READY"
   // student level/run rules (contract with Frontend 1)
   | "LEVEL_LOCKED"
   | "LEVEL_NOT_REDOABLE"
