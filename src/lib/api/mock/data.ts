@@ -36,8 +36,8 @@ export const MOCK_LEVELS: MockLevel[] = [
     level: "FUNDAMENTAL",
     description:
       "Referências de célula, operações básicas e as primeiras funções: SOMA, MÉDIA, MÁXIMO e MÍNIMO.",
-    required: 4,
-    exerciseIds: ["ex-soma", "ex-media", "ex-maximo", "ex-minimo"],
+    required: 5,
+    exerciseIds: ["e2e-soma-basica", "ex-soma", "ex-media", "ex-maximo", "ex-minimo"],
   },
   {
     level: "PROFESSIONAL",
@@ -156,6 +156,21 @@ const TEMPS = {
 };
 
 export const MOCK_EXERCISES: MockExercise[] = [
+  // Same data as QA's e2e/data/formulas.json, so the E2E specs can run against the mock.
+  ex({
+    id: "e2e-soma-basica",
+    level: "FUNDAMENTAL",
+    difficulty: "VERY_EASY",
+    title: "Soma básica",
+    statement:
+      "As células **A1** a **A3** têm três valores. Em **A4**, escreva uma fórmula que calcule a **soma** deles.",
+    cells: { A1: 10, A2: 20, A3: 30 },
+    targetCell: "A4",
+    expected: 60,
+    hint: "Use a função SOMA com o intervalo A1:A3.",
+    relatedSectionId: "sec-funcoes-basicas",
+    size: { rows: 8, cols: 4 },
+  }),
   ex({
     id: "ex-soma",
     level: "FUNDAMENTAL",

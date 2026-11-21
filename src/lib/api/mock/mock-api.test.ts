@@ -55,6 +55,7 @@ describe("mock student API", () => {
     expect(wrong.hint).toBeTruthy();
 
     const answers: Record<string, string> = {
+      "e2e-soma-basica": "=soma(a1:a3)",
       "ex-soma": "=SOMA(B2:B6)",
       "ex-media": "=MÉDIA(B2:B5)",
       "ex-maximo": "=MÁXIMO(B2:B8)",
@@ -73,8 +74,8 @@ describe("mock student API", () => {
     mockConfig.reviewDelayMs = 60_000;
     const inReview = await mockApi.getLevelFeedback("FUNDAMENTAL");
     expect(inReview).toMatchObject({ status: "IN_REVIEW", message: null, concept: "PD" });
-    expect(inReview.score).toEqual({ correct: 4, total: 4, percent: 100 });
-    expect(inReview.attempts).toBe(5);
+    expect(inReview.score).toEqual({ correct: 5, total: 5, percent: 100 });
+    expect(inReview.attempts).toBe(6);
 
     mockConfig.reviewDelayMs = 0;
     const published = await mockApi.getLevelFeedback("FUNDAMENTAL");
@@ -89,8 +90,8 @@ describe("mock student API", () => {
 
   it("lets the student redo a level completed with ND/ED", async () => {
     await login();
-    for (const id of ["ex-soma", "ex-media", "ex-maximo", "ex-minimo"]) {
-      await mockApi.submitAttempt(id, { submission: "=B2" });
+    for (const id of ["e2e-soma-basica", "ex-soma", "ex-media", "ex-maximo", "ex-minimo"]) {
+      await mockApi.submitAttempt(id, { submission: "=A1" });
     }
     let trail = await mockApi.getTrail();
     expect(trail.levels[0]).toMatchObject({ status: "COMPLETED", concept: "ND" });
@@ -104,6 +105,7 @@ describe("mock student API", () => {
   it("has an answer key that its own grader accepts for every exercise (sanity check)", async () => {
     const { gradeSubmission } = await import("@/lib/formula/check");
     const solutions: Record<string, string> = {
+      "e2e-soma-basica": "=SUM(A1:A3)",
       "ex-soma": "=SOMA(B2:B6)",
       "ex-media": "=MÉDIA(B2:B5)",
       "ex-maximo": "=MÁXIMO(B2:B8)",
