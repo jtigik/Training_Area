@@ -6,6 +6,8 @@ describe("postLoginPath", () => {
     expect(postLoginPath("ALUNO", "/aluno/exercicios/ex-1")).toBe("/aluno/exercicios/ex-1");
     expect(postLoginPath("ALUNO", "/aluno?x=1")).toBe("/aluno?x=1");
     expect(postLoginPath("INSTITUTION_ADMIN", "/admin/configuracoes")).toBe("/admin/configuracoes");
+    expect(postLoginPath("SUPER_ADMIN", "/super-admin/x")).toBe("/super-admin/x");
+    expect(postLoginPath("SUPER_ADMIN", "/superadmin/x")).toBe("/super-admin/instituicoes");
   });
 
   it("falls back to the role home for other areas or unsafe targets", () => {
@@ -15,7 +17,7 @@ describe("postLoginPath", () => {
     expect(postLoginPath("ALUNO", "/\\evil.example")).toBe("/aluno");
     expect(postLoginPath("ALUNO", "https://evil.example")).toBe("/aluno");
     expect(postLoginPath("PROFESSOR", null)).toBe("/professor/resultados");
-    expect(postLoginPath("SUPER_ADMIN", undefined)).toBe("/superadmin/instituicoes");
+    expect(postLoginPath("SUPER_ADMIN", undefined)).toBe("/super-admin/instituicoes");
   });
 });
 

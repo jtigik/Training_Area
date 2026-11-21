@@ -162,12 +162,12 @@ export interface SessionUser {
   tenant: Tenant | null;
 }
 
-/** Home of each role after login — routes agreed with QA/FE2 (wt-qa e2e/support/routes.ts). */
+/** Home of each role after login. Official area prefixes are Backend 1's (/super-admin, /admin, /professor). */
 export const ROLE_HOME: Record<Role, string> = {
   ALUNO: "/aluno",
   PROFESSOR: "/professor/resultados",
   INSTITUTION_ADMIN: "/admin/usuarios",
-  SUPER_ADMIN: "/superadmin/instituicoes",
+  SUPER_ADMIN: "/super-admin/instituicoes",
 };
 
 /** Route prefixes each role may access (used to validate ?callbackUrl=). */
@@ -175,7 +175,7 @@ export const ROLE_PREFIXES: Record<Role, string[]> = {
   ALUNO: ["/aluno"],
   PROFESSOR: ["/professor"],
   INSTITUTION_ADMIN: ["/admin"],
-  SUPER_ADMIN: ["/superadmin"],
+  SUPER_ADMIN: ["/super-admin"],
 };
 
 /** POST /api/auth/sign-out -> 200 */
