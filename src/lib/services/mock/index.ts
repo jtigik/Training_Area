@@ -6,7 +6,14 @@ import {
   isLastActiveAdmin,
   validateBands,
 } from "../../domain/rules";
-import type { BankExercise, ContentSection, Exercise, ExerciseSet, User } from "../../domain/types";
+import type {
+  BankExercise,
+  ContentSection,
+  Exercise,
+  ExerciseSet,
+  ReviewFeedback,
+  User,
+} from "../../domain/types";
 import { ApiError, type Services } from "../contracts";
 import { buildImportReport, parseXlsx, type XlsxImportResult } from "../../xlsx/import";
 import { validateXlsxFile } from "../../validation/schemas";
@@ -22,6 +29,8 @@ export interface MockOptions {
   userId?: string;
   /** Chamado após cada operação (ex.: salvar em localStorage). */
   persist?: (db: MockDb) => void;
+  /** Tempo simulado da geração por IA após "Gerar novamente" (ms; padrão 1500). */
+  generationMs?: number;
 }
 
 /** Remove o campo interno de tenant dos registros que não o expõem no DTO. */
@@ -83,7 +92,25 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
   const findSection = (id: string) => find(db.sections, id, "Seção");
   const findSet = (id: string) => find(db.sets, id, "Conjunto");
   const findExercise = (id: string) => find(db.exercises, id, "Exercício");
-  const findReview = (id: string) => find(db.reviews, id, "Feedback");
+  const generationMs = options.generationMs ?? 1500;
+  /** Geração simulada: completa na primeira leitura depois do prazo. */
+  const pendingUntil = new Map<string, number>();
+  const completeGeneration = (r: ReviewFeedback) => {
+    if (r.generationStatus !== "PENDING") return r;
+    const until = pendingUntil.get(r.id);
+    if (until !== undefined && Date.now() < until) return r;
+    pendingUntil.delete(r.id);
+    const aiText = `${r.studentName}, revisamos seu desempenho no nível (${r.accuracyPercent}% de acerto, conceito ${r.concept}). Retome as seções do nível e pratique os exercícios em que errou.`;
+    return Object.assign(r, {
+      generationStatus: "GENERATED",
+      generationError: null,
+      aiText,
+      strengths: r.accuracyPercent > 0 ? ["Concluiu os exercícios do nível."] : [],
+      toReview: r.concept === "PD" ? [] : ["Exercícios em que errou no nível."],
+      finalText: r.finalText.trim() ? r.finalText : aiText,
+    } satisfies Partial<ReviewFeedback>);
+  };
+  const findReview = (id: string) => completeGeneration(find(db.reviews, id, "Feedback"));
   const findBank = (id: string): BankExercise =>
     db.bank.find((b) => b.id === id && (b.tenantId === null || b.tenantId === tenant)) ??
     notFound("Exercício do banco");
@@ -568,6 +595,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
         delay(() => {
           const term = q.search?.trim().toLowerCase();
           return mine(db.reviews)
+            .map(completeGeneration)
             .filter(
               (r) =>
                 (!q.status?.length || q.status.includes(r.status)) &&
@@ -587,29 +615,45 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
         delay(() => {
           const r = findReview(id);
           assertOpen(r);
-          if (!finalText.trim())
-            throw new ApiError(422, "EMPTY_TEXT", "O feedback aprovado não pode ficar vazio.");
+          // BE2: aprova com geração GENERATED ou com texto final não vazio (ex.: escrito à mão após FAILED).
+          const text = finalText.trim()
+            ? finalText
+            : r.generationStatus === "GENERATED"
+              ? (r.aiText ?? "")
+              : "";
+          if (!text.trim())
+            throw new ApiError(
+              422,
+              r.generationStatus === "GENERATED" ? "EMPTY_TEXT" : "GENERATION_NOT_READY",
+              r.generationStatus === "GENERATED"
+                ? "O feedback aprovado não pode ficar vazio."
+                : "A IA ainda não gerou o texto: escreva o feedback para aprovar.",
+            );
           return Object.assign(r, {
-            finalText,
+            finalText: text,
             status: "APPROVED",
             reviewerId: actor,
             reviewedAt: now(),
             rejectionReason: null,
-          });
+          } satisfies Partial<ReviewFeedback>);
         }),
       regenerate: (id) =>
         delay(() => {
           const r = findReview(id);
           assertOpen(r);
-          const text = `${r.studentName}, revisamos seu desempenho no nível (${r.accuracyPercent}% de acerto, conceito ${r.concept}). Retome as seções do nível e pratique os exercícios em que errou.`;
+          pendingUntil.set(r.id, Date.now() + generationMs);
           return Object.assign(r, {
-            generatedText: text,
-            finalText: text,
+            generationStatus: "PENDING",
+            generationError: null,
+            aiText: null,
+            strengths: [],
+            toReview: [],
+            finalText: "",
             status: "DRAFT",
             reviewerId: null,
             reviewedAt: null,
             rejectionReason: null,
-          });
+          } satisfies Partial<ReviewFeedback>);
         }),
       reject: (id, reason) =>
         delay(() => {

@@ -4,6 +4,7 @@ import {
   DIFFICULTY_LABELS,
   LEVEL_LABELS,
   PROGRESS_STATUS_LABELS,
+  GENERATION_STATUS_LABELS,
   REVIEW_STATUS_LABELS,
   ROLE_LABELS,
   SECTION_STATUS_LABELS,
@@ -15,6 +16,7 @@ import type {
   ExerciseSetStatus,
   Level,
   ProgressStatus,
+  GenerationStatus,
   ReviewStatus,
   Role,
   SectionStatus,
@@ -99,6 +101,14 @@ export const ProgressBadge = ({ status }: { status: ProgressStatus }) => (
 export const ReviewStatusBadge = ({ status }: { status: ReviewStatus }) => (
   <Pill className={REVIEW_CLASSES[status]}>{REVIEW_STATUS_LABELS[status]}</Pill>
 );
+
+/** Situação da geração por IA; nada quando já gerado. */
+export function GenerationStatusBadge({ status }: { status: GenerationStatus }) {
+  if (status === "GENERATED") return null;
+  return (
+    <Pill className={status === "FAILED" ? ERROR : INFO}>{GENERATION_STATUS_LABELS[status]}</Pill>
+  );
+}
 
 /** Conceito: o texto é exatamente o código (ND, ED, D, PD); o nome por extenso vai no title. */
 export function ConceptBadge({ concept }: { concept: Concept }) {

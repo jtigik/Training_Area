@@ -2,6 +2,7 @@ import type {
   Concept,
   Difficulty,
   ExerciseSetStatus,
+  GenerationStatus,
   Level,
   ProgressStatus,
   ReviewStatus,
@@ -56,6 +57,12 @@ export const CONCEPT_LABELS: Record<Concept, string> = {
   ED: "Em desenvolvimento",
   D: "Demonstrou",
   PD: "Plenamente demonstrou",
+};
+
+export const GENERATION_STATUS_LABELS: Record<GenerationStatus, string> = {
+  PENDING: "Gerando…",
+  GENERATED: "Gerado",
+  FAILED: "Falha na geração",
 };
 
 export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {

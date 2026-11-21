@@ -50,6 +50,10 @@ export const REDO_CONCEPTS: readonly Concept[] = ["ND", "ED"];
 export const REVIEW_STATUSES = ["DRAFT", "APPROVED", "REJECTED"] as const;
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 
+/** Situação da geração por IA (independente da revisão). */
+export const GENERATION_STATUSES = ["PENDING", "GENERATED", "FAILED"] as const;
+export type GenerationStatus = (typeof GENERATION_STATUSES)[number];
+
 /** ISO 8601 (UTC) string. */
 export type IsoDateTime = string;
 
@@ -253,8 +257,16 @@ export interface ReviewFeedback {
   levelAttempt: number;
   concept: Concept;
   accuracyPercent: number;
-  /** Texto original gerado pela IA (imutável). */
-  generatedText: string;
+  /** Geração por IA: PENDING (gerando), GENERATED ou FAILED. */
+  generationStatus: GenerationStatus;
+  /** Motivo da falha da geração (só com FAILED). */
+  generationError: string | null;
+  /** Texto gerado pela IA; `null` enquanto PENDING ou quando FAILED. */
+  aiText: string | null;
+  /** Pontos fortes apontados pela IA. */
+  strengths: string[];
+  /** O que o aluno deve revisar. */
+  toReview: string[];
   /** Texto final (editado pelo professor); liberado ao aluno se aprovado. */
   finalText: string;
   status: ReviewStatus;

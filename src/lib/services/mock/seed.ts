@@ -541,7 +541,11 @@ export function createSeed(): MockDb {
     levelAttempt: 1,
     concept,
     accuracyPercent,
-    generatedText: text,
+    generationStatus: "GENERATED",
+    generationError: null,
+    aiText: text,
+    strengths: concept === "ND" ? [] : ["Usa referências de intervalo corretamente."],
+    toReview: concept === "PD" ? [] : ["Intervalos completos em SOMA e MÉDIA."],
     finalText: text,
     status,
     rejectionReason: null,
@@ -580,6 +584,24 @@ export function createSeed(): MockDb {
       "APPROVED",
       "2026-11-13T15:01:00.000Z",
     ),
+    {
+      ...review(
+        "rv-4",
+        "u-al4",
+        "Eduardo Alves",
+        "ED",
+        60,
+        "",
+        "DRAFT",
+        "2026-11-20T09:00:00.000Z",
+      ),
+      generationStatus: "FAILED",
+      generationError: "O provedor de IA não respondeu a tempo.",
+      aiText: null,
+      strengths: [],
+      toReview: [],
+      finalText: "",
+    },
   ];
 
   return {

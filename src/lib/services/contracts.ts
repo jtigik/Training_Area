@@ -29,9 +29,11 @@
  *   GET    /api/professor/feedback-reviews/:id                         → ReviewFeedback
  *   PATCH  /api/professor/feedback-reviews/:id body { finalText }      → ReviewFeedback (só DRAFT ou REJECTED)
  *   POST   /api/professor/feedback-reviews/:id/approve body { finalText } → ReviewFeedback (DRAFT|REJECTED → APPROVED) | 409 ALREADY_REVIEWED
+ *          | 422 GENERATION_NOT_READY — exige generationStatus GENERATED ou finalText não vazio (o professor pode escrever à mão após FAILED)
  *   POST   /api/professor/feedback-reviews/:id/reject  body { reason? }   → ReviewFeedback (DRAFT → REJECTED) | 409 ALREADY_REVIEWED
- *   POST   /api/professor/feedback-reviews/:id/regenerate             → ReviewFeedback (novo texto da IA; DRAFT|REJECTED → DRAFT)
- *          Status = enum FeedbackStatus do BE1 (DRAFT "Pendente", APPROVED, REJECTED); o aluno só vê APPROVED.
+ *   POST   /api/professor/feedback-reviews/:id/regenerate             → ReviewFeedback (DRAFT|REJECTED → DRAFT, generationStatus PENDING, rejectionReason null)
+ *          status = FeedbackStatus do BE1 (DRAFT "Pendente", APPROVED, REJECTED); o aluno só vê APPROVED.
+ *          generationStatus = PENDING | GENERATED | FAILED (+ generationError); conteúdo: aiText (null se PENDING/FAILED), strengths[], toReview[].
  *
  * Backend 2 — conteúdo, conjuntos, exercícios, banco, resultados
  *   GET    /api/professor/sections                                     → ContentSection[] (por position)

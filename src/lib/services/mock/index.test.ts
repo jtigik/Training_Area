@@ -255,10 +255,11 @@ describe("mock: feedback", () => {
   });
 
   it("fila de revisão: edita, aprova, rejeita e impede revisar de novo", async () => {
-    const s = createMockServices();
+    const s = createMockServices({ generationMs: 0 });
     expect((await s.reviews.list({ status: ["DRAFT"] })).map((r) => r.id)).toEqual([
       "rv-1",
       "rv-2",
+      "rv-4",
     ]);
     await s.reviews.saveDraft("rv-1", "Texto revisado");
     const ok = await s.reviews.approve("rv-1", "Texto revisado final");
@@ -267,7 +268,7 @@ describe("mock: feedback", () => {
       finalText: "Texto revisado final",
       reviewerId: "u-prof",
     });
-    expect(ok.generatedText).not.toBe(ok.finalText);
+    expect(ok.aiText).not.toBe(ok.finalText);
     await expect(s.reviews.reject("rv-1", "motivo")).rejects.toMatchObject({
       code: "ALREADY_REVIEWED",
     });
@@ -278,11 +279,38 @@ describe("mock: feedback", () => {
     // Rejeitado volta ao professor: continua na fila "a revisar" e pode ser regenerado.
     expect((await s.reviews.list({ status: ["DRAFT", "REJECTED"] })).map((r) => r.id)).toEqual([
       "rv-2",
+      "rv-4",
     ]);
     await expect(s.reviews.reject("rv-2")).rejects.toMatchObject({ code: "ALREADY_REVIEWED" });
     const again = await s.reviews.regenerate("rv-2");
-    expect(again).toMatchObject({ status: "DRAFT", reviewerId: null });
-    expect(again.finalText).toBe(again.generatedText);
+    expect(again).toMatchObject({
+      status: "DRAFT",
+      generationStatus: "PENDING",
+      aiText: null,
+      rejectionReason: null,
+      reviewerId: null,
+    });
+    const done = await s.reviews.get("rv-2");
+    expect(done.generationStatus).toBe("GENERATED");
+    expect(done.finalText).toBe(done.aiText);
+  });
+
+  it("geração FAILED: só aprova com texto escrito pelo professor", async () => {
+    const s = createMockServices({ generationMs: 60_000 });
+    const failed = await s.reviews.get("rv-4");
+    expect(failed).toMatchObject({ generationStatus: "FAILED", aiText: null });
+    expect(failed.generationError).toBeTruthy();
+    await expect(s.reviews.approve("rv-4", "  ")).rejects.toMatchObject({
+      code: "GENERATION_NOT_READY",
+    });
+    expect(await s.reviews.approve("rv-4", "Eduardo, revise PROCV.")).toMatchObject({
+      status: "APPROVED",
+      finalText: "Eduardo, revise PROCV.",
+    });
+    // Enquanto PENDING, continua pendente nas leituras dentro do prazo.
+    const pending = await s.reviews.regenerate("rv-1");
+    expect(pending.generationStatus).toBe("PENDING");
+    expect((await s.reviews.get("rv-1")).generationStatus).toBe("PENDING");
   });
 });
 

@@ -1,7 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { ConceptBadge, LevelBadge, ReviewStatusBadge } from "@/components/common/badges";
+import { useEffect, useState } from "react";
+import {
+  ConceptBadge,
+  GenerationStatusBadge,
+  LevelBadge,
+  ReviewStatusBadge,
+} from "@/components/common/badges";
 import { NativeSelect } from "@/components/common/native-select";
 import { Field } from "@/components/common/field";
 import { PageHeader } from "@/components/common/page-header";
@@ -31,8 +36,13 @@ export function ReviewItem({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const generated = item.generationStatus === "GENERATED";
+  const generating = item.generationStatus === "PENDING";
+  const failed = item.generationStatus === "FAILED";
   const pending = item.status === "DRAFT";
   const open = item.status !== "APPROVED";
+  // BE2: aprova com geração GENERATED ou com texto final escrito pelo professor.
+  const canApprove = open && !generating && text.trim() !== "";
   const textId = `review-text-${item.id}`;
 
   async function run(action: () => Promise<ReviewFeedback>, ok: string) {
@@ -47,8 +57,29 @@ export function ReviewItem({
     }
   }
 
+  const regenerate = (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={busy}
+      onClick={() =>
+        run(
+          () => getServices().reviews.regenerate(item.id),
+          `Gerando um novo feedback para ${item.studentName}.`,
+        )
+      }
+    >
+      Gerar novamente
+    </Button>
+  );
+
   return (
-    <li data-testid="review-feedback-item" className="bg-card grid gap-3 rounded-lg border p-4">
+    <li
+      data-testid="review-feedback-item"
+      aria-busy={generating || undefined}
+      className="bg-card grid gap-3 rounded-lg border p-4"
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{item.studentName}</span>
         <LevelBadge level={item.level} />
@@ -58,20 +89,58 @@ export function ReviewItem({
           {formatDateTimeBR(item.createdAt)}
         </span>
         <span className="flex-1" />
+        <GenerationStatusBadge status={item.generationStatus} />
         <ReviewStatusBadge status={item.status} />
       </div>
+      {generating ? (
+        <p className="text-muted-foreground text-sm" data-testid="feedback-generating">
+          A IA está gerando o feedback. Esta lista se atualiza sozinha.
+        </p>
+      ) : null}
+      {failed ? (
+        <p className="text-destructive text-sm" data-testid="feedback-generation-error">
+          A geração por IA falhou{item.generationError ? `: ${item.generationError}` : "."} Escreva
+          o feedback você mesmo ou gere novamente.
+        </p>
+      ) : null}
       {editing ? (
         <div className="grid gap-1.5">
           <Label htmlFor={textId}>Feedback para {item.studentName}</Label>
           <Textarea id={textId} rows={5} value={text} onChange={(e) => setText(e.target.value)} />
-          <details className="text-muted-foreground text-xs">
-            <summary className="cursor-pointer">Texto original da IA</summary>
-            <p className="mt-1 whitespace-pre-wrap">{item.generatedText}</p>
-          </details>
+          {item.aiText ? (
+            <details className="text-muted-foreground text-xs">
+              <summary className="cursor-pointer">Texto original da IA</summary>
+              <p className="mt-1 whitespace-pre-wrap">{item.aiText}</p>
+            </details>
+          ) : null}
         </div>
-      ) : (
+      ) : item.finalText ? (
         <p className="text-sm whitespace-pre-wrap">{item.finalText}</p>
-      )}
+      ) : null}
+      {generated && (item.strengths.length > 0 || item.toReview.length > 0) ? (
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          {item.strengths.length > 0 ? (
+            <div>
+              <h3 className="font-medium">Pontos fortes</h3>
+              <ul className="list-disc pl-5" aria-label="Pontos fortes">
+                {item.strengths.map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {item.toReview.length > 0 ? (
+            <div>
+              <h3 className="font-medium">Para revisar</h3>
+              <ul className="list-disc pl-5" aria-label="Para revisar">
+                {item.toReview.map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {item.status === "REJECTED" && item.rejectionReason ? (
         <p className="text-muted-foreground text-xs">Motivo: {item.rejectionReason}</p>
       ) : null}
@@ -86,7 +155,7 @@ export function ReviewItem({
         </div>
       ) : null}
       {error ? <p className="text-destructive text-sm">{error}</p> : null}
-      {open ? (
+      {open && !generating ? (
         <div className="flex flex-wrap gap-2">
           {!editing ? (
             <Button
@@ -96,7 +165,7 @@ export function ReviewItem({
               data-testid="feedback-edit"
               onClick={() => setEditing(true)}
             >
-              Editar
+              {failed && !item.finalText ? "Escrever feedback" : "Editar"}
             </Button>
           ) : (
             <Button
@@ -116,7 +185,7 @@ export function ReviewItem({
             type="button"
             size="sm"
             data-testid="feedback-approve"
-            disabled={busy || !text.trim()}
+            disabled={busy || !canApprove}
             onClick={() =>
               run(
                 () => getServices().reviews.approve(item.id, text),
@@ -126,7 +195,7 @@ export function ReviewItem({
           >
             Aprovar
           </Button>
-          {pending ? (
+          {pending && generated ? (
             <Button
               type="button"
               variant="destructive"
@@ -143,22 +212,9 @@ export function ReviewItem({
               Rejeitar
             </Button>
           ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                run(
-                  () => getServices().reviews.regenerate(item.id),
-                  `Novo texto gerado para ${item.studentName}.`,
-                )
-              }
-            >
-              Gerar novamente
-            </Button>
+            regenerate
           )}
-          {pending && !rejecting ? (
+          {pending && generated && !rejecting ? (
             <Button type="button" variant="ghost" size="sm" onClick={() => setRejecting(true)}>
               Informar motivo
             </Button>
@@ -186,6 +242,13 @@ export function ReviewQueuePage() {
     `reviews:${filter}`,
   );
   const [message, setMessage] = useState<{ kind: "ok" | "erro"; text: string } | null>(null);
+  const generating = reviews.data?.some((r) => r.generationStatus === "PENDING") ?? false;
+  const { reload } = reviews;
+  useEffect(() => {
+    if (!generating) return;
+    const t = setTimeout(reload, 2000);
+    return () => clearTimeout(t);
+  }, [generating, reload, reviews.data]);
 
   return (
     <>
@@ -217,7 +280,7 @@ export function ReviewQueuePage() {
         <ul className="grid gap-3" aria-label="Feedbacks">
           {reviews.data.map((r) => (
             <ReviewItem
-              key={r.id}
+              key={`${r.id}:${r.generationStatus}:${r.status}`}
               item={r}
               onDone={(updated, text) => {
                 setMessage({ kind: "ok", text });
