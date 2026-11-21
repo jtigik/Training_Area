@@ -34,3 +34,20 @@ describe("conceptOverrideSchema", () => {
     ).toBe("Revisei a planilha e o erro era de digitação");
   });
 });
+
+describe("gradingBandsSchema (0 < ND < ED < D ≤ 100)", () => {
+  const ok = (ed: number, d: number, pd: number) =>
+    gradingBandsSchema.safeParse({ edMinPercent: ed, dMinPercent: d, pdMinPercent: pd }).success;
+  it("aceita o padrão e os extremos válidos", () => {
+    expect(ok(50, 70, 90)).toBe(true);
+    expect(ok(1, 2, 100)).toBe(true);
+  });
+  it("recusa zero, iguais, decrescentes, acima de 100 e não inteiros", () => {
+    expect(ok(0, 70, 90)).toBe(false);
+    expect(ok(50, 50, 90)).toBe(false);
+    expect(ok(70, 50, 90)).toBe(false);
+    expect(ok(50, 70, 101)).toBe(false);
+    expect(ok(50.5, 70, 90)).toBe(false);
+    expect(gradingBandsSchema.safeParse({ edMinPercent: 50 }).success).toBe(false);
+  });
+});

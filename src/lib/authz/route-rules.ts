@@ -35,9 +35,10 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { prefix: "/super-admin", access: ["SUPER_ADMIN"] },
   { prefix: "/api/super-admin", access: ["SUPER_ADMIN"] },
 
-  // Exceções: SUPER_ADMIN configura faixas e convida o 1º admin de uma
-  // instituição (informando tenantId). Os handlers revalidam com requireTenant.
-  { prefix: "/api/admin/grading-config", access: ["INSTITUTION_ADMIN", "SUPER_ADMIN"] },
+  // Única exceção: SUPER_ADMIN convida o 1º INSTITUTION_ADMIN de uma instituição
+  // nova (informando tenantId; sem isso a instituição não tem quem a administre).
+  // Faixas: só o ADMIN (/api/admin/grading-config); padrão da plataforma em
+  // /api/super-admin/grading-defaults. O handler revalida com requireTenant.
   { prefix: "/api/admin/invitations", access: ["INSTITUTION_ADMIN", "SUPER_ADMIN"] },
 
   { prefix: "/admin", access: ["INSTITUTION_ADMIN"] },

@@ -217,7 +217,14 @@ async function main() {
     create: DEMO_TENANT,
   });
 
-  // Faixas de conceito padrão da plataforma, explícitas para a instituição demo.
+  // Padrão da plataforma (linha única; a migração já cria — aqui só garante).
+  await prisma.platformGradingDefaults.upsert({
+    where: { id: "platform" },
+    update: {},
+    create: { id: "platform", edMinPercent: 50, dMinPercent: 70, pdMinPercent: 90 },
+  });
+
+  // Cópia das faixas padrão para a instituição demo (como createTenant faz).
   await prisma.tenantGradingConfig.upsert({
     where: { tenantId: DEMO_TENANT.id },
     update: {},

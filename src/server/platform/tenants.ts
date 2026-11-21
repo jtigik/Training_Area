@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/api-error";
 import type { TenantCreateInput, TenantUpdateInput } from "@/lib/validation/tenant";
 import { invalidateTenantSummary } from "@/server/auth/tenant-summary";
 import { prisma } from "@/server/db";
+import { getGradingDefaults } from "@/server/platform/grading-defaults";
 
 /** Campos da instituição visíveis ao SUPER_ADMIN (sem dados de pessoas). */
 const TENANT_SELECT = {
@@ -37,8 +38,16 @@ export function listTenants() {
   return prisma.tenant.findMany({ select: TENANT_SELECT, orderBy: { name: "asc" } });
 }
 
+/** Cria a instituição com uma CÓPIA das faixas padrão da plataforma (Q-S1). */
 export async function createTenant(input: TenantCreateInput) {
-  return prisma.tenant.create({ data: input, select: TENANT_SELECT }).catch(conflictOnSlug);
+  return prisma
+    .$transaction(async (tx) => {
+      const bands = await getGradingDefaults(tx);
+      const tenant = await tx.tenant.create({ data: input, select: TENANT_SELECT });
+      await tx.tenantGradingConfig.create({ data: { tenantId: tenant.id, ...bands } });
+      return { ...tenant, gradingBands: bands };
+    })
+    .catch(conflictOnSlug);
 }
 
 /** Atualiza (inclusive desativar: active=false bloqueia novos logins da instituição). */

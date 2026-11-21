@@ -95,13 +95,16 @@ describe("authorizeRoute", () => {
     expect(authorizeRoute("/api/aluno/sets/x/progress", professor).type).toBe("forbidden");
   });
 
-  it("exceções do SUPER_ADMIN dentro da instituição: grading-config e invitations", () => {
-    for (const p of ["/api/admin/grading-config", "/api/admin/invitations"]) {
-      expect(authorizeRoute(p, superAdmin).type).toBe("allow");
-      expect(authorizeRoute(p, instAdmin).type).toBe("allow");
-      expect(authorizeRoute(p, professor).type).toBe("forbidden");
-      expect(authorizeRoute(p, aluno).type).toBe("forbidden");
-    }
+  it("única exceção do SUPER_ADMIN em /api/admin: invitations (1º admin)", () => {
+    expect(authorizeRoute("/api/admin/invitations", superAdmin).type).toBe("allow");
+    expect(authorizeRoute("/api/admin/invitations", instAdmin).type).toBe("allow");
+    expect(authorizeRoute("/api/admin/invitations", professor).type).toBe("forbidden");
+    expect(authorizeRoute("/api/admin/invitations", aluno).type).toBe("forbidden");
+    // Q-S1: faixas da instituição só pelo ADMIN
+    expect(authorizeRoute("/api/admin/grading-config", superAdmin).type).toBe("forbidden");
+    expect(authorizeRoute("/api/admin/grading-config", instAdmin).type).toBe("allow");
+    expect(authorizeRoute("/api/super-admin/grading-defaults", superAdmin).type).toBe("allow");
+    expect(authorizeRoute("/api/super-admin/grading-defaults", instAdmin).type).toBe("forbidden");
     expect(authorizeRoute("/api/admin/users/1", superAdmin).type).toBe("forbidden");
     expect(authorizeRoute("/admin", superAdmin).type).toBe("forbidden");
   });

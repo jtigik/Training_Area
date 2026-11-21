@@ -58,7 +58,6 @@ export type TenantAccess = "member" | "platform";
 /** O que o SUPER_ADMIN pode fazer no escopo de uma instituição (o resto: TenantScopeError). */
 export const PLATFORM_ALLOWED: Readonly<Partial<Record<ScopedModel, readonly string[] | "all">>> = {
   Tenant: ["findFirst", "findFirstOrThrow", "findUnique", "findUniqueOrThrow"],
-  TenantGradingConfig: "all", // configuração da instituição, sem dados pessoais
   Invitation: ["create"], // convidar o primeiro INSTITUTION_ADMIN
 };
 

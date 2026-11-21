@@ -4,16 +4,15 @@ import { handleApiError } from "@/server/api-response";
 import { requireTenant } from "@/server/auth/tenant";
 import { getGradingBands, setGradingBands } from "@/server/grading/service";
 
-const ROLES = ["INSTITUTION_ADMIN", "SUPER_ADMIN"] as const;
-
+/**
+ * Faixas de conceito DA INSTITUIÇÃO — só INSTITUTION_ADMIN, tenant da sessão
+ * (Q-S1). O padrão da plataforma fica em /api/super-admin/grading-defaults.
+ */
 function tenantCtx(request: Request) {
-  return requireTenant(ROLES, {
-    headers: request.headers,
-    requestedTenantId: new URL(request.url).searchParams.get("tenantId"),
-  });
+  return requireTenant("INSTITUTION_ADMIN", { headers: request.headers });
 }
 
-/** GET — faixas de conceito vigentes (padrão 50/70/90). SUPER_ADMIN: ?tenantId=. */
+/** GET — faixas vigentes da instituição. */
 export async function GET(request: Request) {
   try {
     const ctx = await tenantCtx(request);
@@ -23,7 +22,10 @@ export async function GET(request: Request) {
   }
 }
 
-/** PUT { edMinPercent, dMinPercent, pdMinPercent } — define as faixas da instituição. */
+/**
+ * PUT { edMinPercent, dMinPercent, pdMinPercent } — 0 < ND < ED < D ≤ 100, ou seja
+ * 0 < edMinPercent < dMinPercent < pdMinPercent ≤ 100. Inválido → 422 VALIDATION_ERROR.
+ */
 export async function PUT(request: Request) {
   try {
     const ctx = await tenantCtx(request);

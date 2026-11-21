@@ -175,7 +175,8 @@ dentro das instituições (alunos, tentativas, textos de feedback, PII).
   - `GET /api/super-admin/metrics` → `{ generatedAt, totals, tenants: [{ tenant: { id, name, slug, active }, users: { INSTITUTION_ADMIN, PROFESSOR, ALUNO, total }, levelAttempts: { total, inProgress, completed, abandoned }, concepts: { ND, ED, D, PD } }] }` (só `groupBy`).
   - `GET|POST /api/super-admin/tenants`, `PATCH /api/super-admin/tenants/:id` (`name`, `slug`, `emailDomains`, `autoJoinByDomain` — padrão `false`, `locale`, `active`). `409 SLUG_IN_USE`.
   - `GET|POST /api/super-admin/exercises`, `PATCH /api/super-admin/exercises/:id`: banco **global** de exercícios.
-- Também pode: `GET|PUT /api/admin/grading-config?tenantId=` e `POST /api/admin/invitations` com `tenantId` (convidar o primeiro INSTITUTION_ADMIN). Não pode: trocar papel de usuários, rotas de professor/aluno.
+- Também pode: `POST /api/admin/invitations` com `tenantId` (convidar o primeiro INSTITUTION_ADMIN de uma instituição). Não pode: faixas de uma instituição (só o ADMIN, em `/api/admin/grading-config`), trocar papel de usuários, rotas de professor/aluno.
+- Faixas padrão da plataforma: `GET|PUT /api/super-admin/grading-defaults` `{ edMinPercent, dMinPercent, pdMinPercent }` (padrão 50/70/90). Valem só para instituições **novas**: `POST /api/super-admin/tenants` copia o padrão para `TenantGradingConfig`; as existentes não mudam. Regra do PO `0 < ND < ED < D ≤ 100` = `0 < edMinPercent < dMinPercent < pdMinPercent ≤ 100` (limites ND→ED, ED→D, D→PD); inválido → 422 `VALIDATION_ERROR`.
 
 ## Isolamento por tenant (`forTenant`)
 
