@@ -1,6 +1,6 @@
 import "server-only";
 
-import { feedbackDisplayText } from "@/lib/feedback";
+import { feedbackDisplayLists, feedbackDisplayText } from "@/lib/feedback";
 import type { TenantContext } from "@/server/auth/tenant";
 
 export interface StudentFeedbackView {
@@ -14,7 +14,8 @@ export interface StudentFeedbackView {
 
 /**
  * Feedbacks que o ALUNO pode ler: só APPROVED, só os dele, só do tenant.
- * Nunca expõe aiText cru, status de revisão/geração, generationError ou rejectionReason.
+ * Texto e listas: versão editada pelo professor, senão a da IA (feedbackDisplay*).
+ * Nunca expõe os originais da IA separadamente, status de revisão/geração, generationError ou rejectionReason.
  * Use SEMPRE este helper nas rotas/telas do aluno.
  */
 export async function listApprovedFeedbackForStudent(
@@ -32,8 +33,10 @@ export async function listApprovedFeedbackForStudent(
       levelAttemptId: true,
       aiText: true,
       editedText: true,
-      strengths: true,
-      toReview: true,
+      aiStrengths: true,
+      aiToReview: true,
+      editedStrengths: true,
+      editedToReview: true,
       reviewedAt: true,
     },
     orderBy: { reviewedAt: "desc" },
@@ -42,8 +45,7 @@ export async function listApprovedFeedbackForStudent(
     id: row.id,
     levelAttemptId: row.levelAttemptId,
     text: feedbackDisplayText(row),
-    strengths: row.strengths,
-    toReview: row.toReview,
+    ...feedbackDisplayLists(row),
     reviewedAt: row.reviewedAt,
   }));
 }

@@ -6,7 +6,35 @@ export const RETRYABLE_CONCEPTS: readonly GradeConcept[] = ["ND", "ED"];
 export interface LevelAttemptSummary {
   attemptNumber: number;
   status: "IN_PROGRESS" | "COMPLETED" | "ABANDONED";
+  /** Conceito final gravado (ajuste do professor, se houver; senão o calculado). */
   concept: GradeConcept | null;
+  /** Conceito calculado pelas faixas (fallback se `concept` ainda não foi gravado). */
+  computedConcept?: GradeConcept | null;
+}
+
+/**
+ * Conceito EFETIVO de uma tentativa (decisão do PO): o ajuste do professor, se
+ * existir, senão o calculado. `concept` já guarda o ajustado (overrideLevelConcept)
+ * ou o calculado (completeLevelAttempt); `computedConcept` é o fallback.
+ * Cada tentativa tem o seu: uma nova tentativa nasce sem ajuste (não herda).
+ */
+export function effectiveConcept(
+  attempt: Pick<LevelAttemptSummary, "concept" | "computedConcept">,
+): GradeConcept | null {
+  return attempt.concept ?? attempt.computedConcept ?? null;
+}
+
+const CONCEPT_RANK: Record<GradeConcept, number> = { ND: 0, ED: 1, D: 2, PD: 3 };
+
+/** Melhor conceito efetivo entre as tentativas CONCLUÍDAS do nível (null se nenhuma). */
+export function bestConcept(attempts: readonly LevelAttemptSummary[]): GradeConcept | null {
+  let best: GradeConcept | null = null;
+  for (const a of attempts) {
+    if (a.status !== "COMPLETED") continue;
+    const c = effectiveConcept(a);
+    if (c !== null && (best === null || CONCEPT_RANK[c] > CONCEPT_RANK[best])) best = c;
+  }
+  return best;
 }
 
 export type StartLevelDecision =
@@ -15,7 +43,7 @@ export type StartLevelDecision =
 
 /**
  * Pode iniciar uma (nova) tentativa do nível? Regra: a primeira sempre; depois,
- * só se a última concluída tirou ND ou ED. Abandonadas não contam como nota.
+ * só se a última concluída tem conceito EFETIVO ND ou ED. Abandonadas não contam.
  */
 export function decideStartLevel(previous: readonly LevelAttemptSummary[]): StartLevelDecision {
   if (previous.some((a) => a.status === "IN_PROGRESS")) {
@@ -27,8 +55,9 @@ export function decideStartLevel(previous: readonly LevelAttemptSummary[]): Star
     .sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
 
   if (!lastCompleted) return { allowed: true, attemptNumber: nextNumber };
-  if (lastCompleted.concept === null) return { allowed: false, reason: "AWAITING_GRADE" };
-  if (RETRYABLE_CONCEPTS.includes(lastCompleted.concept)) {
+  const concept = effectiveConcept(lastCompleted);
+  if (concept === null) return { allowed: false, reason: "AWAITING_GRADE" };
+  if (RETRYABLE_CONCEPTS.includes(concept)) {
     return { allowed: true, attemptNumber: nextNumber };
   }
   return { allowed: false, reason: "ALREADY_PASSED" };

@@ -84,13 +84,17 @@ describe.skipIf(!enabled)("publishSet / listSetExercises / sorteio", () => {
         levelId,
         knowledgeLevel: "FUNDAMENTAL",
         setStatus: "PUBLISHED",
-        difficulties: ["VERY_EASY", "EASY", "MEDIUM"],
-        quantity: 2,
+        quotas: [
+          { difficulty: "VERY_EASY", quantity: 1 },
+          { difficulty: "EASY", quantity: 1 },
+          { difficulty: "MEDIUM", quantity: 0 },
+        ],
       }),
     );
-    expect(drawn).toHaveLength(2);
+    expect(drawn.shortfalls).toEqual([]);
+    expect(drawn.drawn.map((e) => e.difficulty)).toEqual(["VERY_EASY", "EASY"]);
     const reread = await draws.listAttemptExercises(db, attempt.id);
-    expect(reread.map((e) => e.ref)).toEqual(drawn.map((e) => e.ref));
+    expect(reread.map((e) => e.ref)).toEqual(drawn.drawn.map((e) => e.ref));
     expect(reread.map((e) => e.position)).toEqual([0, 1]);
   });
 });

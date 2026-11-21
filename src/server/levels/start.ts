@@ -4,14 +4,11 @@ import { Prisma } from "@/generated/prisma/client";
 import { ApiError } from "@/lib/api-error";
 import { isMvpLevel, LEVEL_NOT_AVAILABLE_IN_MVP } from "@/lib/domain";
 import { computeLevelUnlocks, type LevelUnlockState } from "@/lib/level-unlock";
-import { resolveQuota } from "@/lib/quota";
+import { resolveDifficultyQuotas } from "@/lib/quota";
 import { toStudentItem } from "@/lib/set-exercises";
 import type { TenantContext } from "@/server/auth/tenant";
 import { drawForLevelAttempt } from "@/server/content/draws";
 import type { TenantDb } from "@/server/tenant-db";
-
-/** Cota quando nenhuma ExerciseQuota se aplica ao aluno. */
-export const DEFAULT_LEVEL_QUOTA = 10;
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
 type Db = TenantDb | Tx;
@@ -23,23 +20,34 @@ const START_ERRORS = {
   AWAITING_GRADE: [409, "LEVEL_AWAITING_GRADE", "A última tentativa ainda aguarda o conceito"],
 } as const;
 
-/** Progresso do aluno em todos os níveis do conjunto (para a tela de trilha). */
+/**
+ * Progresso do aluno em todos os níveis do conjunto (para a tela de trilha).
+ * Só conjuntos PUBLISHED (decisão do PO): rascunho/arquivado → 404 NOT_FOUND,
+ * igual a conjunto inexistente. As rotas do aluno (Backend 2) herdam a regra.
+ */
 export async function getSetProgress(
   db: Db,
   studentId: string,
   setId: string,
 ): Promise<LevelUnlockState[]> {
+  const set = await db.exerciseSet.findFirst({
+    where: { id: setId, status: "PUBLISHED" },
+    select: { id: true },
+  });
+  if (!set) throw new ApiError(404, "NOT_FOUND", "Conjunto não encontrado");
   const levels = await db.level.findMany({
     where: { setId },
     select: { id: true, knowledgeLevel: true },
   });
-  if (levels.length === 0) {
-    const exists = await db.exerciseSet.findFirst({ where: { id: setId }, select: { id: true } });
-    if (!exists) throw new ApiError(404, "NOT_FOUND", "Conjunto não encontrado");
-  }
   const attempts = await db.levelAttempt.findMany({
     where: { studentId, levelId: { in: levels.map((l) => l.id) } },
-    select: { levelId: true, attemptNumber: true, status: true, concept: true },
+    select: {
+      levelId: true,
+      attemptNumber: true,
+      status: true,
+      concept: true,
+      computedConcept: true,
+    },
   });
   return computeLevelUnlocks(
     levels.map((l) => ({
@@ -51,9 +59,12 @@ export async function getSetProgress(
 }
 
 /**
- * ALUNO inicia uma tentativa do nível: aplica o desbloqueio do conjunto e a
- * regra de refazer (ND/ED), resolve a cota, cria a LevelAttempt e congela o
- * sorteio (LevelAttemptExercise). Transação serializável.
+ * ALUNO inicia uma tentativa do nível: só em conjunto PUBLISHED (senão 404),
+ * aplica o desbloqueio do conjunto e a regra de refazer (ND/ED), resolve a cota
+ * POR DIFICULDADE (aluno > turma > padrão; total = soma), cria a LevelAttempt e
+ * congela o sorteio (LevelAttemptExercise). Transação serializável.
+ * Retorna `quota` (por dificuldade) e `shortfalls` (dificuldades com pool menor
+ * que a cota: sorteou o que havia; requiredCount = total sorteado).
  */
 export async function startLevelAttempt(
   ctx: Pick<TenantContext, "db" | "tenantId" | "user">,
@@ -62,7 +73,7 @@ export async function startLevelAttempt(
   return ctx.db.$transaction(
     async (tx) => {
       const level = await tx.level.findFirst({
-        where: { id: levelId },
+        where: { id: levelId, set: { status: "PUBLISHED" } },
         select: {
           id: true,
           setId: true,
@@ -95,11 +106,16 @@ export async function startLevelAttempt(
           select: { classroomId: true },
         }),
       ]);
-      const quantity =
-        resolveQuota(quotas, {
-          studentId: ctx.user.id,
-          classroomIds: memberships.map((m) => m.classroomId),
-        }) ?? DEFAULT_LEVEL_QUOTA;
+      const quota = resolveDifficultyQuotas(
+        quotas,
+        { studentId: ctx.user.id, classroomIds: memberships.map((m) => m.classroomId) },
+        level.set.difficulties,
+      );
+      if (quota.total === 0) {
+        throw new ApiError(409, "EMPTY_POOL", "Este nível ainda não tem exercícios disponíveis", {
+          quota: quota.perDifficulty,
+        });
+      }
 
       const attempt = await tx.levelAttempt.create({
         data: {
@@ -109,20 +125,24 @@ export async function startLevelAttempt(
           attemptNumber: state.start.attemptNumber,
         },
       });
-      const drawn = await drawForLevelAttempt(tx, {
+      const { drawn, shortfalls } = await drawForLevelAttempt(tx, {
         tenantId: ctx.tenantId,
         levelAttemptId: attempt.id,
         levelId: level.id,
         knowledgeLevel: level.knowledgeLevel,
         setStatus: level.set.status,
-        difficulties: level.set.difficulties,
-        quantity,
+        quotas: quota.perDifficulty,
       });
       const levelAttempt = await tx.levelAttempt.update({
         where: { id: attempt.id },
         data: { requiredCount: drawn.length },
       });
-      return { levelAttempt, exercises: drawn.map(toStudentItem) };
+      return {
+        levelAttempt,
+        exercises: drawn.map(toStudentItem),
+        quota: quota.perDifficulty,
+        shortfalls,
+      };
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );

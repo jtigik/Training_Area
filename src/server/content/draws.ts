@@ -2,7 +2,7 @@ import "server-only";
 
 import { ApiError } from "@/lib/api-error";
 import type { Difficulty, KnowledgeLevel } from "@/lib/domain";
-import { drawFromPool } from "@/lib/pool";
+import { drawByDifficulty, type DifficultyShortfall } from "@/lib/pool";
 import type { SetExerciseItem } from "@/lib/set-exercises";
 import { livePool, poolItem, setExerciseItem } from "@/server/content/sets";
 import type { TenantDb } from "@/server/tenant-db";
@@ -11,9 +11,12 @@ type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
 type Db = TenantDb | Tx;
 
 /**
- * Sorteia `quantity` exercícios para a rodada e CONGELA em LevelAttemptExercise.
- * Conjunto publicado: só SetExercise do nível (dificuldades do conjunto).
- * Rascunho: pool vivo. Releituras usam listAttemptExercises (nunca re-sorteiam).
+ * Sorteia a rodada POR DIFICULDADE (`quotas`, de resolveDifficultyQuotas) e
+ * CONGELA em LevelAttemptExercise. Conjunto publicado: só SetExercise do nível.
+ * Rascunho (uso interno/testes; aluno só inicia publicado): pool vivo.
+ * Falta no pool de uma dificuldade: sorteia o que houver e devolve `shortfalls`;
+ * nada sorteado → 409 EMPTY_POOL (details.shortfalls).
+ * Releituras usam listAttemptExercises (nunca re-sorteiam).
  */
 export async function drawForLevelAttempt(
   tx: Tx,
@@ -23,28 +26,28 @@ export async function drawForLevelAttempt(
     levelId: string;
     knowledgeLevel: KnowledgeLevel;
     setStatus: string;
-    difficulties: readonly Difficulty[];
-    quantity: number;
+    quotas: readonly { difficulty: Difficulty; quantity: number }[];
     random?: () => number;
   },
-): Promise<SetExerciseItem[]> {
+): Promise<{ drawn: SetExerciseItem[]; shortfalls: DifficultyShortfall[] }> {
+  const difficulties = input.quotas.filter((q) => q.quantity > 0).map((q) => q.difficulty);
   const candidates: SetExerciseItem[] =
     input.setStatus === "PUBLISHED"
       ? (
           await tx.setExercise.findMany({
-            where: { levelId: input.levelId, difficulty: { in: [...input.difficulties] } },
+            where: { levelId: input.levelId, difficulty: { in: difficulties } },
             select: { id: true, sourceExerciseId: true, position: true, snapshot: true },
             orderBy: { position: "asc" },
           })
         ).map(setExerciseItem)
-      : (await livePool(tx, input.knowledgeLevel, input.difficulties)).map(poolItem);
-  if (candidates.length === 0) {
-    throw new ApiError(409, "EMPTY_POOL", "Este nível ainda não tem exercícios disponíveis");
+      : (await livePool(tx, input.knowledgeLevel, difficulties)).map(poolItem);
+  const result = drawByDifficulty(candidates, input.quotas, input.random);
+  if (result.drawn.length === 0) {
+    throw new ApiError(409, "EMPTY_POOL", "Este nível ainda não tem exercícios disponíveis", {
+      shortfalls: result.shortfalls,
+    });
   }
-  const drawn = drawFromPool(candidates, input.quantity, input.random).map((item, position) => ({
-    ...item,
-    position,
-  }));
+  const drawn = result.drawn.map((item, position) => ({ ...item, position }));
   await tx.levelAttemptExercise.createMany({
     data: drawn.map((item) => ({
       tenantId: input.tenantId,
@@ -54,7 +57,7 @@ export async function drawForLevelAttempt(
       setExerciseId: item.ref.type === "setExercise" ? item.ref.id : null,
     })),
   });
-  return drawn;
+  return { drawn, shortfalls: result.shortfalls };
 }
 
 /** Exercícios congelados da rodada, na ordem do sorteio (inclui gabarito: filtre para o aluno). */

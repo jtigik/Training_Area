@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { feedbackDisplayText, studentVisibleFeedbackText } from "./feedback";
+import {
+  editedList,
+  feedbackDisplayLists,
+  feedbackDisplayText,
+  studentVisibleFeedbackText,
+} from "./feedback";
 
 describe("feedback", () => {
   it("prefere o texto editado pelo professor", () => {
@@ -24,5 +29,28 @@ describe("feedback", () => {
     expect(
       studentVisibleFeedbackText({ status: "REJECTED", aiText: "IA", editedText: "x" }),
     ).toBeNull();
+  });
+});
+
+describe("feedbackDisplayLists", () => {
+  const base = { aiStrengths: ["IA forte"], aiToReview: ["IA revisar"] };
+  it("sem edição usa as listas da IA", () => {
+    expect(feedbackDisplayLists({ ...base, editedStrengths: null, editedToReview: null })).toEqual({
+      strengths: ["IA forte"],
+      toReview: ["IA revisar"],
+    });
+  });
+  it("edição do professor vence, inclusive lista vazia, e cada lista é independente", () => {
+    expect(
+      feedbackDisplayLists({ ...base, editedStrengths: ["Prof"], editedToReview: null }),
+    ).toEqual({ strengths: ["Prof"], toReview: ["IA revisar"] });
+    expect(feedbackDisplayLists({ ...base, editedStrengths: [], editedToReview: [] })).toEqual({
+      strengths: [],
+      toReview: [],
+    });
+  });
+  it("JSON inválido é ignorado", () => {
+    expect(editedList({ a: 1 })).toBeNull();
+    expect(editedList([1, 2])).toBeNull();
   });
 });

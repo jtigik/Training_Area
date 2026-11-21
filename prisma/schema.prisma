@@ -136,6 +136,7 @@ model Tenant {
   setExercises          SetExercise[]
   levelAttemptExercises LevelAttemptExercise[]
   exerciseImports       ExerciseImport[]
+  auditLogs             AuditLog[]
 
   @@map("tenants")
 }
@@ -176,6 +177,8 @@ model User {
   exerciseAttempts        ExerciseAttempt[]
   feedbacks               Feedback[]        @relation("FeedbackStudent")
   reviewedFeedbacks       Feedback[]        @relation("FeedbackReviewer")
+  editedFeedbacks         Feedback[]        @relation("FeedbackEditor")
+  auditLogs               AuditLog[]        @relation("AuditActor")
 
   @@index([tenantId, role])
   @@map("users")
@@ -417,22 +420,23 @@ model Level {
 
 /// Quantidade de exercícios do nível (TA-015/TA-020). Escopo: padrão do nível
 /// (classroomId e studentId nulos), por turma ou por aluno (no máximo um — CHECK).
-/// `difficulty` nulo = vale para o nível inteiro. Precedência: aluno > turma >
-/// padrão; nível+dificuldade > nível (src/lib/quota.ts).
-/// `scopeKey` = "<escopo>|<dificuldade>" (ex. "default|*", "classroom:<id>|EASY")
+/// Cota por NÍVEL e DIFICULDADE (decisão do PO): o total da rodada é a soma das
+/// dificuldades do conjunto. Precedência por dificuldade: aluno > turma > padrão
+/// (src/lib/quota.ts, resolveDifficultyQuotas).
+/// `scopeKey` = "<escopo>|<dificuldade>" (ex. "default|EASY", "classroom:<id>|MEDIUM")
 /// existe para a unicidade; gere com buildQuotaScopeKey() — CHECK garante coerência.
 model ExerciseQuota {
-  id          String      @id @default(cuid())
-  tenantId    String      @map("tenant_id")
-  levelId     String      @map("level_id")
-  difficulty  Difficulty?
-  classroomId String?     @map("classroom_id")
-  studentId   String?     @map("student_id")
-  scopeKey    String      @map("scope_key")
+  id          String     @id @default(cuid())
+  tenantId    String     @map("tenant_id")
+  levelId     String     @map("level_id")
+  difficulty  Difficulty
+  classroomId String?    @map("classroom_id")
+  studentId   String?    @map("student_id")
+  scopeKey    String     @map("scope_key")
   /// Maior que zero (CHECK).
   quantity    Int
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
 
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   level     Level      @relation(fields: [levelId], references: [id], onDelete: Cascade)
@@ -595,12 +599,18 @@ model Feedback {
   generationError  String?                  @map("generation_error")
   /// Texto gerado pela IA; nulo enquanto PENDING ou se FAILED.
   aiText           String?                  @map("ai_text")
-  /// Pontos fortes (itens curtos, gerados pela IA).
-  strengths        String[]                 @default([])
-  /// O que revisar (itens curtos, gerados pela IA).
-  toReview         String[]                 @default([]) @map("to_review")
-  /// Edição do professor (nula = aprovado sem edição).
+  /// Pontos fortes gerados pela IA (original imutável após GENERATED; trigger).
+  aiStrengths      String[]                 @default([]) @map("ai_strengths")
+  /// O que revisar, gerado pela IA (original imutável após GENERATED; trigger).
+  aiToReview       String[]                 @default([]) @map("ai_to_review")
+  /// Edição do professor do resumo (nula = sem edição).
   editedText       String?                  @map("edited_text")
+  /// Edição do professor das listas: JSON string[]; nulo = sem edição (vale a da IA).
+  editedStrengths  Json?                    @map("edited_strengths")
+  editedToReview   Json?                    @map("edited_to_review")
+  /// Última edição do professor (cada edição também vai para AuditLog).
+  editedById       String?                  @map("edited_by_id")
+  editedAt         DateTime?                @map("edited_at")
   /// Modelo/versão do prompt usados na geração (auditoria).
   aiModel          String?                  @map("ai_model")
   promptVersion    String?                  @map("prompt_version")
@@ -616,6 +626,7 @@ model Feedback {
   student      User         @relation("FeedbackStudent", fields: [studentId], references: [id], onDelete: Cascade)
   levelAttempt LevelAttempt @relation(fields: [levelAttemptId], references: [id], onDelete: Cascade)
   reviewedBy   User?        @relation("FeedbackReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  editedBy     User?        @relation("FeedbackEditor", fields: [editedById], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status])
   @@index([studentId, status])
@@ -702,4 +713,42 @@ model ExerciseImport {
   @@unique([tenantId, fileHash])
   @@index([tenantId, createdAt])
   @@map("exercise_imports")
+}
+
+/// Trilha de auditoria (append-only) de ações administrativas: convites,
+/// edição de usuário, edição/aprovação de feedback. `tenantId` nulo = ação de
+/// plataforma. `data` guarda before/after só dos campos alterados.
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String?  @map("tenant_id")
+  actorId    String?  @map("actor_id")
+  /// Ex.: "invitation.created", "invitation.renewed", "user.updated", "feedback.edited"
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  data       Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User?   @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+/// Faixas PADRÃO da plataforma (linha única id = "platform"; SUPER_ADMIN em
+/// /api/super-admin/grading-defaults). Só valem para instituições NOVAS, que
+/// recebem uma CÓPIA em TenantGradingConfig ao serem criadas; as existentes não mudam.
+/// Mesmos nomes de TenantGradingConfig: limite ND→ED = edMinPercent,
+/// ED→D = dMinPercent, D→PD = pdMinPercent (0 < ed < d < pd <= 100, CHECK).
+model PlatformGradingDefaults {
+  id           String   @id @default("platform")
+  edMinPercent Int      @default(50) @map("ed_min_percent")
+  dMinPercent  Int      @default(70) @map("d_min_percent")
+  pdMinPercent Int      @default(90) @map("pd_min_percent")
+  updatedById  String?  @map("updated_by_id")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_grading_defaults")
 }

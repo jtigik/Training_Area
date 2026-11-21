@@ -40,6 +40,8 @@ export const MODEL_SCOPES = {
   SetExercise: "tenant",
   LevelAttemptExercise: "tenant",
   ExerciseImport: "tenant",
+  AuditLog: "tenant",
+  PlatformGradingDefaults: "blocked",
 } as const satisfies Record<string, ScopeKind>;
 
 export type ScopedModel = keyof typeof MODEL_SCOPES;

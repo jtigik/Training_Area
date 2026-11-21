@@ -286,16 +286,25 @@ async function main() {
       knowledgeLevel: "FUNDAMENTAL",
     },
   });
-  await prisma.exerciseQuota.upsert({
-    where: { levelId_scopeKey: { levelId: "demo-level-fundamental", scopeKey: "default|*" } },
-    update: {},
-    create: {
-      tenantId: DEMO_TENANT.id,
-      levelId: "demo-level-fundamental",
-      scopeKey: "default|*",
-      quantity: 3,
-    },
-  });
+  // Cota padrão por dificuldade (total do nível = soma): 2 muito fáceis, 1 fácil, 1 média.
+  const demoQuotas = { VERY_EASY: 2, EASY: 1, MEDIUM: 1 } as const;
+  for (const [difficulty, quantity] of Object.entries(demoQuotas) as [
+    keyof typeof demoQuotas,
+    number,
+  ][]) {
+    const scopeKey = `default|${difficulty}`;
+    await prisma.exerciseQuota.upsert({
+      where: { levelId_scopeKey: { levelId: "demo-level-fundamental", scopeKey } },
+      update: {},
+      create: {
+        tenantId: DEMO_TENANT.id,
+        levelId: "demo-level-fundamental",
+        difficulty,
+        scopeKey,
+        quantity,
+      },
+    });
+  }
   // Conjunto publicado sorteia só de SetExercise: congela o pool (mesma regra de publishSet).
   const snapshots = await prisma.setExercise.count({ where: { setId: "demo-set-trilha" } });
   if (snapshots === 0) {
@@ -319,7 +328,7 @@ async function main() {
       })),
     });
   }
-  console.log("  trilha demo: 1 conjunto publicado, nível Fundamental, cota padrão 3");
+  console.log("  trilha demo: 1 conjunto publicado, nível Fundamental, cota 2+1+1 por dificuldade");
   console.log("Seed concluído.");
 }
 

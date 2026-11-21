@@ -1,9 +1,17 @@
-import type { Difficulty } from "./domain";
+import { DIFFICULTIES, type Difficulty } from "./domain";
 
 /**
- * Regras de cota (quantidade de exercícios de um Level) — TA-015/TA-020.
- * Precedência: aluno > turma > padrão do nível; nível+dificuldade > nível.
+ * Cota = quantos exercícios a rodada de um Level sorteia, POR DIFICULDADE
+ * (decisão do PO: ex. Fundamental 3 fáceis + 2 médios + 1 difícil; o total do
+ * nível é a soma). Camadas: padrão do nível, turma, aluno — todas por dificuldade.
+ *
+ * Regra por dificuldade do conjunto: aluno > turma (várias turmas: a maior) > padrão.
+ * - Se o nível tem QUALQUER cota cadastrada que se aplique ao aluno, dificuldade
+ *   sem registro = 0 (não sorteia).
+ * - Nível sem nenhuma cota aplicável: DEFAULT_QUOTA_PER_DIFFICULTY em cada
+ *   dificuldade do conjunto.
  */
+export const DEFAULT_QUOTA_PER_DIFFICULTY = 3;
 
 export type QuotaScope =
   | { kind: "default" }
@@ -14,14 +22,14 @@ export type QuotaScope =
  * Chave de unicidade `exercise_quotas.scope_key`. Precisa bater com o CHECK
  * `exercise_quotas_scope_key_consistent` da migração.
  */
-export function buildQuotaScopeKey(scope: QuotaScope, difficulty: Difficulty | null): string {
+export function buildQuotaScopeKey(scope: QuotaScope, difficulty: Difficulty): string {
   const scopePart =
     scope.kind === "default"
       ? "default"
       : scope.kind === "classroom"
         ? `classroom:${scope.classroomId}`
         : `student:${scope.studentId}`;
-  return `${scopePart}|${difficulty ?? "*"}`;
+  return `${scopePart}|${difficulty}`;
 }
 
 /** Colunas de escopo correspondentes, para gravar junto com a chave. */
@@ -36,44 +44,76 @@ export function quotaScopeColumns(scope: QuotaScope): {
 }
 
 export interface QuotaRecord {
-  difficulty: Difficulty | null;
+  difficulty: Difficulty;
   classroomId: string | null;
   studentId: string | null;
   quantity: number;
 }
 
 export interface QuotaQuery {
-  /** Nulo = cota do nível inteiro. */
-  difficulty?: Difficulty | null;
   studentId: string;
   classroomIds?: readonly string[];
 }
 
-/**
- * Resolve a cota efetiva de um aluno a partir das cotas de UM Level.
- * Retorna `null` se nada se aplica. Empate no mesmo escopo (várias turmas):
- * vale a maior quantidade.
- */
-export function resolveQuota(quotas: readonly QuotaRecord[], query: QuotaQuery): number | null {
-  const difficulty = query.difficulty ?? null;
-  const classroomIds = new Set(query.classroomIds ?? []);
+export type QuotaSource = "student" | "classroom" | "default" | "fallback" | "none";
 
-  const scopeRank = (q: QuotaRecord): number | null => {
-    if (q.studentId !== null) return q.studentId === query.studentId ? 3 : null;
-    if (q.classroomId !== null) return classroomIds.has(q.classroomId) ? 2 : null;
-    return 1;
+export interface DifficultyQuota {
+  difficulty: Difficulty;
+  quantity: number;
+  source: QuotaSource;
+}
+
+export interface ResolvedQuota {
+  /** Na ordem de DIFFICULTIES; só as dificuldades do conjunto. */
+  perDifficulty: DifficultyQuota[];
+  total: number;
+}
+
+const RANK: Record<"student" | "classroom" | "default", number> = {
+  student: 3,
+  classroom: 2,
+  default: 1,
+};
+
+/** Cota efetiva de UM aluno em UM Level, por dificuldade do conjunto. */
+export function resolveDifficultyQuotas(
+  quotas: readonly QuotaRecord[],
+  query: QuotaQuery,
+  setDifficulties: readonly Difficulty[],
+): ResolvedQuota {
+  const classroomIds = new Set(query.classroomIds ?? []);
+  const scopeOf = (q: QuotaRecord): "student" | "classroom" | "default" | null => {
+    if (q.studentId !== null) return q.studentId === query.studentId ? "student" : null;
+    if (q.classroomId !== null) return classroomIds.has(q.classroomId) ? "classroom" : null;
+    return "default";
   };
 
-  let best: { rank: number; quantity: number } | null = null;
+  const best = new Map<
+    Difficulty,
+    { scope: "student" | "classroom" | "default"; quantity: number }
+  >();
+  let anyApplicable = false;
   for (const q of quotas) {
-    if (q.difficulty !== null && q.difficulty !== difficulty) continue;
-    const scope = scopeRank(q);
+    const scope = scopeOf(q);
     if (scope === null) continue;
-    // o escopo pesa mais que a especificidade da dificuldade
-    const rank = scope * 2 + (q.difficulty !== null ? 1 : 0);
-    if (!best || rank > best.rank || (rank === best.rank && q.quantity > best.quantity)) {
-      best = { rank, quantity: q.quantity };
+    anyApplicable = true;
+    const current = best.get(q.difficulty);
+    if (
+      !current ||
+      RANK[scope] > RANK[current.scope] ||
+      (scope === current.scope && q.quantity > current.quantity)
+    ) {
+      best.set(q.difficulty, { scope, quantity: q.quantity });
     }
   }
-  return best?.quantity ?? null;
+
+  const wanted = new Set(setDifficulties);
+  const perDifficulty = DIFFICULTIES.filter((d) => wanted.has(d)).map((difficulty) => {
+    const hit = best.get(difficulty);
+    if (hit) return { difficulty, quantity: hit.quantity, source: hit.scope };
+    return anyApplicable
+      ? { difficulty, quantity: 0, source: "none" as const }
+      : { difficulty, quantity: DEFAULT_QUOTA_PER_DIFFICULTY, source: "fallback" as const };
+  });
+  return { perDifficulty, total: perDifficulty.reduce((sum, d) => sum + d.quantity, 0) };
 }
