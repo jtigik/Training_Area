@@ -647,7 +647,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
               : "";
           if (!text.trim())
             throw new ApiError(
-              422,
+              r.generationStatus === "GENERATED" ? 422 : 409,
               r.generationStatus === "GENERATED" ? "EMPTY_TEXT" : "GENERATION_NOT_READY",
               r.generationStatus === "GENERATED"
                 ? "O feedback aprovado não pode ficar vazio."

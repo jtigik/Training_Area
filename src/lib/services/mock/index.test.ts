@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../contracts";
+import { errorMessage } from "../../errors";
 import { createMockServices } from ".";
 import { createSeed } from "./seed";
 
@@ -313,8 +314,12 @@ describe("mock: feedback", () => {
     expect(failed).toMatchObject({ generationStatus: "FAILED", aiText: null });
     expect(failed.generationError).toBeTruthy();
     await expect(s.reviews.approve("rv-4", "  ")).rejects.toMatchObject({
+      status: 409,
       code: "GENERATION_NOT_READY",
     });
+    expect(errorMessage(await s.reviews.approve("rv-4", "").catch((e: unknown) => e))).toMatch(
+      /Escreva o texto/,
+    );
     expect(await s.reviews.approve("rv-4", "Eduardo, revise PROCV.")).toMatchObject({
       status: "APPROVED",
       finalText: "Eduardo, revise PROCV.",

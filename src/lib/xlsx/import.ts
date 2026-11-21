@@ -17,6 +17,8 @@ export interface RawCell {
   value: CellScalar;
   /** Fórmula sem o "=" inicial, quando houver. */
   formula?: string;
+  /** Célula com data: `value` é o número serial do Excel. */
+  date?: boolean;
 }
 
 /** Metadados lidos da aba "Dados" do modelo de importação. */
@@ -44,6 +46,8 @@ export interface ImportedSheet {
   issues: ImportIssue[];
   grid: SpreadsheetGrid;
   answers: Record<CellAddress, AnswerCell>;
+  /** Células com data na grade (valor = serial do Excel). */
+  dateCells: CellAddress[];
   warnings: string[];
   /** Pronto para salvar (tem pelo menos uma célula de gabarito válida). */
   valid: boolean;
@@ -70,6 +74,7 @@ export function sheetToExercise(name: string, cells: RawCell[]): ImportedSheet {
   const grid: SpreadsheetGrid = { rows: 1, cols: 1, cells: {} };
   const answers: Record<CellAddress, AnswerCell> = {};
   let skipped = 0;
+  const dateCells: CellAddress[] = [];
 
   for (const cell of cells) {
     const pos = parseAddress(cell.address);
@@ -89,6 +94,7 @@ export function sheetToExercise(name: string, cells: RawCell[]): ImportedSheet {
       };
     } else {
       grid.cells[cell.address] = { value, locked: true };
+      if (cell.date) dateCells.push(cell.address);
     }
   }
 
@@ -117,6 +123,7 @@ export function sheetToExercise(name: string, cells: RawCell[]): ImportedSheet {
     })),
     grid,
     answers,
+    dateCells,
     warnings,
     valid,
   };
@@ -217,7 +224,7 @@ export function templateToExercise(t: TemplateSheets): ImportedSheet {
 
   const base = sheetToExercise(
     meta.title ?? "Exercício importado",
-    t.planilha.map((c) => ({ address: c.address, value: c.value })),
+    t.planilha.map((c) => ({ address: c.address, value: c.value, date: c.date })),
   );
   // No modelo, fórmulas da aba Planilha fazem parte da grade inicial (não do gabarito).
   for (const c of t.planilha) {
@@ -289,6 +296,7 @@ export function templateToExercise(t: TemplateSheets): ImportedSheet {
     meta,
     grid,
     answers,
+    dateCells: base.dateCells,
     issues,
     warnings: issues.map((x) => x.message),
     valid: issues.length === 0,
@@ -304,6 +312,11 @@ export interface ImportDraft {
   hint: string | null;
   grid: SpreadsheetGrid;
   answers: Record<CellAddress, AnswerCell>;
+  /**
+   * Células da Planilha que são datas (BE2): o valor fica como serial do Excel
+   * (número) e a UI exibe dd/mm/aaaa.
+   */
+  dateCells: CellAddress[];
 }
 
 export interface ImportReport {
@@ -360,6 +373,7 @@ export function buildImportReport(
         hint: hint ?? null,
         grid: sheet.grid,
         answers: sheet.answers,
+        dateCells: sheet.dateCells,
       });
     }
   }
@@ -370,7 +384,8 @@ export function buildImportReport(
 export function formatImportIssue(i: ImportIssue): string {
   const where = [
     i.sheet ? `Aba ${i.sheet}` : null,
-    i.cell ? `célula ${i.cell}` : i.row ? `linha ${i.row}` : null,
+    i.row ? `linha ${i.row}` : null,
+    i.cell ? `célula ${i.cell}` : null,
   ]
     .filter(Boolean)
     .join(", ");
@@ -386,11 +401,30 @@ export function looksLikeXlsx(buffer: ArrayBuffer): boolean {
 type ExcelValue = unknown;
 
 /** Converte o valor de uma célula do exceljs em valor tipado (+ fórmula, se houver). */
-export function cellContent(value: ExcelValue): { value: CellScalar; formula?: string } {
+/** Data → número serial do Excel (dias desde 30/12/1899, fração = hora). */
+export function toExcelSerial(date: Date): number {
+  return Math.round(((date.getTime() - EXCEL_EPOCH) / 86_400_000) * 1e8) / 1e8;
+}
+
+/** Número serial do Excel → "dd/mm/aaaa" (pt-BR). */
+export function formatExcelDate(serial: number): string {
+  const d = new Date(EXCEL_EPOCH + Math.floor(serial) * 86_400_000);
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${d.getUTCFullYear()}`;
+}
+
+const EXCEL_EPOCH = Date.UTC(1899, 11, 30);
+
+export function cellContent(value: ExcelValue): {
+  value: CellScalar;
+  formula?: string;
+  date?: boolean;
+} {
   if (value === null || value === undefined) return { value: null };
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
     return { value };
-  if (value instanceof Date) return { value: value.toISOString().slice(0, 10) };
+  if (value instanceof Date) return { value: toExcelSerial(value), date: true };
   if (typeof value === "object") {
     const v = value as Record<string, unknown>;
     if (typeof v.formula === "string" || typeof v.sharedFormula === "string") {
@@ -414,6 +448,7 @@ export function cellContent(value: ExcelValue): { value: CellScalar; formula?: s
 /** Texto exibível de uma célula (usado nas abas Dados e no cabeçalho). */
 export function cellText(value: ExcelValue): string {
   const c = cellContent(value);
+  if (c.date && typeof c.value === "number") return formatExcelDate(c.value);
   return c.value === null ? "" : String(c.value);
 }
 

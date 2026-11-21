@@ -2,6 +2,8 @@ import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import {
   cellContent,
+  formatExcelDate,
+  formatImportIssue,
   looksLikeXlsx,
   parseDifficulty,
   parseLevel,
@@ -45,7 +47,7 @@ describe("cellContent", () => {
     expect(cellContent(true)).toEqual({ value: true });
     expect(cellContent({ formula: "A1*2", result: 4 })).toEqual({ value: 4, formula: "A1*2" });
     expect(cellContent({ richText: [{ text: "Ol" }, { text: "á" }] })).toEqual({ value: "Olá" });
-    expect(cellContent(new Date("2026-01-02T00:00:00Z"))).toEqual({ value: "2026-01-02" });
+    expect(cellContent(new Date("2026-01-02T00:00:00Z"))).toEqual({ value: 46024, date: true });
     expect(cellContent(null)).toEqual({ value: null });
   });
 });
@@ -168,5 +170,43 @@ describe("modelo Dados/Planilha/Gabarito", () => {
     expect(parseLevel("avançado")).toBe("ADVANCED");
     expect(parseLevel("Dashboard")).toBeUndefined();
     expect(parseDifficulty("muito dificil")).toBe("VERY_HARD");
+  });
+});
+
+describe("datas e referências de erro", () => {
+  it("datas viram serial do Excel, ficam em dateCells e exibem dd/mm/aaaa", async () => {
+    expect(formatExcelDate(46024)).toBe("02/01/2026");
+    const wb = new ExcelJS.Workbook();
+    const d = wb.addWorksheet("Dados");
+    [
+      ["Título", "Prazo"],
+      ["Nível", "Fundamental"],
+      ["Dificuldade", "Fácil"],
+      ["Enunciado", "Calcule o prazo."],
+    ].forEach((r) => d.addRow(r));
+    const p = wb.addWorksheet("Planilha");
+    p.getCell("A1").value = new Date(Date.UTC(2026, 10, 21));
+    p.getCell("A2").value = 30;
+    const g = wb.addWorksheet("Gabarito");
+    g.addRow(["Célula", "Resposta"]);
+    g.addRow(["A3", "=A1+A2"]);
+    const result = await parseXlsx("datas.xlsx", (await wb.xlsx.writeBuffer()) as ArrayBuffer);
+    const [s] = result.sheets;
+    expect(s.dateCells).toEqual(["A1"]);
+    expect(typeof s.grid.cells.A1.value).toBe("number");
+    expect(formatExcelDate(s.grid.cells.A1.value as number)).toBe("21/11/2026");
+  });
+
+  it("mostra aba, linha e célula", () => {
+    expect(
+      formatImportIssue({
+        sheet: "Gabarito (2)",
+        row: 3,
+        column: "B",
+        cell: "B3",
+        code: "MISSING_ANSWER",
+        message: "B4: informe a resposta esperada.",
+      }),
+    ).toBe("Aba Gabarito (2), linha 3, célula B3: B4: informe a resposta esperada.");
   });
 });

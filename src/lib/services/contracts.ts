@@ -27,9 +27,9 @@
  *   PUT    /api/professor/feedback-templates  body SaveFeedbackTemplateInput → FeedbackTemplate
  *   GET    /api/professor/feedback-reviews?status=DRAFT,REJECTED&level=&search= → ReviewFeedback[]
  *   GET    /api/professor/feedback-reviews/:id                         → ReviewFeedback
- *   PATCH  /api/professor/feedback-reviews/:id body { finalText }      → ReviewFeedback (só DRAFT ou REJECTED)
+ *   PATCH  /api/professor/feedback-reviews/:id body { finalText }      → ReviewFeedback (só DRAFT ou REJECTED) | 409 ALREADY_REVIEWED
  *   POST   /api/professor/feedback-reviews/:id/approve body { finalText } → ReviewFeedback (DRAFT|REJECTED → APPROVED) | 409 ALREADY_REVIEWED
- *          | 422 GENERATION_NOT_READY — exige generationStatus GENERATED ou finalText não vazio (o professor pode escrever à mão após FAILED)
+ *          | 409 GENERATION_NOT_READY — exige generationStatus GENERATED ou finalText não vazio (o professor pode escrever à mão após FAILED)
  *   POST   /api/professor/feedback-reviews/:id/reject  body { reason? }   → ReviewFeedback (DRAFT → REJECTED) | 409 ALREADY_REVIEWED
  *   POST   /api/professor/feedback-reviews/:id/regenerate             → ReviewFeedback (DRAFT|REJECTED → DRAFT, generationStatus PENDING, rejectionReason null)
  *          status = FeedbackStatus do BE1 (DRAFT "Pendente", APPROVED, REJECTED); o aluno só vê APPROVED.
@@ -56,6 +56,8 @@
  *   PATCH  /api/professor/exercises/:id       body Partial<ExerciseInput> → Exercise
  *   DELETE /api/professor/exercises/:id                                → 204
  *   POST   /api/professor/sets/:id/exercises/import/preview  multipart `file` → 200 ImportPreview { drafts[], errors[] } (não grava)
+ *          Datas da aba Planilha vêm como serial do Excel (número); cada draft traz `dateCells: string[]`
+ *          (ex.: ["B2","C5"]) e a UI exibe essas células como dd/mm/aaaa.
  *   POST   /api/professor/sets/:id/exercises/import          multipart `file` → 201 { created: Exercise[] } (DRAFT)
  *          | 422 { error: { code: "IMPORT_INVALID" }, errors: ImportIssue[] }  — tudo ou nada
  *          Modelo do arquivo: abas Dados (Título, Nível, Dificuldade, Enunciado, Dica),

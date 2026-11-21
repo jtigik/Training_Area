@@ -1,17 +1,28 @@
 import { columnLabel, formatCellInput, toAddress } from "@/lib/domain/grid";
 import type { AnswerCell, CellAddress, SpreadsheetGrid } from "@/lib/domain/types";
 import { cn } from "@/lib/utils";
+import { formatExcelDate } from "@/lib/xlsx/import";
 
 /** Grade somente leitura (até 8×6) para conferir uma importação. Gabarito destacado. */
 export function GridPreview({
   grid,
   answers,
   label,
+  dateCells = [],
 }: {
   grid: SpreadsheetGrid;
   answers: Record<CellAddress, AnswerCell>;
   label: string;
+  /** Células com data (serial do Excel), exibidas como dd/mm/aaaa. */
+  dateCells?: CellAddress[];
 }) {
+  const cellText = (a: CellAddress) => {
+    const answer = answers[a];
+    if (answer) return formatCellInput(answer.expected);
+    const value = grid.cells[a]?.value;
+    if (dateCells.includes(a) && typeof value === "number") return formatExcelDate(value);
+    return formatCellInput(value);
+  };
   const rows = Math.min(grid.rows, 8);
   const cols = Math.min(grid.cols, 6);
   return (
@@ -49,7 +60,7 @@ export function GridPreview({
                       answer && "bg-grid-target border-grid-target-border font-mono",
                     )}
                   >
-                    {formatCellInput(answer ? answer.expected : grid.cells[a]?.value)}
+                    {cellText(a)}
                   </td>
                 );
               })}
