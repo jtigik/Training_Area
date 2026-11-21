@@ -1,0 +1,288 @@
+[
+  {
+    "id": "EX-SUM",
+    "description": "Somar A1:A3 (10, 20, 30) em A4.",
+    "definition": {
+      "sheet": {
+        "A1": 10,
+        "A2": 20,
+        "A3": 30
+      },
+      "targetCell": "A4",
+      "expected": {
+        "formula": "=SUM(A1:A3)"
+      }
+    },
+    "expected_value": 60
+  },
+  {
+    "id": "EX-AVG",
+    "description": "Média de B1:B5 em B6; B2 está vazia (MÉDIA ignora vazias).",
+    "definition": {
+      "sheet": {
+        "B1": 8,
+        "B3": 6,
+        "B4": 10,
+        "B5": 4
+      },
+      "targetCell": "B6",
+      "expected": {
+        "formula": "=AVERAGE(B1:B5)"
+      }
+    },
+    "expected_value": 7
+  },
+  {
+    "id": "EX-IF",
+    "description": "Em D1, \"Aprovado\" se C1 (75) ≥ 60, senão \"Reprovado\".",
+    "definition": {
+      "sheet": {
+        "C1": 75
+      },
+      "targetCell": "D1",
+      "expected": {
+        "formula": "=IF(C1>=60,\"Aprovado\",\"Reprovado\")"
+      }
+    },
+    "expected_value": "Aprovado"
+  },
+  {
+    "id": "EX-GRADE",
+    "description": "Em D1, conceito por nota em C1 (75): ≥90 \"A\", ≥70 \"B\", senão \"C\".",
+    "definition": {
+      "sheet": {
+        "C1": 75
+      },
+      "targetCell": "D1",
+      "expected": {
+        "formula": "=IF(C1>=90,\"A\",IF(C1>=70,\"B\",\"C\"))"
+      }
+    },
+    "expected_value": "B"
+  },
+  {
+    "id": "EX-VLOOKUP",
+    "description": "Em G2, preço do código em G1 (103) na tabela E1:F4.",
+    "definition": {
+      "sheet": {
+        "E1": 101,
+        "F1": 2.5,
+        "E2": 102,
+        "F2": 4,
+        "E3": 103,
+        "F3": 7.9,
+        "E4": 104,
+        "F4": 12,
+        "G1": 103
+      },
+      "targetCell": "G2",
+      "expected": {
+        "formula": "=VLOOKUP(G1,$E$1:$F$4,2,FALSE)"
+      }
+    },
+    "expected_value": 7.9
+  },
+  {
+    "id": "EX-VLOOKUP-NF",
+    "description": "Em G2, preço do código G1 (999, inexistente) ou \"Não encontrado\".",
+    "definition": {
+      "sheet": {
+        "E1": 101,
+        "F1": 2.5,
+        "E2": 102,
+        "F2": 4,
+        "E3": 103,
+        "F3": 7.9,
+        "E4": 104,
+        "F4": 12,
+        "G1": 999
+      },
+      "targetCell": "G2",
+      "expected": {
+        "formula": "=IFERROR(VLOOKUP(G1,$E$1:$F$4,2,FALSE),\"Não encontrado\")"
+      }
+    },
+    "expected_value": "Não encontrado"
+  },
+  {
+    "id": "EX-TAX",
+    "description": "Em C2, preço B2 (100) com taxa E1 (10%).",
+    "definition": {
+      "sheet": {
+        "B2": 100,
+        "E1": 0.1
+      },
+      "targetCell": "C2",
+      "expected": {
+        "formula": "=B2*(1+$E$1)"
+      }
+    },
+    "expected_value": 110
+  },
+  {
+    "id": "EX-DESC",
+    "description": "Em B1, aplicar desconto fixo de 2,5% (enunciado) ao valor A1 (200).",
+    "definition": {
+      "sheet": {
+        "A1": 200
+      },
+      "targetCell": "B1",
+      "expected": {
+        "formula": "=A1*0.975"
+      }
+    },
+    "expected_value": 195
+  },
+  {
+    "id": "EX-FLOAT",
+    "description": "Em A3, somar A1 (0,1) e A2 (0,2); gabarito por VALOR 0,3.",
+    "definition": {
+      "sheet": {
+        "A1": 0.1,
+        "A2": 0.2
+      },
+      "targetCell": "A3",
+      "expected": {
+        "value": 0.3
+      }
+    },
+    "expected_value": 0.3
+  },
+  {
+    "id": "EX-ROUND",
+    "description": "Em B2, B1 (10) / 3 arredondado a 2 casas.",
+    "definition": {
+      "sheet": {
+        "B1": 10
+      },
+      "targetCell": "B2",
+      "expected": {
+        "formula": "=ROUND(B1/3,2)"
+      }
+    },
+    "expected_value": 3.33
+  },
+  {
+    "id": "EX-DIV",
+    "description": "Em C1, A1 (50) / B1 (0), retornando 0 se houver erro.",
+    "definition": {
+      "sheet": {
+        "A1": 50,
+        "B1": 0
+      },
+      "targetCell": "C1",
+      "expected": {
+        "formula": "=IFERROR(A1/B1,0)"
+      }
+    },
+    "expected_value": 0
+  },
+  {
+    "id": "EX-TXTNUM",
+    "description": "Em A4, SOMA de A1:A3 onde A1 é o TEXTO \"10\" (digitado como '10; SOMA ignora texto).",
+    "definition": {
+      "sheet": {
+        "A1": "'10",
+        "A2": 20,
+        "A3": 30
+      },
+      "targetCell": "A4",
+      "expected": {
+        "formula": "=SUM(A1:A3)"
+      }
+    },
+    "expected_value": 50
+  },
+  {
+    "id": "EX-CONCAT",
+    "description": "Em C1, nome completo: A1 (\"Maria\") + espaço + B1 (\"Souza\").",
+    "definition": {
+      "sheet": {
+        "A1": "Maria",
+        "B1": "Souza"
+      },
+      "targetCell": "C1",
+      "expected": {
+        "formula": "=A1&\" \"&B1"
+      }
+    },
+    "expected_value": "Maria Souza"
+  },
+  {
+    "id": "EX-COUNTIF",
+    "description": "Em B1, contar \"Sim\" em A1:A5 (Sim, Não, Sim, sim, Não).",
+    "definition": {
+      "sheet": {
+        "A1": "Sim",
+        "A2": "Não",
+        "A3": "Sim",
+        "A4": "sim",
+        "A5": "Não"
+      },
+      "targetCell": "B1",
+      "expected": {
+        "formula": "=COUNTIF(A1:A5,\"Sim\")"
+      }
+    },
+    "expected_value": 3
+  },
+  {
+    "id": "EX-BOOL",
+    "description": "Em B1, VERDADEIRO se A1 (5) > 3.",
+    "definition": {
+      "sheet": {
+        "A1": 5
+      },
+      "targetCell": "B1",
+      "expected": {
+        "formula": "=A1>3"
+      }
+    },
+    "expected_value": true
+  },
+  {
+    "id": "EX-TODAY",
+    "description": "Em A1, data de hoje (função volátil).",
+    "definition": {
+      "sheet": {
+        "B1": 1
+      },
+      "targetCell": "A1",
+      "expected": {
+        "formula": "=TODAY()"
+      },
+      "requireCellReference": false
+    },
+    "expected_value": null
+  },
+  {
+    "id": "EX-RAND",
+    "description": "Em A1, número aleatório entre 0 e 1 (função volátil).",
+    "definition": {
+      "sheet": {
+        "B1": 1
+      },
+      "targetCell": "A1",
+      "expected": {
+        "formula": "=RAND()"
+      },
+      "requireCellReference": false
+    },
+    "expected_value": null
+  },
+  {
+    "id": "EX-ERRGAB",
+    "description": "Gabarito que resulta em erro: C1 = A1/B1 com B1 = 0 (#DIV/0!).",
+    "definition": {
+      "sheet": {
+        "A1": 50,
+        "B1": 0
+      },
+      "targetCell": "C1",
+      "expected": {
+        "formula": "=A1/B1"
+      }
+    },
+    "expected_value": "#DIV/0!"
+  }
+]
