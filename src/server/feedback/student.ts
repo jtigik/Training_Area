@@ -1,7 +1,6 @@
 import "server-only";
 
 import { feedbackDisplayText } from "@/lib/feedback";
-import { prisma } from "@/server/db";
 import type { TenantContext } from "@/server/auth/tenant";
 
 export interface StudentFeedbackView {
@@ -17,12 +16,11 @@ export interface StudentFeedbackView {
  * Use SEMPRE este helper nas rotas/telas do aluno.
  */
 export async function listApprovedFeedbackForStudent(
-  ctx: TenantContext,
+  ctx: Pick<TenantContext, "db" | "user">,
   filter: { levelAttemptId?: string } = {},
 ): Promise<StudentFeedbackView[]> {
-  const rows = await prisma.feedback.findMany({
+  const rows = await ctx.db.feedback.findMany({
     where: {
-      tenantId: ctx.tenantId,
       studentId: ctx.user.id,
       status: "APPROVED",
       ...(filter.levelAttemptId && { levelAttemptId: filter.levelAttemptId }),
@@ -39,7 +37,7 @@ export async function listApprovedFeedbackForStudent(
 }
 
 export async function getApprovedFeedbackForStudent(
-  ctx: TenantContext,
+  ctx: Pick<TenantContext, "db" | "user">,
   levelAttemptId: string,
 ): Promise<StudentFeedbackView | null> {
   const [feedback] = await listApprovedFeedbackForStudent(ctx, { levelAttemptId });

@@ -14,12 +14,12 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/admin/user
       ? body.tenantId
       : null;
 
-  let tenantId: string;
+  let tenantCtx;
   try {
-    ({ tenantId } = await requireTenant(["INSTITUTION_ADMIN", "SUPER_ADMIN"], {
+    tenantCtx = await requireTenant(["INSTITUTION_ADMIN", "SUPER_ADMIN"], {
       requestedTenantId,
       headers: request.headers,
-    }));
+    });
   } catch (error) {
     return authErrorResponse(error);
   }
@@ -34,7 +34,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/admin/user
 
   const { id } = await ctx.params;
   try {
-    const user = await changeUserRole(tenantId, id, parsed.data.role);
+    const user = await changeUserRole(tenantCtx, id, parsed.data.role);
     return Response.json({ user });
   } catch (error) {
     if (error instanceof RoleChangeError) {

@@ -47,6 +47,7 @@ const MESSAGES = {
 /** INSTITUTION_ADMIN/SUPER_ADMIN: cria ou renova o convite (valide com invitationInputSchema). */
 export async function createInvitation(ctx: TenantContext, input: InvitationInput) {
   const email = normalizeEmail(input.email);
+  // Verificação GLOBAL e intencional (e-mail único na plataforma): cliente base.
   return prisma.$transaction(async (tx) => {
     const [user, pending] = await Promise.all([
       tx.user.findUnique({ where: { email }, select: { tenantId: true } }),

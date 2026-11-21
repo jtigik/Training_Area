@@ -118,7 +118,30 @@ await prisma.exerciseSet.findMany({ where: { tenantId } }); // sempre filtre pel
 
 `requireTenant` usa o `tenantId` da sessão; só o SUPER_ADMIN atravessa instituições e precisa informar `requestedTenantId`. Também existem `requireSession`/`requireRole` (`src/server/auth/session.ts`). Feedback para o aluno: use `listApprovedFeedbackForStudent` (`src/server/feedback/student.ts`), que só devolve feedback `APPROVED`.
 
-### Contas de desenvolvimento (seed)
+### Isolamento por tenant (`forTenant`)
+
+Todo código de servidor que lê/grava dados de instituição usa o cliente com escopo
+(`src/server/tenant-db.ts`, regras em `src/server/tenant-scope.ts`):
+
+```ts
+const { db, user } = await requireTenant(["PROFESSOR"]); // ctx.db = forTenant(ctx.tenantId)
+await db.levelAttempt.findMany({ where: { status: "COMPLETED" } }); // tenantId injetado
+await db.exercise.findMany(); // exercícios do tenant + globais (tenantId nulo)
+```
+
+- Modelos de tenant: `where` recebe `AND: [{ tenantId }]` em leituras/updates/deletes
+  (inclusive `findUnique`); `create`/`createMany`/`upsert` recebem `tenantId`; outro
+  `tenantId` ou trocar de tenant ⇒ `TenantScopeError`.
+- `Exercise`/`ContentSection`: leitura `tenantId = X OU nulo`; escrita só do tenant
+  (`isGlobal` forçado a `false`). Globais só pelo cliente base (SUPER_ADMIN/seed).
+- `Tenant`: só o próprio, leitura. `Session`/`Account`/`Verification`: bloqueados.
+- Vale em `$transaction` interativa. **Não** reescreve relações aninhadas
+  (`include`, nested writes) nem `$queryRaw` — consulte o filho pelo `db`.
+- Cliente base (`prisma`) só em: Better Auth e seus hooks de provisionamento, seed,
+  operações de plataforma e verificações globais (e-mail único).
+- Testes: `npm test` (regras puras) e `npm run test:db` (Postgres real, `.env` carregado).
+
+## Contas de desenvolvimento (seed)
 
 Senhas **apenas para dev** (sobrescreva com `SEED_*_PASSWORD`; em produção o seed exige as variáveis). Login por senha exige `AUTH_EMAIL_PASSWORD_ENABLED=true`.
 

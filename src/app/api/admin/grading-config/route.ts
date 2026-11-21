@@ -16,7 +16,7 @@ export async function GET(request: Request) {
       headers: request.headers,
       requestedTenantId: requestedTenant(request),
     });
-    return Response.json({ bands: await getGradingBands(ctx.tenantId) });
+    return Response.json({ bands: await getGradingBands(ctx.db) });
   } catch (error) {
     return authErrorResponse(error);
   }

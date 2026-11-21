@@ -2,8 +2,8 @@ import "server-only";
 
 import { computeConcept, DEFAULT_GRADING_BANDS, type GradingBands } from "@/lib/grading";
 import type { ConceptOverrideInput, GradingBandsInput } from "@/lib/validation/grading";
-import { prisma } from "@/server/db";
 import type { TenantContext } from "@/server/auth/tenant";
+import type { TenantDb } from "@/server/tenant-db";
 
 export class GradingError extends Error {
   constructor(
@@ -16,9 +16,8 @@ export class GradingError extends Error {
 }
 
 /** Faixas vigentes da instituição (padrão 50/70/90 se não configuradas). */
-export async function getGradingBands(tenantId: string): Promise<GradingBands> {
-  const config = await prisma.tenantGradingConfig.findUnique({
-    where: { tenantId },
+export async function getGradingBands(db: TenantDb): Promise<GradingBands> {
+  const config = await db.tenantGradingConfig.findFirst({
     select: { edMinPercent: true, dMinPercent: true, pdMinPercent: true },
   });
   return config ?? { ...DEFAULT_GRADING_BANDS };
@@ -26,7 +25,7 @@ export async function getGradingBands(tenantId: string): Promise<GradingBands> {
 
 /** INSTITUTION_ADMIN: define as faixas (valide com gradingBandsSchema antes). */
 export async function setGradingBands(ctx: TenantContext, bands: GradingBandsInput) {
-  return prisma.tenantGradingConfig.upsert({
+  return ctx.db.tenantGradingConfig.upsert({
     where: { tenantId: ctx.tenantId },
     update: { ...bands, updatedById: ctx.user.id },
     create: { tenantId: ctx.tenantId, ...bands, updatedById: ctx.user.id },
@@ -37,19 +36,19 @@ export async function setGradingBands(ctx: TenantContext, bands: GradingBandsInp
  * Conclui a tentativa e calcula o conceito pelas faixas da instituição
  * (snapshot em gradingBands). Quem chama decide QUANDO concluir (cota atingida).
  */
-export async function completeLevelAttempt(tenantId: string, levelAttemptId: string) {
-  const attempt = await prisma.levelAttempt.findFirst({
-    where: { id: levelAttemptId, tenantId },
+export async function completeLevelAttempt(db: TenantDb, levelAttemptId: string) {
+  const attempt = await db.levelAttempt.findFirst({
+    where: { id: levelAttemptId },
     select: { id: true, status: true, correctCount: true, completedCount: true },
   });
   if (!attempt) throw new GradingError("NOT_FOUND", "Tentativa não encontrada");
   if (attempt.status !== "IN_PROGRESS") {
     throw new GradingError("NOT_IN_PROGRESS", "A tentativa não está em andamento");
   }
-  const bands = await getGradingBands(tenantId);
+  const bands = await getGradingBands(db);
   const concept = computeConcept(attempt.correctCount, attempt.completedCount, bands);
   const now = new Date();
-  return prisma.levelAttempt.update({
+  return db.levelAttempt.update({
     where: { id: attempt.id },
     data: {
       status: "COMPLETED",
@@ -72,9 +71,9 @@ export async function overrideLevelConcept(
   levelAttemptId: string,
   input: ConceptOverrideInput,
 ) {
-  return prisma.$transaction(async (tx) => {
+  return ctx.db.$transaction(async (tx) => {
     const attempt = await tx.levelAttempt.findFirst({
-      where: { id: levelAttemptId, tenantId: ctx.tenantId },
+      where: { id: levelAttemptId },
       select: { id: true, status: true, concept: true },
     });
     if (!attempt) throw new GradingError("NOT_FOUND", "Tentativa não encontrada");
@@ -90,7 +89,7 @@ export async function overrideLevelConcept(
     const now = new Date();
     await tx.conceptOverride.create({
       data: {
-        tenantId: ctx.tenantId,
+        tenantId: ctx.tenantId, // tipos do Prisma exigem; a extensão confere
         levelAttemptId: attempt.id,
         fromConcept: attempt.concept,
         toConcept: input.concept,

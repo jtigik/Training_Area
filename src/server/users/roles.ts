@@ -2,7 +2,7 @@ import "server-only";
 
 import { Prisma } from "@/generated/prisma/client";
 import type { TenantRole } from "@/lib/roles";
-import { prisma } from "@/server/db";
+import type { TenantContext } from "@/server/auth/tenant";
 
 export class RoleChangeError extends Error {
   constructor(
@@ -20,18 +20,22 @@ export class RoleChangeError extends Error {
  * último INSTITUTION_ADMIN ativo da instituição. Transação serializável.
  * Quem chama garante a autorização (requireTenant com INSTITUTION_ADMIN/SUPER_ADMIN).
  */
-export async function changeUserRole(tenantId: string, targetUserId: string, role: TenantRole) {
-  return prisma.$transaction(
+export async function changeUserRole(
+  ctx: Pick<TenantContext, "db">,
+  targetUserId: string,
+  role: TenantRole,
+) {
+  return ctx.db.$transaction(
     async (tx) => {
       const target = await tx.user.findFirst({
-        where: { id: targetUserId, tenantId },
+        where: { id: targetUserId },
         select: { id: true, role: true, active: true },
       });
       if (!target) throw new RoleChangeError("NOT_FOUND", "Usuário não encontrado");
 
       if (target.role === "INSTITUTION_ADMIN" && role !== "INSTITUTION_ADMIN" && target.active) {
         const admins = await tx.user.count({
-          where: { tenantId, role: "INSTITUTION_ADMIN", active: true },
+          where: { role: "INSTITUTION_ADMIN", active: true },
         });
         if (admins <= 1) {
           throw new RoleChangeError(

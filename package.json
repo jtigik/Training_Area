@@ -24,7 +24,8 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:db": "RUN_DB_TESTS=1 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run integration"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

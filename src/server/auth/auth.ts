@@ -16,6 +16,7 @@ import {
 import { readAuthEnv } from "@/server/auth/config";
 import { decideProvisioning, emailDomain } from "@/server/auth/provisioning";
 import { prisma } from "@/server/db";
+import { forTenant } from "@/server/tenant-db";
 
 const SEVEN_DAYS = 60 * 60 * 24 * 7;
 const ONE_DAY = 60 * 60 * 24;
@@ -101,6 +102,7 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
+        // Antes de existir tenant (descoberta por convite/domínio): cliente base, intencional.
         before: async (user) => {
           const email = user.email.toLowerCase();
           const [invitations, domainTenants] = await Promise.all([
@@ -136,12 +138,9 @@ export const auth = betterAuth({
           };
         },
         after: async (user) => {
-          await prisma.invitation.updateMany({
-            where: {
-              email: user.email.toLowerCase(),
-              acceptedAt: null,
-              tenantId: String(user.tenantId),
-            },
+          if (typeof user.tenantId !== "string") return;
+          await forTenant(user.tenantId).invitation.updateMany({
+            where: { email: user.email.toLowerCase(), acceptedAt: null },
             data: { acceptedAt: new Date() },
           });
         },
