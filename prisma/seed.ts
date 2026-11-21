@@ -11,6 +11,7 @@ import { PrismaClient, type Prisma, type Role } from "../src/generated/prisma/cl
  *  - 1 usuário por papel (SUPER_ADMIN sem tenant; os demais na Escola Demo);
  *  - banco inicial GLOBAL (tenantId nulo): exercícios e uma seção de conteúdo;
  *  - 1 conjunto com nível Fundamental e cota padrão na Escola Demo.
+ *  Níveis do MVP: Fundamental, Profissional e Avançado (Dashboard só na v1.1).
  *
  * Login: no lançamento é Google/Microsoft. Para dev/E2E, o seed cria também
  * credencial de e-mail+senha, usável só com AUTH_EMAIL_PASSWORD_ENABLED=true.
