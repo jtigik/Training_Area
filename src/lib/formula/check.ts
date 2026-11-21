@@ -20,7 +20,8 @@ export type GradeCode =
   | "FORMULA_REQUIRED"
   | "FORMULA_ERROR"
   | "PARSE_ERROR"
-  | "EMPTY_SUBMISSION";
+  | "EMPTY_SUBMISSION"
+  | "LIMIT_EXCEEDED";
 
 export interface GradeResult {
   correct: boolean;
@@ -52,6 +53,9 @@ function sameType(actual: EvaluatedValue, expected: ExpectedValue): boolean {
   return actual.kind === map[typeof expected as "number" | "string" | "boolean"];
 }
 
+/** Backend 2 DEFAULT_LIMITS.maxFormulaLength. */
+export const MAX_FORMULA_LENGTH = 2000;
+
 const CELL_REF_RE = /\$?[A-Za-z]{1,3}\$?[0-9]+/;
 
 /**
@@ -68,6 +72,9 @@ export function gradeSubmission(
 ): GradeResult {
   const text = submission.trim();
   if (text === "") return { correct: false, code: "EMPTY_SUBMISSION", actual: { kind: "empty" } };
+  if (text.length > MAX_FORMULA_LENGTH) {
+    return { correct: false, code: "LIMIT_EXCEEDED", actual: { kind: "empty" } };
+  }
   const isFormula = text.startsWith("=");
   if (!isFormula && !options.allowConstants) {
     return { correct: false, code: "FORMULA_REQUIRED", actual: { kind: "empty" } };

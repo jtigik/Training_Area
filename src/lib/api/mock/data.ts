@@ -60,7 +60,7 @@ export const MOCK_SECTIONS: Section[] = [
     order: 0,
     level: null,
     readMinutes: 2,
-    body: `# Bem-vindo(a)!\n\nCada nível tem **seções de conteúdo** para estudar e **exercícios** para praticar.\n\n- Leia as seções do nível.\n- Abra um exercício e digite fórmulas na barra de fórmulas.\n- O resultado aparece em tempo real. Quando estiver pronto(a), clique em **Verificar resposta**.\n\nVocê pode escrever as funções em português (\`=SOMA(A1:A3)\`) ou em inglês (\`=SUM(A1:A3)\`).`,
+    body: `# Bem-vindo(a)!\n\nCada nível tem **seções de conteúdo** para estudar e **exercícios** para praticar.\n\n- Leia as seções do nível.\n- Abra um exercício e digite fórmulas na barra de fórmulas.\n- O resultado aparece em tempo real. Quando estiver pronto(a), clique em **Enviar resposta**.\n\n![Barra de fórmulas: caixa de nome A4, fx e =SOMA(A1:A3)](/conteudo/barra-de-formulas.svg)\n\nVocê pode escrever as funções em português (\`=SOMA(A1:A3)\`) ou em inglês (\`=SUM(A1:A3)\`).`,
   },
   {
     id: "sec-referencias",

@@ -53,3 +53,11 @@ describe("valueMatches", () => {
     expect(valueMatches({ kind: "number", value: 1 }, true)).toBe(false);
   });
 });
+
+describe("gradeSubmission – limits", () => {
+  it("rejects formulas longer than Backend 2's limit (QA F-142)", () => {
+    const long = "=A1+A2+A3" + "+0".repeat(1000);
+    const r = gradeSubmission({ A1: 10, A2: 20, A3: 30 }, "A4", long, 60);
+    expect(r).toMatchObject({ correct: false, code: "LIMIT_EXCEEDED" });
+  });
+});

@@ -206,10 +206,8 @@ export function ExerciseWorkspace({
     const submission = draft;
     if (draft !== committed) commit();
     setSubmitError(null);
-    if (submission.trim() === "") {
-      setSubmitError("Digite uma fórmula na célula-resposta antes de enviar.");
-      return;
-    }
+    // An empty answer is still sent: Backend 2 grades it as EMPTY_SUBMISSION (Incorreto),
+    // which is what QA's F-110 case expects.
     setSubmitting(true);
     try {
       const local = evaluateSheet(cells, target, submission).target;
@@ -218,7 +216,7 @@ export function ExerciseWorkspace({
         clientValue: local.kind === "empty" || local.kind === "error" ? null : local.value,
       });
       setResult(res);
-      setAttempts((n) => n + 1);
+      if (res.feedbackCode !== "EMPTY_SUBMISSION") setAttempts((n) => n + 1);
     } catch (e) {
       setSubmitError(errorMessage(e, "Não foi possível enviar sua resposta. Tente de novo."));
     } finally {
