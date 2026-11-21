@@ -71,5 +71,11 @@
   "engines": {
     "node": ">=24 <25",
     "npm": ">=10"
+  },
+  "license": "GPL-3.0-only",
+  "overrides": {
+    "@prisma/config": {
+      "effect": "^3.22.1"
+    }
   }
 }

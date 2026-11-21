@@ -13,11 +13,25 @@ concurrency:
 permissions:
   contents: read
 
+# Valores fictícios: build e testes não precisam de credenciais reais.
+# Se secrets de mesmo nome forem configurados no repositório, eles têm precedência.
 env:
   NEXT_TELEMETRY_DISABLED: 1
   DATABASE_URL: postgresql://training:training@localhost:5432/training_area?schema=public
-  # Valor fixo só para CI (não é segredo real); produção usa o secret do ambiente.
-  BETTER_AUTH_SECRET: ci-only-not-a-real-secret-0123456789abcdef
+  # Better Auth. Valores fictícios só para CI quando o secret não existe (não são segredos reais).
+  BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET || 'ci-only-not-a-real-secret-0123456789abcdef' }}
+  BETTER_AUTH_URL: http://localhost:3000
+  GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID || 'ci-google-client-id' }}
+  GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET || 'ci-google-client-secret' }}
+  MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID || 'ci-microsoft-client-id' }}
+  MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET || 'ci-microsoft-client-secret' }}
+  MICROSOFT_TENANT_ID: common
+  AI_PROVIDER: mock
+  AI_API_KEY: ""
+  AI_MODEL: ""
+  TENANT_RESOLUTION: single
+  DEFAULT_TENANT_SLUG: default
+  APP_ROOT_DOMAIN: ""
 
 jobs:
   quality:
