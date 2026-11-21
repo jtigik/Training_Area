@@ -42,6 +42,10 @@ def base_workbook(with_answer_key: bool = True) -> Workbook:
 def main() -> None:
     base_workbook().save(HERE / "exercicio-valido.xlsx")
     base_workbook(with_answer_key=False).save(HERE / "exercicio-sem-gabarito.xlsx")
+    # Tudo ou nada: linha 2 do gabarito válida, linha 3 com célula sem resposta.
+    wb = base_workbook()
+    wb["Gabarito"]["A3"] = "B4"
+    wb.save(HERE / "exercicio-gabarito-linha-invalida.xlsx")
     # Corrompido: começa como um .xlsx (zip) válido, mas truncado.
     valid = (HERE / "exercicio-valido.xlsx").read_bytes()
     (HERE / "exercicio-corrompido.xlsx").write_bytes(valid[: len(valid) // 3])

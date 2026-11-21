@@ -35,7 +35,7 @@ export interface SeedReport {
   userTenantColumn: string | null;
   superAdmin: "seeded" | "skipped: enum Role sem SUPER_ADMIN";
   users: number;
-  passwordHash: "seeded" | "skipped: defina E2E_PASSWORD_HASH (hash de E2E_PASSWORD)";
+  credentials: "better-auth credential" | "users.password_hash" | "skipped";
   pending: string[];
 }
 
@@ -60,14 +60,16 @@ async function enumLabels(db: Client, enumName: string) {
   return rows.map((r) => r.enumlabel);
 }
 
-/** INSERT … ON CONFLICT (conflict) DO UPDATE com só as colunas que existem na tabela. */
+/** INSERT … ON CONFLICT (conflict) DO UPDATE com só as colunas que existem na tabela.
+ *  Devolve o id da linha (nova ou existente). */
 async function upsert(
   db: Client,
   table: string,
-  conflict: string,
+  conflict: string | string[],
   data: Record<string, unknown>,
   casts: Record<string, string> = {},
-) {
+): Promise<string> {
+  const conflictCols = Array.isArray(conflict) ? conflict : [conflict];
   const cols = await columnsOf(db, table);
   const existing = new Set(cols.map((c) => c.column_name));
   if (existing.has("updated_at") && !("updated_at" in data)) data.updated_at = new Date();
@@ -84,13 +86,31 @@ async function upsert(
   }
   const placeholders = keys.map((k, i) => `$${i + 1}${casts[k] ? `::"${casts[k]}"` : ""}`);
   const updates = keys
-    .filter((k) => k !== conflict && k !== "id")
+    .filter((k) => !conflictCols.includes(k) && k !== "id")
     .map((k) => `"${k}" = EXCLUDED."${k}"`);
-  await db.query(
+  const { rows } = await db.query<{ id: string }>(
     `INSERT INTO "${table}" (${keys.map((k) => `"${k}"`).join(", ")}) VALUES (${placeholders.join(", ")})
-     ON CONFLICT ("${conflict}") DO ${updates.length ? `UPDATE SET ${updates.join(", ")}` : "NOTHING"}`,
+     ON CONFLICT (${conflictCols.map((c) => `"${c}"`).join(", ")}) DO UPDATE SET ${
+       updates.length ? updates.join(", ") : `"${conflictCols[0]}" = EXCLUDED."${conflictCols[0]}"`
+     }
+     RETURNING id`,
     keys.map((k) => data[k]),
   );
+  return rows[0].id;
+}
+
+/**
+ * Hash no formato do Better Auth (scrypt), igual ao prisma/seed.ts de feat/auth-modelo.
+ * Import dinâmico: em main o pacote ainda não existe, e o seed apenas pula as credenciais.
+ */
+async function loadHashPassword(): Promise<((password: string) => Promise<string>) | null> {
+  const specifier = "better-auth/crypto";
+  try {
+    const mod = (await import(specifier)) as { hashPassword?: (p: string) => Promise<string> };
+    return mod.hashPassword ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function seed(db: Client): Promise<SeedReport> {
@@ -105,7 +125,16 @@ export async function seed(db: Client): Promise<SeedReport> {
   const tenantTable = SCHEMA_CANDIDATES.tenantTable.find((t) => tables.includes(t)) ?? null;
   if (tenantTable) {
     for (const t of Object.values(TENANTS)) {
-      await upsert(db, tenantTable, "slug", { id: t.id, slug: t.slug, name: t.name });
+      // email_domains vazio + auto_join desligado: só entra quem foi semeado/convidado
+      // (o teste de "conta não provisionada" depende disso).
+      await upsert(db, tenantTable, "slug", {
+        id: t.id,
+        slug: t.slug,
+        name: t.name,
+        email_domains: [],
+        auto_join_by_domain: false,
+        active: true,
+      });
     }
   } else {
     pending.push("instituições (tabela de tenant ainda não existe)");
@@ -132,11 +161,16 @@ export async function seed(db: Client): Promise<SeedReport> {
   const superRole = roleLabel("SUPER_ADMIN");
   if (!superRole) pending.push("Super Admin (enum Role sem SUPER_ADMIN)");
 
-  // feat/auth-modelo usa Better Auth: a senha fica em accounts.password (scrypt), não em
-  // users.password_hash. TODO: quando o schema chegar, gravar a conta "credential" aqui.
-  const passwordHash = process.env.E2E_PASSWORD_HASH ?? null;
-  if (!passwordHash) pending.push("password_hash (login por senha no auth.setup)");
-  void E2E_PASSWORD; // o hash deve corresponder a esta senha
+  // Login de teste (AUTH_EMAIL_PASSWORD_ENABLED=true no app). Com Better Auth
+  // (feat/auth-modelo) a senha fica numa account providerId "credential", accountId = user.id,
+  // com hashPassword de better-auth/crypto — mesmo padrão do prisma/seed.ts do Backend 1.
+  // Em main (sem accounts) cai no fallback users.password_hash = E2E_PASSWORD_HASH.
+  const hasAccounts = tables.includes("accounts");
+  const hashPassword = hasAccounts ? await loadHashPassword() : null;
+  const credentialHash = hashPassword ? await hashPassword(E2E_PASSWORD) : null;
+  const passwordHash = !hasAccounts ? (process.env.E2E_PASSWORD_HASH ?? null) : null;
+  if (hasAccounts && !hashPassword) pending.push("credenciais (better-auth/crypto não instalado)");
+  if (!hasAccounts && !passwordHash) pending.push("senha de teste (schema sem tabela accounts)");
 
   let count = 0;
   const dbRole = (u: TestUser) => roleLabel(u.role);
@@ -152,7 +186,16 @@ export async function seed(db: Client): Promise<SeedReport> {
     };
     if (tenantCol) data[tenantCol] = u.tenant ? tenantIdBySlug.get(TENANTS[u.tenant].slug) : null;
     if (passwordHash) data.password_hash = passwordHash;
-    await upsert(db, "users", "email", data, { role: "Role" });
+    const userId = await upsert(db, "users", "email", data, { role: "Role" });
+    if (credentialHash) {
+      await upsert(db, "accounts", ["provider_id", "account_id"], {
+        id: `e2e_acc_${userId}`,
+        user_id: userId,
+        account_id: userId,
+        provider_id: "credential",
+        password: credentialHash,
+      });
+    }
     count++;
   }
 
@@ -170,9 +213,11 @@ export async function seed(db: Client): Promise<SeedReport> {
     userTenantColumn: tenantCol,
     superAdmin: superRole ? "seeded" : "skipped: enum Role sem SUPER_ADMIN",
     users: count,
-    passwordHash: passwordHash
-      ? "seeded"
-      : "skipped: defina E2E_PASSWORD_HASH (hash de E2E_PASSWORD)",
+    credentials: credentialHash
+      ? "better-auth credential"
+      : passwordHash
+        ? "users.password_hash"
+        : "skipped",
     pending,
   };
 }

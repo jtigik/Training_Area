@@ -3,6 +3,8 @@
  * Tela: /professor/banco-exercicios (input data-testid="xlsx-import-input",
  * resultado data-testid="import-result").
  * Arquivos: e2e/data/xlsx (gerados por build_fixtures.py; modelo proposto no README).
+ * PO (Q-X3): importação TUDO OU NADA, com pré-visualização e relatório de erros por linha
+ * ANTES de confirmar; nada é gravado sem o botão "Confirmar importação".
  * Status: fixme até a importação existir.
  */
 import path from "node:path";
@@ -22,6 +24,10 @@ test.describe("Importação .xlsx [IMPORT]", () => {
   }) => {
     await exerciseBank.goto();
     await exerciseBank.importFile(XLSX("exercicio-valido.xlsx"));
+    // Pré-visualização: nada gravado ainda.
+    await expect(exerciseBank.importResult).toContainText(/pré-visualiza|e2e — Soma importada/i);
+    await expect(page.getByRole("link", { name: "e2e — Soma importada" })).toHaveCount(0);
+    await exerciseBank.confirm.click();
     await expect(exerciseBank.importResult).toContainText(
       /1 exercício importado|importado com sucesso/i,
     );
@@ -41,6 +47,7 @@ test.describe("Importação .xlsx [IMPORT]", () => {
   }) => {
     await exerciseBank.goto();
     await exerciseBank.importFile(XLSX("exercicio-valido.xlsx"));
+    await exerciseBank.confirm.click();
     await expect(exerciseBank.importResult).toBeVisible();
     await expect(
       page.getByTestId("exercise-item").filter({ hasText: "e2e — Soma importada" }).first(),
@@ -80,6 +87,30 @@ test.describe("Importação .xlsx [IMPORT]", () => {
     const before = await page.getByTestId("exercise-item").count();
     await exerciseBank.importFile(XLSX("exercicio-sem-gabarito.xlsx"));
     await expect(exerciseBank.importResult).toContainText(/gabarito/i);
+    await expect(exerciseBank.confirm).toBeDisabled();
+    await page.reload();
+    await expect(page.getByTestId("exercise-item")).toHaveCount(before);
+  });
+
+  test.fixme("tudo ou nada: uma linha inválida lista o erro por linha e bloqueia a importação inteira", async ({
+    page,
+    exerciseBank,
+  }) => {
+    await exerciseBank.goto();
+    const before = await page.getByTestId("exercise-item").count();
+    await exerciseBank.importFile(XLSX("exercicio-gabarito-linha-invalida.xlsx"));
+    await expect(exerciseBank.importResult).toContainText(/linha 3/i);
+    await expect(exerciseBank.importResult).toContainText(/B4/);
+    await expect(exerciseBank.confirm).toBeDisabled();
+    await page.reload();
+    await expect(page.getByTestId("exercise-item")).toHaveCount(before);
+  });
+
+  test.fixme("cancelar a pré-visualização não grava nada", async ({ page, exerciseBank }) => {
+    await exerciseBank.goto();
+    const before = await page.getByTestId("exercise-item").count();
+    await exerciseBank.importFile(XLSX("exercicio-valido.xlsx"));
+    await page.getByRole("button", { name: "Cancelar" }).click();
     await page.reload();
     await expect(page.getByTestId("exercise-item")).toHaveCount(before);
   });

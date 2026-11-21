@@ -16,7 +16,7 @@ for (const [key, user] of Object.entries(SESSION_USERS) as [
 ][]) {
   setup(`autentica ${key}`, async ({ page }) => {
     setup.skip(!PASSWORD_LOGIN_ENABLED, "E2E_PASSWORD_LOGIN=0: sem login por senha de teste");
-    // Depende de: login por senha de teste (Backend 1), hash no seed (E2E_PASSWORD_HASH)
+    // Depende de: AUTH_EMAIL_PASSWORD_ENABLED (Backend 1) + conta "credential" do seed (hashPassword do better-auth)
     // e, para super admin / inst-b, do schema multi-tenant (feat/auth-modelo).
     setup.fixme(true, "TA-001: login de teste e hash de senha ainda não existem");
 

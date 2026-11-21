@@ -24,9 +24,11 @@ test.describe("Aluno antes da aprovação", () => {
     page,
     request,
   }) => {
-    await page.goto(`${ROUTES.student.trail}/niveis/fundamental/feedback`);
+    await page.goto(ROUTES.student.levelFeedback("fundamental"));
+    // Estado "feedback em revisão" (FE1): data-testid feedback-pending, sem texto de feedback.
+    await expect(page.getByTestId("feedback-pending")).toBeVisible();
+    await expect(page.getByTestId("feedback-pending")).toContainText(/em revisão/i);
     await expect(page.getByRole("region", { name: "Seu feedback" })).toHaveCount(0);
-    await expect(page.getByText(/em revisão|aguardando o professor/i)).toBeVisible();
     const res = await request.get(API.student.levelFeedback("fundamental"));
     // Pode ser 404 ou um corpo sem texto; nunca o texto gerado pela IA.
     if (res.ok()) expect((await res.json()).text ?? null).toBeNull();
@@ -58,14 +60,17 @@ test.describe("Professor revisa", () => {
     await expect(feedbackReview.itemFor(USERS.aluno.name)).toHaveCount(0); // sai da fila de pendentes
   });
 
-  test.fixme("[TA-026] rejeitar remove da fila e não libera para o aluno", async ({
+  test.fixme("[TA-026] rejeitar devolve ao professor para editar ou gerar de novo", async ({
     feedbackReview,
   }) => {
-    // Usa o feedback pendente semeado para o aluno A2.
+    // PO (Q-A1): o rejeitado volta para o professor (editar/gerar de novo); nunca vai ao aluno.
     await feedbackReview.goto();
     const item = feedbackReview.itemFor(TENANT_USERS.a.aluno2.name);
     await feedbackReview.reject(item).click();
-    await expect(feedbackReview.itemFor(TENANT_USERS.a.aluno2.name)).toHaveCount(0);
+    const rejected = feedbackReview.itemFor(TENANT_USERS.a.aluno2.name);
+    await expect(rejected).toContainText(/rejeitad/i);
+    await expect(feedbackReview.edit(rejected)).toBeEnabled();
+    await expect(rejected.getByRole("button", { name: /Gerar novamente|Regenerar/ })).toBeVisible();
   });
 });
 
@@ -76,8 +81,9 @@ test.describe("Aluno depois da revisão", () => {
     test.fixme("[TA-026] aluno vê exatamente o texto aprovado (editado pelo professor)", async ({
       page,
     }) => {
-      await page.goto(`${ROUTES.student.trail}/niveis/fundamental/feedback`);
+      await page.goto(ROUTES.student.levelFeedback("fundamental"));
       await expect(page.getByRole("region", { name: "Seu feedback" })).toContainText(EDITED);
+      await expect(page.getByTestId("feedback-pending")).toHaveCount(0);
     });
   });
 });
@@ -101,12 +107,14 @@ test.describe("Permissões da revisão", () => {
 test.describe("Feedback rejeitado", () => {
   asRole("aluno2");
 
-  test.fixme("[TA-026] aluno A2 nunca vê o feedback rejeitado (UI e API)", async ({
+  test.fixme("[TA-026] aluno A2 continua em 'feedback em revisão' e nunca vê a rejeição", async ({
     page,
     request,
   }) => {
-    await page.goto(`${ROUTES.student.trail}/niveis/fundamental/feedback`);
+    await page.goto(ROUTES.student.levelFeedback("fundamental"));
+    await expect(page.getByTestId("feedback-pending")).toBeVisible();
     await expect(page.getByRole("region", { name: "Seu feedback" })).toHaveCount(0);
+    await expect(page.getByText(/rejeitad/i)).toHaveCount(0);
     const res = await request.get(API.student.levelFeedback("fundamental"));
     if (res.ok()) expect((await res.json()).text ?? null).toBeNull();
   });

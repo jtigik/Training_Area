@@ -26,8 +26,9 @@ export class TeacherSetPage {
     return this.page.getByRole("checkbox", { name: new RegExp(`Nível: ${level}`) });
   }
 
-  quantity(level: string) {
-    return this.page.getByLabel(`Exercícios por aluno — ${level}`);
+  /** Quantidade por nível E dificuldade (PO, Q-30). */
+  quantity(level: string, difficulty: string) {
+    return this.page.getByLabel(`Exercícios por aluno — ${level} — ${difficulty}`);
   }
 
   difficulty(name: string) {
@@ -151,10 +152,12 @@ export class FeedbackReviewPage {
 export class ExerciseBankPage {
   readonly importInput: Locator;
   readonly importResult: Locator;
+  readonly confirm: Locator;
 
   constructor(readonly page: Page) {
     this.importInput = page.getByTestId("xlsx-import-input");
     this.importResult = page.getByTestId("import-result");
+    this.confirm = page.getByRole("button", { name: "Confirmar importação" });
   }
 
   async goto() {

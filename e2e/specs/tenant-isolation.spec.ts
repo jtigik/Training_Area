@@ -9,11 +9,14 @@
  * 1 Professor e alunos, e recursos com IDs fixos (TENANT_RESOURCES).
  * Status: fixme até o schema com tenant (feat/auth-modelo) e as rotas existirem.
  *
- * Resposta esperada para recurso de outro tenant: 404 (não revela existência) — 403 também
- * é aceito; o que NUNCA pode acontecer é 2xx ou o dado aparecer no corpo.
+ * PO (Q-T1/Q-T2): recurso de outra instituição responde 404 (não revela que existe), e a
+ * instituição vem da CONTA logada — path, query, subdomínio ou header não concedem acesso.
+ * PO (Q-M1): o Super Admin gere instituições, admins e conteúdo global, mas NÃO vê respostas
+ * de alunos.
  */
 import type { APIResponse } from "@playwright/test";
 
+import { EXERCISE } from "../data/formulas";
 import { asRole, expect, test } from "../fixtures";
 import { API, ROUTES } from "../support/routes";
 import { TENANTS, TENANT_RESOURCES, TENANT_USERS, type SessionKey } from "../support/users";
@@ -22,20 +25,27 @@ const B = TENANT_RESOURCES.b;
 const B_USERS = TENANT_USERS.b;
 const A_USERS = TENANT_USERS.a;
 
+/** Recurso de outra instituição: 404 e nada do dado no corpo. */
 async function expectDenied(res: APIResponse, leaked: string[] = []) {
-  expect([403, 404]).toContain(res.status());
+  expect(res.status()).toBe(404);
   const body = await res.text();
   for (const value of leaked) expect(body).not.toContain(value);
 }
 
-/** Leituras por ID de recursos da inst-b. */
-const B_READS = [
-  { what: "aluno (detalhe de resultados)", url: API.teacher.studentDetail(B_USERS.aluno.id) },
-  { what: "conjunto", url: API.teacher.set(B.set) },
-  { what: "exercício", url: API.teacher.exercise(B.exercise) },
-  { what: "feedback em revisão", url: API.teacher.feedbackReview(B.feedback) },
-  { what: "usuário (admin)", url: API.admin.user(B_USERS.aluno.id) },
-];
+/** Leituras por ID de recursos da inst-b, por papel com acesso ao endpoint no próprio tenant. */
+const B_READS_BY_VIEWER: Record<string, { what: string; url: string }[]> = {
+  professor: [
+    { what: "aluno (detalhe de resultados)", url: API.teacher.studentDetail(B_USERS.aluno.id) },
+    { what: "conjunto", url: API.teacher.set(B.set) },
+    { what: "exercício", url: API.teacher.exercise(B.exercise) },
+    { what: "feedback em revisão", url: API.teacher.feedbackReview(B.feedback) },
+  ],
+  // Admin da instituição vê resultados só para leitura (PO, Q-M4) e gere usuários.
+  admin: [
+    { what: "aluno (detalhe de resultados)", url: API.teacher.studentDetail(B_USERS.aluno.id) },
+    { what: "usuário", url: API.admin.user(B_USERS.aluno.id) },
+  ],
+};
 
 /** Listagens que não podem conter nada da inst-b. */
 const LISTS = [
@@ -45,17 +55,36 @@ const LISTS = [
   API.teacher.feedbackReviews,
 ];
 
-for (const viewer of ["professor", "admin", "aluno"] as SessionKey[]) {
+for (const [viewer, reads] of Object.entries(B_READS_BY_VIEWER) as [
+  SessionKey,
+  { what: string; url: string }[],
+][]) {
   test.describe(`inst-a ${viewer} × dados da inst-b [ISOLAMENTO]`, () => {
     asRole(viewer);
 
-    for (const read of B_READS) {
-      test.fixme(`[TA-003] ${viewer} da inst-a: GET ${read.what} da inst-b por ID → 403/404 sem vazar`, async ({
+    for (const read of reads) {
+      test.fixme(`[TA-003] ${viewer} da inst-a: GET ${read.what} da inst-b por ID → 404 sem vazar`, async ({
         request,
       }) => {
         await expectDenied(await request.get(read.url), [B_USERS.aluno.email, B_USERS.aluno.name]);
       });
     }
+
+    test.fixme(`[TA-003] ${viewer} da inst-a: URL/query/header da inst-b não trocam a instituição`, async ({
+      request,
+      page,
+    }) => {
+      // A instituição vem da conta logada (Q-T2).
+      const read = reads[0];
+      await expectDenied(
+        await request.get(`${read.url}?tenant=${TENANTS.b.slug}&tenantId=${TENANTS.b.id}`),
+      );
+      await expectDenied(await request.get(read.url, { headers: { "x-tenant-id": TENANTS.b.id } }));
+      const res = await page.goto(`/${TENANTS.b.slug}${ROUTES.teacher.results}`);
+      expect(res?.status()).toBe(404);
+      await page.goto(`${ROUTES.teacher.results}?tenant=${TENANTS.b.slug}`);
+      await expect(page.getByText(B_USERS.aluno.name)).toHaveCount(0);
+    });
   });
 }
 
@@ -104,10 +133,10 @@ test.describe("Professor da inst-a [ISOLAMENTO]", () => {
     for (const path of [
       `${ROUTES.teacher.sets}/${B.set}`,
       `${ROUTES.teacher.sets}/${B.set}/exercicios/${B.exercise}`,
-      `${ROUTES.teacher.results}/alunos/${B_USERS.aluno.id}`,
+      ROUTES.teacher.studentDetail(B_USERS.aluno.id),
     ]) {
       const res = await page.goto(path);
-      expect([403, 404]).toContain(res?.status());
+      expect(res?.status()).toBe(404);
       await expect(page.getByText(B_USERS.aluno.name)).toHaveCount(0);
     }
   });
@@ -133,8 +162,8 @@ test.describe("Aluno da inst-a [ISOLAMENTO]", () => {
   }) => {
     await trail.goto();
     await expect(page.getByText(/inst(ituição)? B/i)).toHaveCount(0);
-    const res = await page.goto(`${ROUTES.student.trail}/exercicios/${B.exercise}`);
-    expect([403, 404]).toContain(res?.status());
+    const res = await page.goto(ROUTES.student.exercise(B.exercise));
+    expect(res?.status()).toBe(404);
   });
 
   test.fixme("[TA-022] não envia tentativa para exercício da inst-b", async ({ request }) => {
@@ -188,6 +217,17 @@ test.describe("Admin da inst-a [ISOLAMENTO]", () => {
     }
   });
 
+  test.fixme("[TA-007] e-mail é único na plataforma: convidar e-mail da inst-b dá erro claro", async ({
+    request,
+  }) => {
+    // PO (Q-O1): não é permitido; a mensagem deve ser clara (o e-mail já está em uso).
+    const res = await request.post(API.admin.users, {
+      data: { name: "e2e duplicado", email: B_USERS.aluno.email, role: "STUDENT" },
+    });
+    expect(res.status()).toBe(409);
+    expect(JSON.stringify(await res.json())).toMatch(/e-?mail.*(já|em uso|cadastrad)/i);
+  });
+
   test.fixme("[TA-008] parâmetros salvos pela inst-a não mudam a inst-b", async ({
     request,
     browser,
@@ -216,7 +256,7 @@ test.describe("Inst-b enxerga só a inst-b (simetria) [ISOLAMENTO]", () => {
   });
 });
 
-test.describe("Super Admin enxerga todas as instituições", () => {
+test.describe("Super Admin: instituições sim, respostas de alunos não", () => {
   asRole("superadmin");
 
   test.fixme("lista as duas instituições em /superadmin/instituicoes", async ({ institutions }) => {
@@ -225,9 +265,7 @@ test.describe("Super Admin enxerga todas as instituições", () => {
     await expect(institutions.item(TENANTS.b.name)).toBeVisible();
   });
 
-  test.fixme("API do Super Admin retorna as duas instituições e seus usuários", async ({
-    request,
-  }) => {
+  test.fixme("API do Super Admin retorna as duas instituições", async ({ request }) => {
     const res = await request.get(API.superAdmin.institutions);
     expect(res.ok()).toBeTruthy();
     const body = await res.text();
@@ -235,10 +273,31 @@ test.describe("Super Admin enxerga todas as instituições", () => {
     expect(body).toContain(TENANTS.b.slug);
   });
 
-  test.fixme("pode abrir usuários de qualquer instituição", async ({ request }) => {
+  test.fixme("gere os Admins de qualquer instituição", async ({ request }) => {
+    for (const u of [A_USERS.admin, B_USERS.admin]) {
+      expect((await request.get(API.admin.user(u.id))).ok()).toBeTruthy();
+    }
+  });
+
+  test.fixme("[Q-M1] NÃO vê respostas/tentativas de alunos (API)", async ({ request }) => {
     for (const u of [A_USERS.aluno, B_USERS.aluno]) {
-      const res = await request.get(API.admin.user(u.id));
-      expect(res.ok()).toBeTruthy();
+      const res = await request.get(API.teacher.studentDetail(u.id));
+      expect([403, 404]).toContain(res.status());
+      expect(await res.text()).not.toContain(EXERCISE.answerFormula);
+    }
+    expect([403, 404]).toContain((await request.get(API.teacher.results)).status());
+  });
+
+  test.fixme("[Q-M1] NÃO abre o painel de resultados nem a fila de revisão (UI)", async ({
+    page,
+  }) => {
+    for (const path of [
+      ROUTES.teacher.results,
+      ROUTES.teacher.studentDetail(A_USERS.aluno.id),
+      ROUTES.teacher.feedbackReview,
+    ]) {
+      const res = await page.goto(path);
+      expect([403, 404]).toContain(res?.status());
     }
   });
 });

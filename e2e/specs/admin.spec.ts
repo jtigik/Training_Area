@@ -118,6 +118,42 @@ test.describe("Papéis [TA-002]", () => {
   });
 });
 
+test.describe("Admin da instituição: resultados só leitura e papel único", () => {
+  asRole("admin");
+
+  test.fixme("[TA-028] Admin vê os resultados da instituição só para leitura", async ({
+    page,
+    teacherResults,
+  }) => {
+    // PO (Q-M4): o Admin da instituição pode ver resultados, mas não editar.
+    await teacherResults.goto();
+    await expect(teacherResults.table).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Editar|Salvar|Excluir|Aprovar|Rejeitar/ }),
+    ).toHaveCount(0);
+  });
+
+  test.fixme("[TA-028] Admin não altera resultados/feedback pela API (403)", async ({
+    request,
+  }) => {
+    expect((await request.post(`${API.teacher.feedbackReviews}/qualquer/approve`)).status()).toBe(
+      403,
+    );
+    expect(
+      (await request.patch(API.teacher.set("e2e_set_a"), { data: { name: "e2e" } })).status(),
+    ).toBe(403);
+  });
+
+  test.fixme("[TA-002] cada usuário tem um único papel (não aceita lista de papéis)", async ({
+    request,
+  }) => {
+    const res = await request.patch(API.admin.user(OTHER_STUDENT.id), {
+      data: { roles: ["STUDENT", "TEACHER"] },
+    });
+    expect([400, 422]).toContain(res.status());
+  });
+});
+
 test.describe("Último admin por instituição — Super Admin [TA-002 AC3]", () => {
   asRole("superadmin");
 
@@ -148,8 +184,9 @@ test.describe("Parâmetros da instância [TA-008]", () => {
       await adminSettings.instanceName.fill(name);
       await adminSettings.save.click();
       await expect(page.getByRole("banner")).toContainText(name);
-      // Multi-tenant: a tela de login é comum a todas as instituições, então o nome da
-      // instituição no login fica a confirmar com o PO (não testado aqui).
+      // PO (21/11): a tela de login é genérica; o nome da instituição aparece no cabeçalho
+      // depois do login (verificado acima). Mostrar o nome no login quando a instituição vem
+      // pela URL (path/subdomínio) é OPCIONAL — por isso não é asserido aqui.
 
       await adminSettings.instanceName.fill(original);
       await adminSettings.save.click();

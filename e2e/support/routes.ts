@@ -6,9 +6,12 @@
 export const ROUTES = {
   home: "/",
   login: "/login",
+  // Rotas do aluno confirmadas pelo Frontend Developer 1.
   student: {
     trail: "/aluno",
     content: "/aluno/conteudo",
+    exercise: (slug: string) => `/aluno/exercicios/${slug}`,
+    levelFeedback: (level: string) => `/aluno/niveis/${level}/feedback`,
   },
   teacher: {
     results: "/professor/resultados",
@@ -16,8 +19,8 @@ export const ROUTES = {
     sections: "/professor/conteudo",
     feedbackReview: "/professor/revisao-feedback",
     exerciseBank: "/professor/banco-exercicios", // importação .xlsx fica aqui
-    // TODO(FE2): rota das faixas de feedback (TA-027) ainda não acordada.
-    feedbackBands: "/professor/feedback",
+    feedbackBands: "/professor/feedback", // TA-027 (confirmada pelo FE2)
+    studentDetail: (id: string) => `/professor/resultados/alunos/${id}`, // confirmada pelo FE2
   },
   admin: {
     // Admin da instituição (escopo: o próprio tenant).
@@ -44,7 +47,11 @@ export const API = {
     sections: "/api/teacher/sections",
     sets: "/api/teacher/sets",
     set: (id: string) => `/api/teacher/sets/${id}`,
+    exercises: "/api/teacher/exercises",
     exercise: (id: string) => `/api/teacher/exercises/${id}`,
+    // TODO(BE1): confirmar contrato de níveis (BE1 vai exportar a lista selecionável sem DASHBOARD).
+    levels: "/api/teacher/levels",
+    level: (id: string) => `/api/teacher/levels/${id}`,
     students: "/api/teacher/students",
     results: "/api/teacher/results",
     studentDetail: (id: string) => `/api/teacher/results/students/${id}`,

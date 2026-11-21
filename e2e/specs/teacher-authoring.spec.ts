@@ -68,12 +68,30 @@ test.describe("Conjunto de exercícios [TA-014, TA-015, TA-019]", () => {
     await teacherSet.gotoNew();
     await teacherSet.name.fill(`${stamp()} conjunto`);
     await teacherSet.levelCheckbox("Fundamental").check();
-    await teacherSet.quantity("Fundamental").fill("1");
+    await teacherSet.quantity("Fundamental", "Muito fácil").fill("1");
     await teacherSet.difficulty("Muito fácil").check();
     await teacherSet.save.click();
     await expect(page.getByText("Rascunho")).toBeVisible();
     await page.reload();
-    await expect(teacherSet.quantity("Fundamental")).toHaveValue("1");
+    await expect(teacherSet.quantity("Fundamental", "Muito fácil")).toHaveValue("1");
+  });
+
+  test.fixme("[TA-015 AC1] quantidade é por nível + dificuldade (pares independentes)", async ({
+    page,
+    teacherSet,
+  }) => {
+    // PO (Q-30): quantidade por nível e por dificuldade; publicação é por conjunto (Q-33).
+    await teacherSet.gotoNew();
+    await teacherSet.name.fill(`${stamp()} pares`);
+    await teacherSet.levelCheckbox("Fundamental").check();
+    await teacherSet.difficulty("Muito fácil").check();
+    await teacherSet.difficulty("Fácil").check();
+    await teacherSet.quantity("Fundamental", "Muito fácil").fill("2");
+    await teacherSet.quantity("Fundamental", "Fácil").fill("3");
+    await teacherSet.save.click();
+    await page.reload();
+    await expect(teacherSet.quantity("Fundamental", "Muito fácil")).toHaveValue("2");
+    await expect(teacherSet.quantity("Fundamental", "Fácil")).toHaveValue("3");
   });
 
   test.fixme("[TA-014 AC3] sem nível selecionado não salva", async ({ teacherSet }) => {
@@ -91,7 +109,7 @@ test.describe("Conjunto de exercícios [TA-014, TA-015, TA-019]", () => {
       await teacherSet.gotoNew();
       await teacherSet.name.fill(`${stamp()} qtd`);
       await teacherSet.levelCheckbox("Fundamental").check();
-      await teacherSet.quantity("Fundamental").fill(qty);
+      await teacherSet.quantity("Fundamental", "Muito fácil").fill(qty);
       await teacherSet.save.click();
       await expect(teacherSet.validationErrors).toContainText(/quantidade/i);
     });
@@ -103,7 +121,7 @@ test.describe("Conjunto de exercícios [TA-014, TA-015, TA-019]", () => {
     await teacherSet.gotoNew();
     await teacherSet.name.fill(`${stamp()} pool curto`);
     await teacherSet.levelCheckbox("Fundamental").check();
-    await teacherSet.quantity("Fundamental").fill("999");
+    await teacherSet.quantity("Fundamental", "Muito fácil").fill("999");
     await teacherSet.save.click();
     await expect(teacherSet.publish).toBeDisabled();
   });

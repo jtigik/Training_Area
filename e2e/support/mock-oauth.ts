@@ -1,6 +1,10 @@
 /**
  * Provedor OAuth 2.0 / OIDC falso para Google e Microsoft nos e2e.
  *
+ * Contrato do app (Backend 1): com AUTH_OAUTH_MOCK_BASE_URL=http://localhost:3199 o app usa
+ * genericOAuth com {base}/<p>/authorize, {base}/<p>/token e {base}/<p>/userinfo, e o
+ * callback é /api/auth/oauth2/callback/<p>. O perfil vem do USERINFO (o id_token é extra).
+ *
  * Endpoints por provedor (`/google` e `/microsoft`):
  *   GET  /<p>/.well-known/openid-configuration
  *   GET  /<p>/authorize   → redireciona para redirect_uri com ?code=…&state=…
@@ -108,7 +112,10 @@ export function startMockOAuth(port: number): Promise<Server> {
       return res.end();
     }
     if (path === "token" && req.method === "POST") {
-      const params = new URLSearchParams(await readBody());
+      const raw = await readBody();
+      const params = (req.headers["content-type"] ?? "").includes("application/json")
+        ? new URLSearchParams(JSON.parse(raw) as Record<string, string>)
+        : new URLSearchParams(raw);
       const grant = codes.get(params.get("code") ?? "");
       if (!grant) return json(400, { error: "invalid_grant" });
       codes.delete(params.get("code")!);

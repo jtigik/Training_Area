@@ -31,6 +31,14 @@ export type SessionKey =
 export type Concept = "ND" | "ED" | "D" | "PD";
 export const REDO_ALLOWED: Record<Concept, boolean> = { ND: true, ED: true, D: false, PD: false };
 
+/**
+ * Faixas PROVISÓRIAS (PO, Q-G1/G2 — aguardam confirmação do Jeferson): % de exercícios
+ * corretos na tentativa do nível. ND < 50, ED 50–69, D 70–89, PD ≥ 90. O seed usa um
+ * percentual dentro de cada faixa (SEED_PERCENT) para os alunos alunoND/ED/D/PD.
+ */
+export const CONCEPT_MIN_PERCENT: Record<Concept, number> = { ND: 0, ED: 50, D: 70, PD: 90 };
+export const SEED_PERCENT: Record<Concept, number> = { ND: 40, ED: 60, D: 80, PD: 100 };
+
 export interface Tenant {
   key: TenantKey;
   id: string;
