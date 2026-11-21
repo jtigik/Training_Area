@@ -79,9 +79,24 @@ Com `CI=1`, o Playwright usa o build de produção (rode `npm run build` antes).
 Login via [Better Auth](https://www.better-auth.com) (`src/server/auth/auth.ts`, rota `/api/auth/*`).
 
 - **Lançamento:** Google e Microsoft. Cada provedor liga quando `GOOGLE_CLIENT_ID/SECRET` ou `MICROSOFT_CLIENT_ID/SECRET` estão no `.env` (veja `.env.example`; URIs de callback `${BETTER_AUTH_URL}/api/auth/callback/google|microsoft`).
+- **OAuth mockado (E2E):** `AUTH_OAUTH_MOCK_BASE_URL`, veja abaixo.
 - **E-mail e senha:** só para dev/teste, com `AUTH_EMAIL_PASSWORD_ENABLED=true` (ignorado em produção). Cadastro por e-mail fica desligado; as contas vêm do seed.
 - **Primeiro login social:** o usuário entra na instituição de um convite pendente (`invitations`) ou, se a instituição tiver `autoJoinByDomain`, pelo domínio do e-mail (como Aluno). Sem vínculo, o login é recusado.
 - `BETTER_AUTH_SECRET` é obrigatório (gere com `openssl rand -base64 32`); `BETTER_AUTH_URL` é a URL pública do app.
+
+### OAuth mockado (E2E)
+
+Com `AUTH_OAUTH_MOCK_BASE_URL` (ex.: `http://localhost:3199`) e fora de produção, Google e Microsoft são registrados pelo plugin `genericOAuth` do Better Auth com os mesmos ids, no lugar dos provedores nativos (nunca os dois ao mesmo tempo). O cliente não muda: `authClient.signIn.social({ provider: "google" | "microsoft" })` (no Better Auth 1.7 o genericOAuth usa o fluxo social; não existe `signIn.oauth2`). A lista de botões vem de `GET /api/login-options` (público) ou `getLoginOptions()` no servidor.
+
+Contrato do provedor falso (para cada `{id}` em `google`, `microsoft`):
+
+| Endpoint                    | O app envia                                                                                                       | O mock responde                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `GET {base}/{id}/authorize` | `response_type=code`, `client_id`, `redirect_uri`, `state`, `scope=openid email profile`, `code_challenge` (S256) | `302` para `redirect_uri?code=…&state=…` (mesmo `state`)                                             |
+| `POST {base}/{id}/token`    | form: `grant_type=authorization_code`, `code`, `code_verifier`, `redirect_uri`, `client_id`, `client_secret`      | JSON `{ "access_token", "token_type": "Bearer", "expires_in" }` (sem `id_token`)                     |
+| `GET {base}/{id}/userinfo`  | `Authorization: Bearer <access_token>`                                                                            | JSON `{ "sub", "email", "email_verified": true, "name", "picture" }` (`id` aceito no lugar de `sub`) |
+
+Callback: `${BETTER_AUTH_URL}/api/auth/callback/{id}`. As regras de vínculo valem igual: e-mail de usuário existente (ex.: seed) é vinculado à conta (provedores confiáveis); e-mail novo precisa de convite pendente ou domínio da instituição com `autoJoinByDomain`; sem vínculo o callback responde 403.
 
 **Papéis:** `SUPER_ADMIN` (plataforma, sem instituição), `INSTITUTION_ADMIN`, `PROFESSOR`, `ALUNO`.
 

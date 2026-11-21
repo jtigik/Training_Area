@@ -4,6 +4,7 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
+import { genericOAuth } from "better-auth/plugins";
 
 import { ROLES } from "@/lib/roles";
 import {
@@ -22,9 +23,35 @@ const ONE_DAY = 60 * 60 * 24;
 const authEnv = readAuthEnv();
 
 /**
+ * Modo mock (E2E): Google/Microsoft como provedores genéricos com os MESMOS ids,
+ * então signIn.social({ provider }) e o callback /api/auth/callback/{id} são
+ * idênticos ao modo nativo. Só um conjunto é registrado por vez.
+ */
+const mockOAuthPlugins =
+  authEnv.oauthMode === "mock"
+    ? [
+        genericOAuth({
+          config: authEnv.mockProviders.map((p) => ({
+            providerId: p.providerId,
+            clientId: p.clientId,
+            clientSecret: p.clientSecret,
+            authorizationUrl: p.authorizationUrl,
+            tokenUrl: p.tokenUrl,
+            userInfoUrl: p.userInfoUrl,
+            scopes: ["openid", "email", "profile"],
+            pkce: true,
+            // Identificador estável da conta: "sub" (padrão OIDC) ou "id".
+            accountSubject: ({ profile }) => String(profile.sub ?? profile.id ?? ""),
+          })),
+        }),
+      ]
+    : [];
+
+/**
  * Better Auth (TA-001, TA-005, TA-033) — multi-tenant.
  * - Lançamento: Google e Microsoft (socialProviders), ativados quando as
- *   variáveis existem. E-mail+senha só com AUTH_EMAIL_PASSWORD_ENABLED=true fora
+ *   variáveis existem. Em dev/teste, AUTH_OAUTH_MOCK_BASE_URL troca ambos por
+ *   genericOAuth apontando para um provedor falso (config.ts). E-mail+senha só com AUTH_EMAIL_PASSWORD_ENABLED=true fora
  *   de produção (seed/E2E).
  * - role, tenantId e active são campos extras com input: false (o cliente
  *   nunca os define). No primeiro login o usuário é vinculado a um tenant por
@@ -136,7 +163,7 @@ export const auth = betterAuth({
       },
     },
   },
-  plugins: [nextCookies()], // precisa ser o último plugin
+  plugins: [...mockOAuthPlugins, nextCookies()], // nextCookies precisa ser o último
 });
 
 export type AuthSession = typeof auth.$Infer.Session;
