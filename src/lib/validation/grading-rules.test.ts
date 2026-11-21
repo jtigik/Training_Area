@@ -2,29 +2,29 @@ import { describe, expect, it } from "vitest";
 
 import { gradingRulesSchema } from "./grading-rules";
 
-describe("gradingRulesSchema", () => {
-  it("normaliza funções e aplica versão", () => {
+describe("gradingRulesSchema ({ rules?, targets? })", () => {
+  it("aceita regras do exercício e por célula (célula normalizada)", () => {
     expect(
       gradingRulesSchema.parse({
-        requiredFunctions: ["procv"],
-        tolerance: 0.01,
-        caseSensitive: false,
+        rules: { requiredFunctions: ["PROCV"], numberTolerance: 0.01 },
+        targets: { e1: { caseInsensitive: true } },
       }),
-    ).toEqual({ version: 1, requiredFunctions: ["PROCV"], tolerance: 0.01, caseSensitive: false });
-  });
-
-  it("preserva chaves desconhecidas (extensível)", () => {
-    expect(gradingRulesSchema.parse({ futureOption: { a: 1 } })).toMatchObject({
-      futureOption: { a: 1 },
+    ).toEqual({
+      rules: { requiredFunctions: ["PROCV"], numberTolerance: 0.01 },
+      targets: { E1: { caseInsensitive: true } },
     });
+    expect(gradingRulesSchema.parse({})).toEqual({});
   });
 
-  it("recusa função exigida e proibida, tolerância negativa e nome inválido", () => {
-    expect(
-      gradingRulesSchema.safeParse({ requiredFunctions: ["SE"], forbiddenFunctions: ["se"] })
-        .success,
-    ).toBe(false);
-    expect(gradingRulesSchema.safeParse({ tolerance: -1 }).success).toBe(false);
-    expect(gradingRulesSchema.safeParse({ requiredFunctions: ["=SOMA("] }).success).toBe(false);
+  it("recusa chaves desconhecidas, função exigida e proibida, tolerância negativa e célula inválida", () => {
+    for (const body of [
+      { version: 1 },
+      { rules: { futureOption: true } },
+      { rules: { requiredFunctions: ["SE"], forbiddenFunctions: ["se"] } },
+      { rules: { numberTolerance: -1 } },
+      { targets: { "1A": {} } },
+    ]) {
+      expect(gradingRulesSchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { apiExpectedResultSchema, apiInitialSheetSchema } from "@/lib/validation/exercise-content";
 import { gradingRulesSchema } from "@/lib/validation/grading-rules";
 import {
   DIFFICULTIES,
@@ -23,39 +24,13 @@ export const mvpLevelSchema = z
 
 export const difficultySchema = z.enum(DIFFICULTIES, { error: "Dificuldade inválida" });
 
-const cellRef = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^[A-Z]{1,3}[1-9][0-9]{0,6}$/, { error: "Célula inválida (ex.: B4)" });
-const cellValue = z.union([z.string().max(10_000), z.number().finite(), z.boolean()]);
-
-export const initialSheetSchema = z.object({
-  cells: z.record(
-    cellRef,
-    z.object({
-      value: cellValue.optional(),
-      formula: z.string().startsWith("=").max(2_000).optional(),
-      locked: z.boolean().optional(),
-    }),
-  ),
-});
-
-/** Gabarito: pelo menos uma célula, cada uma com valor ou fórmula (TA-016). */
-export const expectedResultSchema = z
-  .array(
-    z
-      .object({
-        cell: cellRef,
-        value: cellValue.optional(),
-        formula: z.string().startsWith("=").max(2_000).optional(),
-        tolerance: z.number().nonnegative().optional(),
-      })
-      .refine((c) => c.value !== undefined || c.formula !== undefined, {
-        error: "Informe valor ou fórmula esperada",
-      }),
-  )
-  .min(1, { error: "Informe pelo menos uma célula de gabarito" });
+/**
+ * Conteúdo do exercício no formato combinado com BE2/FE1/FE2 (fonte em
+ * ./exercise-content.ts): célula number|string|boolean|null|{ f: "=...", v? },
+ * initialSheet = { cells: { A1: célula } }, gabarito com valor OU fórmula.
+ */
+export const initialSheetSchema = apiInitialSheetSchema;
+export const expectedResultSchema = apiExpectedResultSchema;
 
 export const exerciseInputSchema = z.object({
   title: z.string().trim().min(3).max(200),

@@ -17,7 +17,7 @@ import {
 const exercise = {
   title: "Somar vendas",
   statement: "Some B1:B3 em B4",
-  initialSheet: { cells: { B1: { value: 1 } } },
+  initialSheet: { cells: { B1: 1, b2: { f: "=B1*2", v: 2 }, B3: "=texto literal", B4: null } },
   expectedResult: [{ cell: "b4", formula: "=SOMA(B1:B3)" }],
   level: "FUNDAMENTAL",
   difficulty: "EASY",
@@ -79,5 +79,35 @@ describe("exerciseSetInputSchema / levelInputSchema", () => {
       LEVEL_NOT_AVAILABLE_IN_MVP,
     );
     expect(levelInputSchema.safeParse({ knowledgeLevel: "ADVANCED" }).success).toBe(true);
+  });
+});
+
+describe("formato de célula combinado (BE2/FE1/FE2)", () => {
+  it("aceita número, texto, booleano, nulo e { f, v? }; normaliza A1", () => {
+    const parsed = exerciseInputSchema.parse({
+      ...exercise,
+      initialSheet: { cells: { a1: 1, B1: "x", C1: true, D1: null, E1: { f: "=A1+1" } } },
+      gradingRules: {
+        rules: { requiredFunctions: ["SOMA"] },
+        targets: { b4: { numberTolerance: 0.01 } },
+      },
+    });
+    expect(Object.keys(parsed.initialSheet.cells)).toEqual(["A1", "B1", "C1", "D1", "E1"]);
+    expect(parsed.gradingRules?.targets).toEqual({ B4: { numberTolerance: 0.01 } });
+  });
+
+  it("recusa formato antigo { value } / { formula }, gabarito com valor E fórmula e regras soltas", () => {
+    for (const patch of [
+      { initialSheet: { cells: { A1: { value: 1 } } } },
+      { initialSheet: { cells: { A1: { f: "" } } } },
+      { initialSheet: { A1: 1 } },
+      { expectedResult: [{ cell: "B4", value: 3, formula: "=SOMA(B1:B3)" }] },
+      { gradingRules: { requiredFunctions: ["SOMA"] } },
+    ]) {
+      expect(
+        exerciseInputSchema.safeParse({ ...exercise, ...patch }).success,
+        JSON.stringify(patch),
+      ).toBe(false);
+    }
   });
 });
