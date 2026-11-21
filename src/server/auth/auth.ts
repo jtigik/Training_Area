@@ -1,10 +1,10 @@
 import "server-only";
 
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
-import { genericOAuth } from "better-auth/plugins";
+import { customSession, genericOAuth } from "better-auth/plugins";
 
 import { ROLES } from "@/lib/roles";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/lib/validation/auth";
 import { readAuthEnv } from "@/server/auth/config";
 import { decideProvisioning, emailDomain } from "@/server/auth/provisioning";
+import { getTenantSummary } from "@/server/auth/tenant-summary";
 import { prisma } from "@/server/db";
 import { forTenant } from "@/server/tenant-db";
 
@@ -61,7 +62,7 @@ const mockOAuthPlugins =
  *   papel/desativação valem na próxima requisição). Cookies httpOnly,
  *   SameSite=Lax, Secure em produção (padrões do Better Auth).
  */
-export const auth = betterAuth({
+const authOptions = {
   appName: "Training Area",
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   advanced: {
@@ -162,7 +163,25 @@ export const auth = betterAuth({
       },
     },
   },
-  plugins: [...mockOAuthPlugins, nextCookies()], // nextCookies precisa ser o último
+  plugins: [...mockOAuthPlugins],
+} satisfies BetterAuthOptions;
+
+export const auth = betterAuth({
+  ...authOptions,
+  plugins: [
+    ...authOptions.plugins,
+    // get-session / useSession() / auth.api.getSession incluem user.tenant
+    // ({ id, name, slug } | null para SUPER_ADMIN). Resumo em cache por 60 s
+    // (tenant-summary.ts) para não somar uma consulta a cada leitura de sessão.
+    customSession(
+      async ({ user, session }) => ({
+        user: { ...user, tenant: await getTenantSummary(user.tenantId) },
+        session,
+      }),
+      authOptions,
+    ),
+    nextCookies(), // precisa ser o último
+  ],
 });
 
 export type AuthSession = typeof auth.$Infer.Session;

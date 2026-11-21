@@ -118,7 +118,14 @@ await prisma.exerciseSet.findMany({ where: { tenantId } }); // sempre filtre pel
 
 `requireTenant` usa o `tenantId` da sessão; só o SUPER_ADMIN atravessa instituições e precisa informar `requestedTenantId`. Também existem `requireSession`/`requireRole` (`src/server/auth/session.ts`). Feedback para o aluno: use `listApprovedFeedbackForStudent` (`src/server/feedback/student.ts`), que só devolve feedback `APPROVED`.
 
-### Isolamento por tenant (`forTenant`)
+#### Sessão no cliente e `/api/me`
+
+- `GET /api/me` → `{ user: { id, name, email, role, tenantId, tenant: { id, name, slug } | null } }` (401 sem sessão).
+- `GET /api/auth/get-session` / `authClient.useSession()` → `{ user: { ...campos do Better Auth, role, tenantId, active, tenant }, session }` (ou `null`), via plugin `customSession` + `customSessionClient`.
+- `tenant` é `null` só para SUPER_ADMIN. O resumo fica em cache por 60 s por processo
+  (`src/server/auth/tenant-summary.ts`); chame `invalidateTenantSummary(id)` ao renomear.
+
+## Isolamento por tenant (`forTenant`)
 
 Todo código de servidor que lê/grava dados de instituição usa o cliente com escopo
 (`src/server/tenant-db.ts`, regras em `src/server/tenant-scope.ts`):

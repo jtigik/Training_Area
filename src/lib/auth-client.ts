@@ -1,9 +1,10 @@
 "use client";
 
-import { inferAdditionalFields } from "better-auth/client/plugins";
+import { customSessionClient, inferAdditionalFields } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
 import { ROLES } from "@/lib/roles";
+import type { auth } from "@/server/auth/auth";
 
 /**
  * Cliente do Better Auth para componentes "use client" (FE1).
@@ -13,6 +14,8 @@ import { ROLES } from "@/lib/roles";
  * GET /api/login-options (ou getLoginOptions() no servidor).
  * Dev/teste (AUTH_EMAIL_PASSWORD_ENABLED=true): authClient.signIn.email({ email, password }).
  * Sair: authClient.signOut().
+ * Sessão: authClient.useSession() → data.user inclui role, tenantId e
+ * tenant ({ id, name, slug } | null para SUPER_ADMIN).
  */
 export type LoginProviderId = "google" | "microsoft";
 
@@ -30,5 +33,6 @@ export const authClient = createAuthClient({
         active: { type: "boolean", required: false, input: false },
       },
     }),
+    customSessionClient<typeof auth>(),
   ],
 });
