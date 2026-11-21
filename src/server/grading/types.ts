@@ -1,3 +1,5 @@
+import type { FormulaAnalysis } from "./analysis";
+
 /**
  * Public types of the formula grading engine (motor de correção).
  *
@@ -127,6 +129,8 @@ export interface GradingResult {
   referencesCells: boolean;
   /** Formula actually evaluated (English names, ',' separators), or `null` for constants/early exits. */
   normalizedFormula: string | null;
+  /** Static analysis of the submitted formula (input for AI feedback); `null` for constants/early exits. */
+  analysis: FormulaAnalysis | null;
   elapsedMs: number;
 }
 

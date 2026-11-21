@@ -1,4 +1,5 @@
 import { DetailedCellError, HyperFormula } from "hyperformula";
+import { analyzeFormula } from "./analysis";
 import { DEFAULT_SHEET_NAME, hyperFormulaConfig, resolveLimits } from "./config";
 import { canonicalFunctionName, isKnownFunction } from "./functions";
 import { GradingFailure, parseA1, toSheetArray, type CellPosition } from "./sheet";
@@ -304,6 +305,7 @@ export function gradeSubmission(
     unsupportedFunctions: [],
     referencesCells: false,
     normalizedFormula: null,
+    analysis: null,
     elapsedMs: 0,
   };
   const finish = (code: FeedbackCode): GradingResult => {
@@ -352,6 +354,7 @@ export function gradeSubmission(
 
   const normalized = normalizeFormula(text, options.locale ?? "auto");
   result.normalizedFormula = normalized.formula;
+  result.analysis = analyzeFormula(text, options.locale ?? "auto");
   if (normalized.maxDepth > ctx.limits.maxNestingDepth) {
     result.errors.push({
       kind: "LIMIT",

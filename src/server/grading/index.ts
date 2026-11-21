@@ -17,3 +17,26 @@ export { DEFAULT_LIMITS, DEFAULT_SHEET_NAME, HYPERFORMULA_LICENSE_KEY } from "./
 export { parseA1 } from "./sheet";
 export { FEEDBACK_MESSAGES_PT_BR } from "./messages";
 export type * from "./types";
+export { analyzeFormula } from "./analysis";
+export type {
+  AnchorKind,
+  ComplexityLevel,
+  FormulaAnalysis,
+  FormulaReference,
+  FunctionUsage,
+  ReferenceKind,
+} from "./analysis";
+export {
+  columnName,
+  fromSchemaExercise,
+  gradeMultiCellSubmission,
+  resolveTargetExpectations,
+} from "./multi";
+export type {
+  ExerciseTarget,
+  GradingRules,
+  MultiCellExercise,
+  MultiCellGradingResult,
+  SchemaExpectedCell,
+  SchemaInitialSheet,
+} from "./multi";

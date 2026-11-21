@@ -80,3 +80,25 @@ texto de célula ≤ 10 000, resultado de texto ≤ 32 767. Ajustáveis por `opt
   suíte de paridade (TA-034).
 - O módulo não usa `server-only` nem APIs de Node, então pode ser usado no navegador pela grade (TA-021).
   Se o front for importá-lo, vale movê-lo para `src/lib/grading`.
+
+## Análise estática (`analyzeFormula`)
+
+A nota continua pelo valor, mas `gradeSubmission` também devolve `analysis` (e `analyzeFormula(formula)` pode
+ser chamado sozinho). Serve de entrada para o feedback por IA e para o painel do professor:
+
+- funções (`functions` com contagem, `uniqueFunctions`, `volatileFunctions`);
+- referências (`references[]` com `kind`: cell, range, column-range, row-range; `anchor`: relative,
+  absolute, mixed; `sheet`) e contadores;
+- literais (`numbers`, `strings`, `booleans`), `hardcodedNumbers` (exceto 0 e 1);
+- operadores (aritméticos, comparação, `&`), profundidade de aninhamento;
+- `complexityScore` = 2×chamadas + funções distintas + operadores + 3×(profundidade−1) + 0,5×referências
+  - 0,5×literais fixos; faixas: ≤2 trivial, ≤6 simple, ≤15 moderate, acima complex;
+- `flags`: `onlyLiterals`, `usesHardcodedNumbers`, `deepNesting` (>3), `usesVolatileFunctions`,
+  `usesAbsoluteReferences`.
+
+## Exercícios com várias células (`gradeMultiCellSubmission`)
+
+O schema do Backend 1 guarda vários alvos por exercício (`expectedResult: [{ cell, value?, formula?, tolerance? }]`).
+`fromSchemaExercise(initialSheet, expectedResult, rules?)` converte esse JSON e `gradeMultiCellSubmission`
+corrige todos os alvos. Os gabaritos são resolvidos com todos os gabaritos preenchidos; as respostas do aluno
+para outros alvos entram na planilha (um alvo pode depender de outro). Células fora dos alvos são ignoradas.
