@@ -103,4 +103,25 @@ describe("ExerciseWorkspace", () => {
     await user.type(formula(), "=HOJE()*0+60");
     expect(await screen.findByTestId("volatile-warning")).toHaveTextContent(/AGORA, HOJE/);
   });
+
+  it("renders { f } cells with their value and shows the formula when selected", async () => {
+    const user = userEvent.setup();
+    const withFormula: Exercise = {
+      ...exercise,
+      sheet: {
+        rows: 5,
+        cols: 2,
+        cells: { A1: 10, A2: 20, A3: 30, B1: { f: "=A1*2", v: 20 }, B2: "=texto", B3: "10" },
+      },
+    };
+    render(<ExerciseWorkspace exercise={withFormula} submit={vi.fn()} />);
+    expect(screen.getByTestId("cell-B1")).toHaveTextContent("20");
+    expect(screen.getByTestId("cell-B2")).toHaveTextContent("=texto");
+    await user.click(screen.getByTestId("cell-B1"));
+    expect(screen.getByRole("textbox", { name: /célula B1/ })).toHaveValue("=A1*2");
+    await user.click(screen.getByTestId("cell-B2"));
+    expect(screen.getByRole("textbox", { name: /célula B2/ })).toHaveValue("'=texto");
+    await user.click(screen.getByTestId("cell-B3"));
+    expect(screen.getByRole("textbox", { name: /célula B3/ })).toHaveValue("'10");
+  });
 });

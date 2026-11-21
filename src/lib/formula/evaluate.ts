@@ -34,7 +34,7 @@ export function evaluateSheet(cells: CellMap, target: string, input: string): Sh
         };
       }
     }
-    if (input.trim() !== "" && targetValue.kind !== "error") engine.setCell(target, input);
+    if (input.trim() !== "" && targetValue.kind !== "error") engine.setTyped(target, input);
     const values = engine.snapshot();
     if (targetValue.kind === "error") values[target] = targetValue;
     const display: Record<string, string> = {};

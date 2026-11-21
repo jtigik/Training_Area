@@ -248,7 +248,10 @@ export interface Exercise {
   title: string;
   /** Markdown */
   statement: string;
-  /** Initial sheet: rows x cols, content by A1 address. Strings starting with "=" are formulas. */
+  /**
+   * Initial sheet: rows x cols, content by A1 address. Cell = number | string | boolean |
+   * null | { f: "=SOMA(A1:A3)", v? }. Formulas only come as { f }; strings are literal text.
+   */
   sheet: { rows: number; cols: number; cells: Record<string, CellInput> };
   /** The single cell the student must fill (ExerciseDefinition.targetCell). */
   targetCell: string;
@@ -353,7 +356,7 @@ export interface LevelFeedback {
 
 // ---------- Errors ----------
 export interface ApiErrorBody {
-  error: { code: string; message: string };
+  error: { code: string; message: string; details?: unknown };
 }
 
 export class ApiError extends Error {
@@ -361,6 +364,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly details?: unknown,
   ) {
     super(message);
     this.name = "ApiError";

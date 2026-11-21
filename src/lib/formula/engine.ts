@@ -9,8 +9,23 @@ import { normalizeFormula, referencedFunctions } from "./translate";
  */
 export const HYPERFORMULA_LICENSE_KEY = process.env.NEXT_PUBLIC_HYPERFORMULA_LICENSE ?? "gpl-v3";
 
-export type CellInput = string | number | boolean | null;
+/** Scalar cell value. Strings are ALWAYS literal text (even "=..." or "10"). */
+export type CellScalar = number | string | boolean | null;
+/** A formula cell; `v` is the value cached by the author/backend (display fallback). */
+export interface FormulaCell {
+  f: string;
+  v?: CellScalar;
+}
+/**
+ * Contract with Backend 2 (Exercise.sheet.cells): formulas only come as `{ f }`;
+ * a string starting with "=" is literal text, and 10 (number) != "10" (string).
+ */
+export type CellInput = CellScalar | FormulaCell;
 export type CellMap = Record<string, CellInput>;
+
+export function isFormulaCell(input: CellInput | undefined): input is FormulaCell {
+  return typeof input === "object" && input !== null && typeof input.f === "string";
+}
 
 export type EvaluatedValue =
   | { kind: "empty" }
@@ -63,10 +78,24 @@ export function unsupportedFunctions(formula: string): string[] {
   return [...new Set(names.filter((n) => !SUPPORTED_FUNCTIONS.has(n)))];
 }
 
+/** Sheet data -> HyperFormula. The leading apostrophe forces text (HyperFormula strips it). */
 function toRaw(input: CellInput): RawCellContent {
   if (input === null || input === "") return null;
-  if (typeof input === "string") return normalizeFormula(input);
+  if (isFormulaCell(input)) return normalizeFormula(input.f);
+  if (typeof input === "string") return `'${input}`;
   return input;
+}
+
+/** What the student typed (spreadsheet semantics: "=..." is a formula, "10" a number). */
+function typedToRaw(input: string): RawCellContent {
+  return input.trim() === "" ? null : normalizeFormula(input);
+}
+
+function scalarToEvaluated(v: CellScalar): EvaluatedValue {
+  if (v === null || v === "") return { kind: "empty" };
+  if (typeof v === "number") return { kind: "number", value: v };
+  if (typeof v === "boolean") return { kind: "boolean", value: v };
+  return { kind: "text", value: v };
 }
 
 function toEvaluated(raw: unknown): EvaluatedValue {
@@ -110,6 +139,8 @@ export function formatValue(v: EvaluatedValue, locale = "pt-BR"): string {
 export class SheetEngine {
   private readonly hf: HyperFormula;
   private readonly sheetId: number;
+  /** Cached `v` of formula cells, shown when HyperFormula cannot compute `f`. */
+  private readonly cached = new Map<string, CellScalar>();
 
   constructor(cells: CellMap = {}) {
     this.hf = HyperFormula.buildEmpty({ licenseKey: HYPERFORMULA_LICENSE_KEY });
@@ -126,16 +157,33 @@ export class SheetEngine {
 
   private setRaw(address: string, value: CellInput) {
     const { row, col } = parseA1(address);
+    const ref = toA1({ row, col });
+    if (isFormulaCell(value) && value.v !== undefined) this.cached.set(ref, value.v);
+    else this.cached.delete(ref);
     this.hf.setCellContents({ sheet: this.sheetId, row, col }, toRaw(value));
   }
 
+  /** Set sheet data (Backend 2 cell format). */
   setCell(address: string, value: CellInput): void {
     this.setRaw(address, value);
   }
 
+  /** Set what the student typed into a cell (formula if it starts with "="). */
+  setTyped(address: string, input: string): void {
+    const { row, col } = parseA1(address);
+    this.cached.delete(toA1({ row, col }));
+    this.hf.setCellContents({ sheet: this.sheetId, row, col }, typedToRaw(input));
+  }
+
+  private withCache(ref: string, value: EvaluatedValue): EvaluatedValue {
+    const v = this.cached.get(ref);
+    return value.kind === "error" && v !== undefined ? scalarToEvaluated(v) : value;
+  }
+
   getValue(address: string): EvaluatedValue {
     const { row, col } = parseA1(address);
-    return toEvaluated(this.hf.getCellValue({ sheet: this.sheetId, row, col }));
+    const value = toEvaluated(this.hf.getCellValue({ sheet: this.sheetId, row, col }));
+    return this.withCache(toA1({ row, col }), value);
   }
 
   /**
@@ -167,8 +215,9 @@ export class SheetEngine {
     const values = this.hf.getSheetValues(this.sheetId);
     values.forEach((row, r) =>
       row.forEach((raw, c) => {
-        const v = toEvaluated(raw);
-        if (v.kind !== "empty") out[toA1({ row: r, col: c })] = v;
+        const ref = toA1({ row: r, col: c });
+        const v = this.withCache(ref, toEvaluated(raw));
+        if (v.kind !== "empty") out[ref] = v;
       }),
     );
     return out;

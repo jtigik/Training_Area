@@ -22,6 +22,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!res.ok) {
     let code = `HTTP_${res.status}`;
+    let details: unknown;
     let message =
       res.status === 401
         ? "Sua sessão expirou. Entre novamente."
@@ -31,7 +32,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         message?: string;
         code?: string;
       };
-      if (body.error) ({ code, message } = body.error);
+      if (body.error) ({ code, message, details } = body.error);
       else if (typeof body.message === "string") {
         message = body.message;
         if (body.code) code = body.code;
@@ -39,7 +40,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       /* body was not JSON */
     }
-    throw new ApiError(res.status, code, message);
+    throw new ApiError(res.status, code, message, details);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

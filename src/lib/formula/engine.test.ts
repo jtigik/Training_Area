@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { formatValue, SheetEngine, unsupportedFunctions } from "./engine";
 
-const cells = { A1: 10, A2: 20, A3: 30.5, B1: "=SOMA(A1:A3)", C1: "Texto" };
+const cells = { A1: 10, A2: 20, A3: 30.5, B1: { f: "=SOMA(A1:A3)" }, C1: "Texto" };
 
 describe("SheetEngine", () => {
   it("evaluates initial formulas written in pt-BR", () => {
@@ -25,7 +25,7 @@ describe("SheetEngine", () => {
     const e = new SheetEngine(cells);
     e.setCell("A1", 100);
     expect(e.getValue("B1")).toEqual({ kind: "number", value: 150.5 });
-    e.setCell("B2", "=B1*2");
+    e.setTyped("B2", "=B1*2");
     expect(e.snapshot().B2).toEqual({ kind: "number", value: 301 });
     e.destroy();
   });
@@ -54,5 +54,32 @@ describe("SheetEngine", () => {
     expect(formatValue({ kind: "number", value: 7.25 })).toBe("7,25");
     expect(formatValue({ kind: "boolean", value: false })).toBe("FALSO");
     expect(formatValue({ kind: "error", code: "#N/D", message: "" })).toBe("#N/D");
+  });
+
+  it("Backend 2 cell format: formulas only as { f }, strings are literal text", () => {
+    const e = new SheetEngine({
+      A1: 10,
+      A2: "10",
+      A3: "=SOMA(A1:A2)",
+      A4: { f: "=A1*2", v: 20 },
+      A5: true,
+      A6: null,
+      A7: { f: "=FUNCAOINEXISTENTE(A1)", v: 99 },
+    });
+    expect(e.getValue("A1")).toEqual({ kind: "number", value: 10 });
+    expect(e.getValue("A2")).toEqual({ kind: "text", value: "10" });
+    expect(e.getValue("A3")).toEqual({ kind: "text", value: "=SOMA(A1:A2)" });
+    expect(e.getValue("A4")).toEqual({ kind: "number", value: 20 });
+    expect(e.getValue("A5")).toEqual({ kind: "boolean", value: true });
+    expect(e.getValue("A6")).toEqual({ kind: "empty" });
+    // Cached `v` is the fallback when the formula can't be computed locally.
+    expect(e.getValue("A7")).toEqual({ kind: "number", value: 99 });
+    expect(e.snapshot().A7).toEqual({ kind: "number", value: 99 });
+    // Typed input keeps spreadsheet semantics, and preview restores literal text cells.
+    expect(e.preview("A3", "=A1+1")).toEqual({ kind: "number", value: 11 });
+    expect(e.getValue("A3")).toEqual({ kind: "text", value: "=SOMA(A1:A2)" });
+    expect(e.preview("B1", "=A2")).toEqual({ kind: "text", value: "10" });
+    expect(e.preview("B1", "10")).toEqual({ kind: "number", value: 10 });
+    e.destroy();
   });
 });

@@ -74,4 +74,19 @@ describe("volatile functions", () => {
     const r = gradeSubmission({ A1: 10, A2: 20, A3: 30 }, "A4", "=SOMA(A1:A3)+HOJE()*0", 60);
     expect(r).toMatchObject({ correct: false, code: "VOLATILE_FUNCTION" });
   });
+
+  it('keeps 10 (number) and "10" (text) distinct (TC-036-02)', () => {
+    const typed = { A1: 10, A2: "10", A3: "=A1" };
+    expect(gradeSubmission(typed, "B1", "=A1", 10).code).toBe("CORRECT");
+    expect(gradeSubmission(typed, "B1", "=A2", 10).code).toBe("WRONG_TYPE");
+    expect(gradeSubmission(typed, "B1", "=A2", "10").code).toBe("CORRECT");
+    expect(gradeSubmission(typed, "B1", "=A1", "10").code).toBe("WRONG_TYPE");
+    // A literal "=A1" string is text, not a formula.
+    expect(gradeSubmission(typed, "B1", "=A3", "=A1").code).toBe("CORRECT");
+  });
+
+  it("uses { f } formula cells from the sheet", () => {
+    const withFormula = { A1: 10, A2: 20, A3: { f: "=SOMA(A1:A2)", v: 30 } };
+    expect(gradeSubmission(withFormula, "B1", "=A3*2", 60).code).toBe("CORRECT");
+  });
 });

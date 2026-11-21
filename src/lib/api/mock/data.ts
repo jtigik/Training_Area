@@ -198,6 +198,8 @@ export const MOCK_EXERCISES: MockExercise[] = [
       A6: "Sex",
       B6: 210,
       A7: "Total",
+      A8: "Meta (5 x seg)",
+      B8: { f: "=B2*5", v: 600 },
     },
     targetCell: "B7",
     expected: 656,

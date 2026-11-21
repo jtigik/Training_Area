@@ -24,11 +24,22 @@ import { Breadcrumbs } from "./breadcrumbs";
 import { FEEDBACK_MESSAGES } from "./feedback-messages";
 import { exerciseHref, feedbackHref, levelAnchor } from "./level-card";
 
+/** Formula-bar text for a sheet cell: the formula for { f }, apostrophe for text that would parse. */
 function rawContent(value: Exercise["sheet"]["cells"][string] | undefined): string {
   if (value === null || value === undefined) return "";
+  if (typeof value === "object") return value.f;
   if (typeof value === "boolean") return value ? "VERDADEIRO" : "FALSO";
   if (typeof value === "number") return String(value).replace(".", ",");
-  return value;
+  return looksTyped(value) ? `'${value}` : value;
+}
+
+/** Text that a spreadsheet would not keep as text if typed (formula, number, boolean). */
+function looksTyped(text: string): boolean {
+  return (
+    /^[=+'-]/.test(text) ||
+    /^\s*-?\d+([.,]\d+)?\s*$/.test(text) ||
+    /^(verdadeiro|falso|true|false)$/i.test(text.trim())
+  );
 }
 
 function LocalResult({
