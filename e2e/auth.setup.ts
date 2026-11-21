@@ -1,22 +1,29 @@
 /**
- * Gera o storage state (cookies de sessão) de cada papel em e2e/.auth/<papel>.json,
- * fazendo login pela UI uma única vez. Os specs usam `asRole("aluno")` etc.
+ * Gera o storage state (cookies de sessão) de cada sessão em e2e/.auth/<chave>.json,
+ * fazendo login uma única vez com o login por e-mail+senha de TESTE (desligado por padrão
+ * no app; a suíte o liga no webServer — ver support/env.ts). Login real é Google/Microsoft
+ * e é coberto em specs/auth.spec.ts com o provedor OAuth falso.
  */
 import { expect, test as setup } from "@playwright/test";
 
 import { LoginPage } from "./pages/login-page";
-import { E2E_PASSWORD, USERS, authFile } from "./support/users";
+import { PASSWORD_LOGIN_ENABLED } from "./support/env";
+import { E2E_PASSWORD, SESSION_USERS, authFile, type SessionKey } from "./support/users";
 
-for (const user of Object.values(USERS)) {
-  setup(`autentica ${user.key}`, async ({ page }) => {
-    // TA-001 (login) ainda não implementado no scaffold: sem /login e sem hash de senha
-    // no seed (ver TODO em global-setup.ts). Remover o fixme quando TA-001 entrar.
-    setup.fixme(true, "TA-001: /login e hash de senha ainda não existem");
+for (const [key, user] of Object.entries(SESSION_USERS) as [
+  SessionKey,
+  (typeof SESSION_USERS)[SessionKey],
+][]) {
+  setup(`autentica ${key}`, async ({ page }) => {
+    setup.skip(!PASSWORD_LOGIN_ENABLED, "E2E_PASSWORD_LOGIN=0: sem login por senha de teste");
+    // Depende de: login por senha de teste (Backend 1), hash no seed (E2E_PASSWORD_HASH)
+    // e, para super admin / inst-b, do schema multi-tenant (feat/auth-modelo).
+    setup.fixme(true, "TA-001: login de teste e hash de senha ainda não existem");
 
     const login = new LoginPage(page);
     await login.goto();
-    await login.login(user.email, E2E_PASSWORD);
+    await login.loginWithPassword(user.email, E2E_PASSWORD);
     await expect(page).toHaveURL(new RegExp(`${user.home}$`));
-    await page.context().storageState({ path: authFile(user.key) });
+    await page.context().storageState({ path: authFile(key) });
   });
 }

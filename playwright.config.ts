@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import { E2E_BASE_URL, E2E_PORT, SKIP_DB, e2eDatabaseUrl } from "./e2e/support/env";
+import { E2E_BASE_URL, E2E_PORT, SKIP_DB, appTestEnv, e2eDatabaseUrl } from "./e2e/support/env";
 
 // Porta padrão 3100 (a 3000 costuma estar ocupada pelo `next dev` de outros worktrees).
 const PORT = E2E_PORT;
@@ -39,7 +39,8 @@ export default defineConfig({
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
-        // O app sobe apontando para o banco isolado da suíte, nunca o de dev.
-        env: databaseUrl ? { DATABASE_URL: databaseUrl } : undefined,
+        // O app sobe apontando para o banco isolado da suíte (nunca o de dev), com o login
+        // por senha de teste ligado (E2E_PASSWORD_LOGIN=0 desliga) e OAuth no provedor falso.
+        env: { ...appTestEnv(), ...(databaseUrl ? { DATABASE_URL: databaseUrl } : {}) },
       },
 });

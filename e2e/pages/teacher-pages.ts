@@ -117,3 +117,51 @@ export class TeacherResultsPage {
     return this.table.getByRole("row", { name: new RegExp(name) });
   }
 }
+
+/** Fila de revisão do feedback gerado por IA (/professor/revisao-feedback). */
+export class FeedbackReviewPage {
+  readonly items: Locator;
+
+  constructor(readonly page: Page) {
+    this.items = page.getByTestId("review-feedback-item");
+  }
+
+  async goto() {
+    await this.page.goto(ROUTES.teacher.feedbackReview);
+  }
+
+  itemFor(studentName: string) {
+    return this.items.filter({ hasText: studentName });
+  }
+
+  approve(item: Locator) {
+    return item.getByTestId("feedback-approve");
+  }
+
+  reject(item: Locator) {
+    return item.getByTestId("feedback-reject");
+  }
+
+  edit(item: Locator) {
+    return item.getByTestId("feedback-edit");
+  }
+}
+
+/** Banco de exercícios + importação .xlsx (/professor/banco-exercicios). */
+export class ExerciseBankPage {
+  readonly importInput: Locator;
+  readonly importResult: Locator;
+
+  constructor(readonly page: Page) {
+    this.importInput = page.getByTestId("xlsx-import-input");
+    this.importResult = page.getByTestId("import-result");
+  }
+
+  async goto() {
+    await this.page.goto(ROUTES.teacher.exerciseBank);
+  }
+
+  async importFile(path: string) {
+    await this.importInput.setInputFiles(path);
+  }
+}

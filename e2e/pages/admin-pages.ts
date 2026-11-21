@@ -36,16 +36,31 @@ export class AdminUsersPage {
 /** Parâmetros globais da instância (TA-008). */
 export class AdminSettingsPage {
   readonly instanceName: Locator;
-  readonly openSignup: Locator;
   readonly save: Locator;
 
   constructor(readonly page: Page) {
     this.instanceName = page.getByLabel("Nome da instância");
-    this.openSignup = page.getByRole("checkbox", { name: /Cadastro aberto/ });
     this.save = page.getByRole("button", { name: "Salvar" });
   }
 
   async goto() {
     await this.page.goto(ROUTES.admin.settings);
+  }
+}
+
+/** Gestão de instituições pelo Super Admin (/superadmin/instituicoes). */
+export class SuperAdminInstitutionsPage {
+  readonly items: Locator;
+
+  constructor(readonly page: Page) {
+    this.items = page.getByTestId("institution-item");
+  }
+
+  async goto() {
+    await this.page.goto(ROUTES.superAdmin.institutions);
+  }
+
+  item(name: string) {
+    return this.items.filter({ hasText: name });
   }
 }

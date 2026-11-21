@@ -4,8 +4,10 @@
  * 1. Cria (se não existir) o banco isolado `training_area_e2e` no mesmo servidor
  *    PostgreSQL do .env — o banco de dev compartilhado nunca é tocado nem apagado.
  * 2. Aplica as migrações com `prisma migrate deploy` nesse banco.
- * 3. Faz upsert dos usuários de teste (prefixo `e2e.`), sem apagar nada.
- * 4. Garante arquivos de storage state vazios por papel, para os specs que
+ * 3. Roda o seed próprio da suíte (e2e/seed.ts): instituições A/B, um Admin por
+ *    instituição, professores, alunos e Super Admin — upsert, sem apagar nada.
+ * 4. Sobe o provedor OAuth falso (Google/Microsoft) — encerrado no teardown.
+ * 5. Garante arquivos de storage state vazios por papel, para os specs que
  *    dependem de login não quebrarem antes de o auth.setup gerar os reais.
  */
 import { execFileSync } from "node:child_process";
@@ -14,8 +16,16 @@ import { dirname } from "node:path";
 
 import { Client } from "pg";
 
-import { E2E_DB_NAME, SKIP_DB, e2eDatabaseUrl } from "./support/env";
-import { OTHER_STUDENT, USERS, authFile, type RoleKey } from "./support/users";
+import { seed } from "./seed";
+import {
+  E2E_DB_NAME,
+  OAUTH_MOCK_ENABLED,
+  OAUTH_MOCK_PORT,
+  SKIP_DB,
+  e2eDatabaseUrl,
+} from "./support/env";
+import { startMockOAuth } from "./support/mock-oauth";
+import { SESSION_USERS, authFile, type SessionKey } from "./support/users";
 
 async function ensureDatabase(url: string) {
   const admin = new URL(url);
@@ -46,28 +56,21 @@ function migrate(url: string) {
   });
 }
 
-async function seedUsers(url: string) {
+async function seedDatabase(url: string) {
   const client = new Client({ connectionString: url.replace(/\?schema=public$/, "") });
   await client.connect();
   try {
-    for (const user of [...Object.values(USERS), OTHER_STUDENT]) {
-      // TODO(TA-001): quando o hash de senha existir (ex.: src/server/auth/password.ts),
-      // gravar password_hash = hash(E2E_PASSWORD) aqui para o login por UI funcionar.
-      await client.query(
-        `INSERT INTO users (id, email, name, role, active, updated_at)
-         VALUES ($1, $2, $3, $4::"Role", true, now())
-         ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role,
-           active = true, updated_at = now()`,
-        [user.id, user.email, user.name, user.role],
-      );
-    }
+    const report = await seed(client);
+    console.log(
+      `[e2e] seed: ${report.users} usuários; pendente: ${report.pending.join("; ") || "nada"}`,
+    );
   } finally {
     await client.end();
   }
 }
 
 function ensureEmptyStorageStates() {
-  for (const key of ["aluno", "professor", "admin"] as RoleKey[]) {
+  for (const key of Object.keys(SESSION_USERS) as SessionKey[]) {
     const file = authFile(key);
     mkdirSync(dirname(file), { recursive: true });
     if (!existsSync(file)) writeFileSync(file, JSON.stringify({ cookies: [], origins: [] }));
@@ -76,14 +79,21 @@ function ensureEmptyStorageStates() {
 
 export default async function globalSetup() {
   ensureEmptyStorageStates();
+  let stopOAuth: (() => Promise<void>) | undefined;
+  if (OAUTH_MOCK_ENABLED) {
+    const server = await startMockOAuth(OAUTH_MOCK_PORT);
+    console.log(`[e2e] mock OAuth (Google/Microsoft) em http://localhost:${OAUTH_MOCK_PORT}`);
+    stopOAuth = () => new Promise((resolve) => server.close(() => resolve()));
+  }
   if (SKIP_DB) {
     console.log("[e2e] E2E_SKIP_DB/E2E_BASE_URL definido: provisionamento do banco ignorado");
-    return;
+    return stopOAuth;
   }
   const url = e2eDatabaseUrl();
   if (!url) throw new Error("[e2e] defina DATABASE_URL (ou E2E_DATABASE_URL) no .env");
   await ensureDatabase(url);
   migrate(url);
-  await seedUsers(url);
-  console.log(`[e2e] banco ${E2E_DB_NAME} pronto com usuários de teste`);
+  await seedDatabase(url);
+  console.log(`[e2e] banco ${E2E_DB_NAME} pronto`);
+  return stopOAuth;
 }

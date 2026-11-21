@@ -24,6 +24,16 @@ export class StudentTrailPage {
     return this.page.getByRole("progressbar", { name: `Progresso do nível ${name}` });
   }
 
+  /** Conceito do nível (texto ND/ED/D/PD). */
+  conceptBadge(level: string) {
+    return this.level(level).getByTestId("concept-badge");
+  }
+
+  /** Botão de refazer o nível (só para ND e ED). */
+  redoButton(level: string) {
+    return this.level(level).getByTestId("redo-button");
+  }
+
   /** Itens de exercício de um nível. Requer data-testid="exercise-item" (ver e2e/README.md). */
   exerciseItems(level: string) {
     return this.level(level).getByTestId("exercise-item");

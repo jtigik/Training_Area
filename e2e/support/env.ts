@@ -32,3 +32,38 @@ export function e2eDatabaseUrl(): string | undefined {
 
 /** `E2E_SKIP_DB=1` pula o provisionamento do banco (ex.: testando um servidor remoto). */
 export const SKIP_DB = process.env.E2E_SKIP_DB === "1" || !!process.env.E2E_BASE_URL;
+
+/**
+ * Login por e-mail+senha é só de dev/teste (Backend 1), DESLIGADO por padrão no app.
+ * A suíte o liga no webServer para o auth.setup; `E2E_PASSWORD_LOGIN=0` sobe o app com
+ * ele desligado (usado pelo teste "login por senha desligado").
+ * O nome da variável do app é configurável até o Backend 1 fixar o nome.
+ */
+export const PASSWORD_LOGIN_ENABLED = process.env.E2E_PASSWORD_LOGIN !== "0";
+export const PASSWORD_LOGIN_APP_FLAG = process.env.E2E_PASSWORD_FLAG_VAR ?? "AUTH_PASSWORD_LOGIN";
+
+/** Provedor OAuth/OIDC falso (Google e Microsoft) servido pela própria suíte. */
+export const OAUTH_MOCK_PORT = Number(process.env.E2E_OAUTH_PORT ?? 3199);
+export const OAUTH_MOCK_URL = `http://localhost:${OAUTH_MOCK_PORT}`;
+export const OAUTH_MOCK_ENABLED = process.env.E2E_OAUTH_MOCK !== "0" && !process.env.E2E_BASE_URL;
+
+/**
+ * Variáveis passadas ao app em teste. Contrato proposto ao Backend 1 (ver e2e/README.md):
+ * o app deve aceitar issuer/endpoints configuráveis para Google e Microsoft.
+ */
+export function appTestEnv(): Record<string, string> {
+  const env: Record<string, string> = {
+    [PASSWORD_LOGIN_APP_FLAG]: PASSWORD_LOGIN_ENABLED ? "true" : "false",
+  };
+  if (OAUTH_MOCK_ENABLED) {
+    Object.assign(env, {
+      AUTH_GOOGLE_ISSUER: `${OAUTH_MOCK_URL}/google`,
+      AUTH_GOOGLE_ID: "e2e-google-client",
+      AUTH_GOOGLE_SECRET: "e2e-google-secret",
+      AUTH_MICROSOFT_ENTRA_ID_ISSUER: `${OAUTH_MOCK_URL}/microsoft`,
+      AUTH_MICROSOFT_ENTRA_ID_ID: "e2e-microsoft-client",
+      AUTH_MICROSOFT_ENTRA_ID_SECRET: "e2e-microsoft-secret",
+    });
+  }
+  return env;
+}
