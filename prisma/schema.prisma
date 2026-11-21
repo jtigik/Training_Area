@@ -1,0 +1,31 @@
+// Schema inicial do Training Area (Sprint 1).
+// Prisma 7: o cliente é gerado em src/generated/prisma (não versionado)
+// e a conexão é configurada em prisma.config.ts.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String?  @map("password_hash")
+  role         Role     @default(STUDENT)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}

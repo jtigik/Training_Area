@@ -1,0 +1,54 @@
+# Ambiente de desenvolvimento do Training Area.
+#   Só o banco (fluxo padrão de dev):   docker compose up -d --wait db
+#   Stack completa (db + migrações + app): docker compose --profile app up --build
+# Variáveis lidas do arquivo .env (copie de .env.example).
+
+name: training-area
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-training}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-training}
+      POSTGRES_DB: ${POSTGRES_DB:-training_area}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  migrate:
+    profiles: ["app"]
+    build:
+      context: .
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-training}:${POSTGRES_PASSWORD:-training}@db:5432/${POSTGRES_DB:-training_area}?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    profiles: ["app"]
+    build:
+      context: .
+      target: runner
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-training}:${POSTGRES_PASSWORD:-training}@db:5432/${POSTGRES_DB:-training_area}?schema=public
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
