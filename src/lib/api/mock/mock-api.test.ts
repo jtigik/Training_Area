@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { MOCK_EXERCISES } from "./data";
-import { mockApi, resetMockState } from "./index";
+import { mockApi, mockConfig, mockSignInAs, resetMockState } from "./index";
 
-const login = () => mockApi.login({ email: "aluno@training.dev", password: "senha123" });
+const login = () => mockApi.startLogin("google", "/aluno");
 
 describe("mock student API", () => {
   beforeEach(() => {
@@ -10,14 +10,17 @@ describe("mock student API", () => {
     resetMockState();
   });
 
-  it("rejects bad credentials with a generic message", async () => {
-    await expect(mockApi.login({ email: "x@y.z", password: "a" })).rejects.toMatchObject({
-      status: 401,
-      message: "E-mail ou senha incorretos.",
-    });
-    await expect(
-      mockApi.login({ email: "aluno@training.dev", password: "errada" }),
-    ).rejects.toMatchObject({ status: 401, message: "E-mail ou senha incorretos." });
+  it("signs in through the (mock) social provider and exposes the institution", async () => {
+    const start = await login();
+    expect(start.kind).toBe("signed-in");
+    const me = await mockApi.me();
+    expect(me).toMatchObject({ role: "STUDENT", institution: { name: "Instituto Exemplo" } });
+    expect(document.cookie).toContain("better-auth.session_token=mock.STUDENT.");
+  });
+
+  it("forbids the student API for other roles", async () => {
+    mockSignInAs("u-prof");
+    await expect(mockApi.getTrail()).rejects.toMatchObject({ status: 403 });
   });
 
   it("requires a session", async () => {
@@ -31,12 +34,9 @@ describe("mock student API", () => {
   it("starts with the first level open and the others locked", async () => {
     await login();
     const trail = await mockApi.getTrail();
-    expect(trail.levels.map((l) => l.status)).toEqual([
-      "NOT_STARTED",
-      "LOCKED",
-      "LOCKED",
-      "LOCKED",
-    ]);
+    // Dashboard is v1.1 ("em breve") and is not part of the trail.
+    expect(trail.levels.map((l) => l.level)).toEqual(["FUNDAMENTAL", "PROFESSIONAL", "ADVANCED"]);
+    expect(trail.levels.map((l) => l.status)).toEqual(["NOT_STARTED", "LOCKED", "LOCKED"]);
     expect(trail.levels[1].exercises).toEqual([]);
     await expect(mockApi.getExercise("ex-se")).rejects.toMatchObject({ status: 403 });
   });
@@ -70,12 +70,35 @@ describe("mock student API", () => {
     const trail = await mockApi.getTrail();
     expect(trail.levels[1].status).toBe("NOT_STARTED");
 
-    const feedback = await mockApi.getLevelFeedback("FUNDAMENTAL");
-    expect(feedback.score).toEqual({ correct: 4, total: 4, percent: 100 });
-    expect(feedback.attempts).toBe(5);
-    expect(feedback.band.label).toBe("Excelente");
-    expect(feedback.toReview[0]).toContain("Total de vendas da semana");
-    expect(feedback.nextLevel?.level).toBe("PROFESSIONAL");
+    mockConfig.reviewDelayMs = 60_000;
+    const inReview = await mockApi.getLevelFeedback("FUNDAMENTAL");
+    expect(inReview).toMatchObject({ status: "IN_REVIEW", message: null, concept: "PD" });
+    expect(inReview.score).toEqual({ correct: 4, total: 4, percent: 100 });
+    expect(inReview.attempts).toBe(5);
+
+    mockConfig.reviewDelayMs = 0;
+    const published = await mockApi.getLevelFeedback("FUNDAMENTAL");
+    expect(published.status).toBe("PUBLISHED");
+    expect(published.message?.paragraphs[0]).toContain("100%");
+    expect(published.message?.toReview[0]).toContain("Total de vendas da semana");
+    expect(published.nextLevel?.level).toBe("PROFESSIONAL");
+
+    // PD cannot be retaken.
+    await expect(mockApi.retakeLevel("FUNDAMENTAL")).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("lets the student redo a level completed with ND/ED", async () => {
+    await login();
+    for (const id of ["ex-soma", "ex-media", "ex-maximo", "ex-minimo"]) {
+      await mockApi.submitAttempt(id, { submission: "=B2" });
+    }
+    let trail = await mockApi.getTrail();
+    expect(trail.levels[0]).toMatchObject({ status: "COMPLETED", concept: "ND" });
+    const level = await mockApi.retakeLevel("FUNDAMENTAL");
+    expect(level).toMatchObject({ status: "NOT_STARTED", concept: null });
+    expect(level.progress.done).toBe(0);
+    trail = await mockApi.getTrail();
+    expect(trail.levels[1].status).toBe("LOCKED");
   });
 
   it("has an answer key that its own grader accepts for every exercise (sanity check)", async () => {
@@ -88,7 +111,6 @@ describe("mock student API", () => {
       "ex-se": '=SE(B2>=7;"Aprovado";"Reprovado")',
       "ex-contse": '=CONT.SE(B2:B7;">=7")',
       "ex-procv": "=PROCV(D2;A2:B5;2;FALSO)",
-      "ex-somases": '=SOMASES(C2:C6;B2:B6;"Sul";A2:A6;"Jan")',
     };
     for (const e of MOCK_EXERCISES) {
       const r = gradeSubmission(

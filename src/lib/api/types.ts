@@ -69,17 +69,54 @@ export const LEVEL_STATUS_LABELS: Record<LevelStatus, string> = {
   COMPLETED: "Concluído",
 };
 
+/**
+ * Conceito do nível (rubrica): ND = Não desenvolvido, ED = Em desenvolvimento,
+ * D = Desenvolvido, PD = Plenamente desenvolvido. Assigned by the backend when
+ * the level is completed. "Refazer nível" is offered only for ND and ED.
+ */
+export type Concept = "ND" | "ED" | "D" | "PD";
+
+export const CONCEPT_LABELS: Record<Concept, string> = {
+  ND: "Não desenvolvido",
+  ED: "Em desenvolvimento",
+  D: "Desenvolvido",
+  PD: "Plenamente desenvolvido",
+};
+
+export function canRetake(concept: Concept | null | undefined): boolean {
+  return concept === "ND" || concept === "ED";
+}
+
+/** Levels released in the MVP. DASHBOARD moved to v1.1 and is shown as "Em breve". */
+export const COMING_SOON_LEVELS: KnowledgeLevel[] = ["DASHBOARD"];
+
 export const EXERCISE_STATUS_LABELS: Record<ExerciseStatus, string> = {
   NOT_STARTED: "Não iniciado",
   CORRECT: "Correto",
   INCORRECT: "Incorreto",
 };
 
-// ---------- Backend 1: auth (Better Auth) ----------
-/** POST /api/auth/sign-in/email  body: LoginRequest -> 200 { user } + session cookie | 401 */
-export interface LoginRequest {
-  email: string;
-  password: string;
+// ---------- Backend 1: auth (Better Auth, social providers only) ----------
+/** Login is Google or Microsoft only (no e-mail/password form, no /cadastro). */
+export type AuthProvider = "google" | "microsoft";
+
+export const AUTH_PROVIDER_LABELS: Record<AuthProvider, string> = {
+  google: "Google",
+  microsoft: "Microsoft",
+};
+
+/**
+ * POST /api/auth/sign-in/social  body: { provider, callbackURL }
+ *   -> 200 { url, redirect: true }: the browser goes to the provider and comes back to callbackURL.
+ * The mock signs in immediately instead.
+ */
+export type LoginStart =
+  { kind: "redirect"; url: string } | { kind: "signed-in"; user: SessionUser };
+
+/** Tenant (instituição) of the user — the system is multi-tenant. */
+export interface Institution {
+  id: string;
+  name: string;
 }
 
 /** GET /api/auth/get-session -> 200 { user, session } | 200 null when signed out */
@@ -88,7 +125,22 @@ export interface SessionUser {
   name: string;
   email: string;
   role: Role;
+  institution: Institution;
 }
+
+/** Home of each role after login (design/wireframes/login.html). */
+export const ROLE_HOME: Record<Role, string> = {
+  STUDENT: "/aluno",
+  TEACHER: "/professor/resultados",
+  ADMIN: "/admin/usuarios",
+};
+
+/** Route prefixes each role may access (used to validate ?voltar=). */
+export const ROLE_PREFIXES: Record<Role, string[]> = {
+  STUDENT: ["/aluno"],
+  TEACHER: ["/professor"],
+  ADMIN: ["/admin"],
+};
 
 /** POST /api/auth/sign-out -> 200 */
 
@@ -133,7 +185,11 @@ export interface TrailLevel {
   /** At most `progress.required` items (TA-020). Empty when LOCKED. */
   exercises: ExerciseSummary[];
   completedAt: string | null;
+  /** Set once the level is COMPLETED. */
+  concept: Concept | null;
 }
+
+/** POST /api/student/levels/:level/retake -> 200 TrailLevel (only when concept is ND or ED; 409 otherwise) */
 
 /** GET /api/student/trail -> 200 Trail | 200 { set: null } when nothing is published */
 export interface Trail {
@@ -205,18 +261,29 @@ export interface AttemptResult {
   levelCompleted: boolean;
 }
 
-/** GET /api/student/levels/:level/feedback -> 200 LevelFeedback | 404 if level not completed */
+/**
+ * GET /api/student/levels/:level/feedback -> 200 LevelFeedback | 404 if level not completed.
+ * The personalised text is AI-generated and only visible after the teacher approves it:
+ * while status is IN_REVIEW, `message` is null (score/summary are still returned).
+ */
+export type FeedbackStatus = "IN_REVIEW" | "PUBLISHED";
+
 export interface LevelFeedback {
   level: KnowledgeLevel;
   completedAt: string;
+  concept: Concept;
+  status: FeedbackStatus;
   score: { correct: number; total: number; percent: number };
   /** Total submitted attempts in the level. */
   attempts: number;
   difficultiesPracticed: Difficulty[];
-  /** Feedback por faixa de desempenho (TA-026/TA-027, regras/templates). Immutable once issued. */
-  band: { label: string; range: string; paragraphs: string[] };
-  strengths: string[];
-  toReview: string[];
+  /** Approved feedback (AI-generated, reviewed by the teacher). Immutable once published. */
+  message: {
+    paragraphs: string[];
+    strengths: string[];
+    toReview: string[];
+    approvedAt: string;
+  } | null;
   items: {
     exerciseId: string;
     title: string;

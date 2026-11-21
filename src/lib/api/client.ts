@@ -3,16 +3,19 @@ import type {
   AttemptResult,
   Exercise,
   KnowledgeLevel,
+  AuthProvider,
   LevelFeedback,
-  LoginRequest,
+  LoginStart,
   Section,
   SessionUser,
   Trail,
+  TrailLevel,
 } from "./types";
 
 /** Everything the student area needs from the backend. */
 export interface StudentApi {
-  login(req: LoginRequest): Promise<SessionUser>;
+  /** Start Google/Microsoft sign-in; `callbackURL` is where the user lands afterwards. */
+  startLogin(provider: AuthProvider, callbackURL: string): Promise<LoginStart>;
   /** Current user, or throws ApiError(401). */
   me(): Promise<SessionUser>;
   logout(): Promise<void>;
@@ -21,6 +24,8 @@ export interface StudentApi {
   getExercise(id: string): Promise<Exercise>;
   submitAttempt(exerciseId: string, req: AttemptRequest): Promise<AttemptResult>;
   getLevelFeedback(level: KnowledgeLevel): Promise<LevelFeedback>;
+  /** Reset a completed level with concept ND/ED so the student can redo it. */
+  retakeLevel(level: KnowledgeLevel): Promise<TrailLevel>;
 }
 
 export type ApiMode = "mock" | "http";

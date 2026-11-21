@@ -36,20 +36,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 /** Real backend client. Endpoints follow the assumed contracts in ./types.ts. */
 export const httpApi: StudentApi = {
-  async login(req) {
-    try {
-      const { user } = await request<{ user: SessionUser }>("/api/auth/sign-in/email", {
-        method: "POST",
-        body: JSON.stringify(req),
-      });
-      return user;
-    } catch (e) {
-      // Never reveal whether the e-mail exists (TA-001).
-      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-        throw new ApiError(401, "INVALID_CREDENTIALS", "E-mail ou senha incorretos.");
-      }
-      throw e;
-    }
+  async startLogin(provider, callbackURL) {
+    const res = await request<{ url?: string; redirect?: boolean; user?: SessionUser }>(
+      "/api/auth/sign-in/social",
+      { method: "POST", body: JSON.stringify({ provider, callbackURL }) },
+    );
+    if (res.url) return { kind: "redirect", url: res.url };
+    if (res.user) return { kind: "signed-in", user: res.user };
+    throw new ApiError(500, "LOGIN_FAILED", "Não foi possível iniciar o login.");
   },
   async me() {
     const data = await request<{ user: SessionUser } | null>("/api/auth/get-session");
@@ -68,4 +62,6 @@ export const httpApi: StudentApi = {
       body: JSON.stringify(req),
     }),
   getLevelFeedback: (level) => request(`/api/student/levels/${encodeURIComponent(level)}/feedback`),
+  retakeLevel: (level) =>
+    request(`/api/student/levels/${encodeURIComponent(level)}/retake`, { method: "POST" }),
 };

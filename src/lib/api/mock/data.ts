@@ -4,20 +4,23 @@ import type { Difficulty, KnowledgeLevel, Section, SessionUser } from "../types"
 
 /** Mock-only data. In production the answer keys never leave the server. */
 
-export const MOCK_USERS: (SessionUser & { password: string })[] = [
+export const MOCK_INSTITUTION = { id: "inst-exemplo", name: "Instituto Exemplo" };
+
+/** Mock accounts. The mock "Google/Microsoft" sign-in logs in as the first one (the student). */
+export const MOCK_USERS: SessionUser[] = [
   {
     id: "u-aluno",
-    name: "Ana Aluna",
-    email: "aluno@training.dev",
+    name: "Ana Souza",
+    email: "ana.souza@exemplo.edu.br",
     role: "STUDENT",
-    password: "senha123",
+    institution: MOCK_INSTITUTION,
   },
   {
     id: "u-prof",
-    name: "Paulo Professor",
-    email: "professor@training.dev",
+    name: "Paulo Lima",
+    email: "paulo.lima@exemplo.edu.br",
     role: "TEACHER",
-    password: "senha123",
+    institution: MOCK_INSTITUTION,
   },
 ];
 
@@ -47,12 +50,6 @@ export const MOCK_LEVELS: MockLevel[] = [
     description: "Busca e referência com PROCV, ÍNDICE e CORRESP.",
     required: 1,
     exerciseIds: ["ex-procv"],
-  },
-  {
-    level: "DASHBOARD",
-    description: "Indicadores para painéis: SOMASES e percentuais.",
-    required: 1,
-    exerciseIds: ["ex-somases"],
   },
 ];
 
@@ -96,14 +93,6 @@ export const MOCK_SECTIONS: Section[] = [
     level: "ADVANCED",
     readMinutes: 6,
     body: `\`=PROCV(valor_procurado; tabela; núm_coluna; FALSO)\` procura um valor na primeira coluna da tabela e devolve o valor da coluna indicada.`,
-  },
-  {
-    id: "sec-indicadores",
-    title: "Indicadores para dashboards",
-    order: 5,
-    level: "DASHBOARD",
-    readMinutes: 6,
-    body: `Use \`SOMASES\` para somar com vários critérios e monte indicadores como "vendas da região Sul no 1º trimestre".`,
   },
 ];
 
@@ -296,40 +285,5 @@ export const MOCK_EXERCISES: MockExercise[] = [
     expected: 7.25,
     hint: "PROCV(valor; tabela; coluna; FALSO).",
     relatedSectionId: "sec-procv",
-  }),
-  ex({
-    id: "ex-somases",
-    level: "DASHBOARD",
-    difficulty: "VERY_HARD",
-    title: "Vendas da região Sul em janeiro",
-    statement: "Em **F2**, some as vendas (coluna C) da região **Sul** no mês **Jan**.",
-    cells: {
-      A1: "Mês",
-      B1: "Região",
-      C1: "Vendas",
-      A2: "Jan",
-      B2: "Sul",
-      C2: 100,
-      A3: "Jan",
-      B3: "Norte",
-      C3: 80,
-      A4: "Fev",
-      B4: "Sul",
-      C4: 120,
-      A5: "Jan",
-      B5: "Sul",
-      C5: 45,
-      A6: "Fev",
-      B6: "Norte",
-      C6: 60,
-      E1: "Indicador",
-      E2: "Sul/Jan",
-      F1: "Total",
-    },
-    targetCell: "F2",
-    expected: 145,
-    hint: "SOMASES recebe primeiro o intervalo a somar e depois pares de intervalo de critério; critério.",
-    relatedSectionId: "sec-indicadores",
-    size: { rows: 8, cols: 7 },
   }),
 ];
