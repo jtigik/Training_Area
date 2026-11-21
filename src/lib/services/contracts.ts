@@ -27,7 +27,7 @@
  *   GET    /api/teacher/feedback-reviews/:id                         → ReviewFeedback
  *   PATCH  /api/teacher/feedback-reviews/:id body { finalText }      → ReviewFeedback (só PENDING)
  *   POST   /api/teacher/feedback-reviews/:id/approve body { finalText } → ReviewFeedback | 409 ja_revisado
- *   POST   /api/teacher/feedback-reviews/:id/reject  body { reason }    → ReviewFeedback | 409 ja_revisado
+ *   POST   /api/teacher/feedback-reviews/:id/reject  body { reason? }   → ReviewFeedback | 409 ja_revisado
  *
  * Backend 2 — conteúdo, conjuntos, exercícios, banco, resultados
  *   GET    /api/teacher/sections                                     → ContentSection[] (por position)
@@ -51,7 +51,8 @@
  *   GET    /api/teacher/bank?level=&difficulty=&origin=&search=      → BankExercise[]
  *   GET    /api/teacher/bank/:id                                     → BankExercise
  *   POST   /api/teacher/bank                body BankExerciseInput   → 201 BankExercise (origin INSTITUTION)
- *   POST   /api/teacher/bank/import         body { items: BankExerciseInput[] } → 201 BankExercise[] (source XLSX)
+ *   POST   /api/teacher/bank/import         body { items: BankExerciseInput[] } → 201 BankExercise[] (source XLSX, DRAFT)
+ *          (o .xlsx é lido no navegador; o QA mapeou também POST /api/teacher/exercises/import multipart — a definir com o BE2)
  *   PATCH  /api/teacher/bank/:id            body Partial<BankExerciseInput> → BankExercise | 403 item_da_plataforma
  *   DELETE /api/teacher/bank/:id                                     → 204 | 403 item_da_plataforma
  *   POST   /api/teacher/bank/:id/copy       body { setId }           → 201 Exercise (DRAFT) | 422 nivel_fora_do_conjunto
@@ -233,6 +234,7 @@ export interface BankQuery {
 
 export interface BankExerciseInput extends ExerciseContent {
   tags: string[];
+  status: ExerciseSetStatus;
 }
 
 export interface BankService {
@@ -268,7 +270,7 @@ export interface ReviewService {
   get(id: string): Promise<ReviewFeedback>;
   saveDraft(id: string, finalText: string): Promise<ReviewFeedback>;
   approve(id: string, finalText: string): Promise<ReviewFeedback>;
-  reject(id: string, reason: string): Promise<ReviewFeedback>;
+  reject(id: string, reason?: string): Promise<ReviewFeedback>;
 }
 
 /* ----------------------------- Resultados --------------------------- */

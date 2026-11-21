@@ -149,6 +149,7 @@ function bankItem(
     institutionId,
     origin: institutionId ? "INSTITUTION" : "PLATFORM",
     source: institutionId ? "EDITOR" : "SEED",
+    status: "PUBLISHED",
     tags,
     ...structuredClone(c),
     createdAt: T0,

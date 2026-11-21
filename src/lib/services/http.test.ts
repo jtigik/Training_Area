@@ -13,7 +13,9 @@ describe("http services", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     await createHttpServices().users.list({ search: "ana", role: "INSTITUTION_ADMIN", page: 2 });
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/admin/users?search=ana&role=INSTITUTION_ADMIN&page=2");
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/admin/users?search=ana&role=INSTITUTION_ADMIN&page=2",
+    );
     expect(fetchMock.mock.calls[0][1].method).toBe("GET");
   });
 

@@ -158,6 +158,8 @@ export interface BankExercise extends ExerciseContent {
   institutionId: string | null;
   origin: BankOrigin;
   source: BankSource;
+  /** Itens importados entram como rascunho; só itens publicados podem ir para conjuntos. */
+  status: ExerciseSetStatus;
   tags: string[];
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;

@@ -459,6 +459,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
             origin: "INSTITUTION",
             source: "XLSX",
             ...input,
+            status: "DRAFT",
             createdAt: now(),
             updatedAt: now(),
           }));
@@ -493,6 +494,13 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
         delay(() => {
           const item = findBank(id);
           const set = findSet(setId);
+          if (item.status !== "PUBLISHED") {
+            throw new ApiError(
+              422,
+              "item_em_rascunho",
+              "Publique o item no banco antes de usá-lo em um conjunto.",
+            );
+          }
           assertLevelInSet(set, item.level);
           const { title, statement, level, difficulty, grid, answers, hint } = item;
           const ex: Exercise = {
@@ -582,13 +590,11 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
         delay(() => {
           const r = findReview(id);
           assertPending(r);
-          if (!reason.trim())
-            throw new ApiError(422, "motivo_obrigatorio", "Informe o motivo da rejeição.");
           return Object.assign(r, {
             status: "REJECTED",
             reviewerId: actor,
             reviewedAt: now(),
-            rejectionReason: reason,
+            rejectionReason: reason?.trim() || null,
           });
         }),
     },

@@ -93,7 +93,7 @@ export function createHttpServices(): Services {
       approve: (id, finalText) =>
         request("POST", `/api/teacher/feedback-reviews/${id}/approve`, { finalText }),
       reject: (id, reason) =>
-        request("POST", `/api/teacher/feedback-reviews/${id}/reject`, { reason }),
+        request("POST", `/api/teacher/feedback-reviews/${id}/reject`, { reason: reason ?? null }),
     },
     results: {
       list: (q) => get("/api/teacher/results", { ...q }),

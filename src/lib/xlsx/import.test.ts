@@ -1,6 +1,14 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { cellText, looksLikeXlsx, parseXlsx, sheetToExercise } from "./import";
+import {
+  cellText,
+  looksLikeXlsx,
+  parseDifficulty,
+  parseLevel,
+  parseXlsx,
+  sheetToExercise,
+  templateToExercise,
+} from "./import";
 
 describe("sheetToExercise", () => {
   it("valores viram planilha bloqueada e fórmulas viram gabarito", () => {
@@ -60,5 +68,61 @@ describe("parseXlsx", () => {
     expect(result.sheets[0].answers.B3).toEqual({ kind: "FORMULA", expected: "=AVERAGE(B1:B2)" });
     expect(result.sheets[0].valid).toBe(true);
     expect(result.sheets[1].valid).toBe(false);
+  });
+});
+
+describe("modelo Dados/Planilha/Gabarito", () => {
+  it("lê metadados, grade e gabarito", async () => {
+    const wb = new ExcelJS.Workbook();
+    const dados = wb.addWorksheet("Dados");
+    [
+      ["Título", "e2e — Soma importada"],
+      ["Nível", "Fundamental"],
+      ["Dificuldade", "Muito fácil"],
+      ["Enunciado", "Some A1:A3 em A4."],
+      ["Dica", "Use SOMA."],
+    ].forEach((r) => dados.addRow(r));
+    const p = wb.addWorksheet("Planilha");
+    p.getCell("A1").value = 10;
+    p.getCell("A2").value = 20;
+    p.getCell("A3").value = 30;
+    const g = wb.addWorksheet("Gabarito");
+    g.addRow(["Célula", "Resposta"]);
+    g.addRow(["A4", "=SOMA(A1:A3)"]);
+    const result = await parseXlsx("valido.xlsx", (await wb.xlsx.writeBuffer()) as ArrayBuffer);
+    expect(result.sheets).toHaveLength(1);
+    const [s] = result.sheets;
+    expect(s.meta).toEqual({
+      title: "e2e — Soma importada",
+      level: "FUNDAMENTAL",
+      difficulty: "VERY_EASY",
+      statement: "Some A1:A3 em A4.",
+      hint: "Use SOMA.",
+    });
+    expect(s.grid.cells.A1).toEqual({ value: "10", locked: true });
+    expect(s.answers).toEqual({ A4: { kind: "FORMULA", expected: "=SOMA(A1:A3)" } });
+    expect(s.valid).toBe(true);
+  });
+
+  it("sem gabarito e com nível Dashboard fica inválido com avisos", () => {
+    const s = templateToExercise({
+      dados: [
+        ["Título", "X"],
+        ["Nível", "Dashboard"],
+        ["Dificuldade", "Fácil"],
+        ["Enunciado", "E"],
+      ],
+      planilha: [{ address: "A1", value: "1" }],
+      gabarito: [],
+    });
+    expect(s.valid).toBe(false);
+    expect(s.warnings.join(" ")).toMatch(/Dashboard.*MVP/);
+    expect(s.warnings.join(" ")).toMatch(/Sem gabarito/);
+  });
+
+  it("converte rótulos de nível e dificuldade", () => {
+    expect(parseLevel("avançado")).toBe("ADVANCED");
+    expect(parseLevel("Dashboard")).toBeUndefined();
+    expect(parseDifficulty("muito dificil")).toBe("VERY_HARD");
   });
 });

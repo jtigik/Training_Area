@@ -1,5 +1,13 @@
 import { MAX_COLS, MAX_ROWS, parseAddress, validateAnswers } from "../domain/grid";
-import type { AnswerCell, CellAddress, SpreadsheetGrid } from "../domain/types";
+import { DIFFICULTY_LABELS, LEVEL_LABELS } from "../domain/labels";
+import {
+  MVP_LEVELS,
+  type AnswerCell,
+  type CellAddress,
+  type Difficulty,
+  type MvpLevel,
+  type SpreadsheetGrid,
+} from "../domain/types";
 
 /** Célula lida do arquivo, independente da biblioteca de leitura. */
 export interface RawCell {
@@ -10,8 +18,18 @@ export interface RawCell {
   formula?: string;
 }
 
+/** Metadados lidos da aba "Dados" do modelo de importação. */
+export interface ImportedMeta {
+  title?: string;
+  level?: MvpLevel;
+  difficulty?: Difficulty;
+  statement?: string;
+  hint?: string;
+}
+
 export interface ImportedSheet {
   name: string;
+  meta: ImportedMeta;
   grid: SpreadsheetGrid;
   answers: Record<CellAddress, AnswerCell>;
   warnings: string[];
@@ -27,7 +45,7 @@ export interface XlsxImportResult {
 }
 
 /**
- * Convenção de importação (documentada na tela):
+ * Formato alternativo (sem a aba "Dados"):
  * - cada aba vira um exercício; o nome da aba é o título sugerido;
  * - células com **fórmula** viram o gabarito (resultado esperado = a fórmula);
  * - células com **valor** viram a planilha inicial, bloqueadas para o aluno;
@@ -69,7 +87,100 @@ export function sheetToExercise(name: string, cells: RawCell[]): ImportedSheet {
   if (answerCount === 0)
     warnings.push("Nenhuma fórmula encontrada: marque o gabarito na grade antes de salvar.");
   const valid = answerCount > 0 && validateAnswers(grid, answers).length === 0;
-  return { name: name.trim() || "Exercício importado", grid, answers, warnings, valid };
+  return { name: name.trim() || "Exercício importado", meta: {}, grid, answers, warnings, valid };
+}
+
+const norm = (v: string) =>
+  v
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+/** "Fundamental" → FUNDAMENTAL (só níveis do MVP). */
+export function parseLevel(label: string): MvpLevel | undefined {
+  return MVP_LEVELS.find((l) => norm(LEVEL_LABELS[l]) === norm(label) || norm(l) === norm(label));
+}
+
+/** "Muito fácil" → VERY_EASY. */
+export function parseDifficulty(label: string): Difficulty | undefined {
+  const entry = Object.entries(DIFFICULTY_LABELS).find(
+    ([code, l]) => norm(l) === norm(label) || norm(code) === norm(label),
+  );
+  return entry?.[0] as Difficulty | undefined;
+}
+
+export interface TemplateSheets {
+  /** Pares chave/valor da aba "Dados" (coluna A = chave, B = valor). */
+  dados: [string, string][];
+  /** Células da aba "Planilha". */
+  planilha: RawCell[];
+  /** Linhas da aba "Gabarito" (Célula | Resposta), sem o cabeçalho. */
+  gabarito: [string, string][];
+}
+
+/**
+ * Modelo de importação acordado com o QA (e2e/data/xlsx/build_fixtures.py):
+ * aba **Dados** (Título, Nível, Dificuldade, Enunciado, Dica), aba **Planilha**
+ * (grade inicial, bloqueada para o aluno) e aba **Gabarito** (Célula | Resposta).
+ */
+export function templateToExercise(t: TemplateSheets): ImportedSheet {
+  const warnings: string[] = [];
+  const dados = new Map(t.dados.map(([k, v]) => [norm(k), v.trim()]));
+  const meta: ImportedMeta = {
+    title: dados.get("titulo") || undefined,
+    statement: dados.get("enunciado") || undefined,
+    hint: dados.get("dica") || undefined,
+  };
+  const levelText = dados.get("nivel") ?? "";
+  meta.level = parseLevel(levelText);
+  if (levelText && !meta.level)
+    warnings.push(
+      `Nível "${levelText}" não disponível no MVP (use Fundamental, Profissional ou Avançado).`,
+    );
+  const diffText = dados.get("dificuldade") ?? "";
+  meta.difficulty = parseDifficulty(diffText);
+  if (diffText && !meta.difficulty) warnings.push(`Dificuldade "${diffText}" não reconhecida.`);
+  if (!meta.title) warnings.push("Título ausente na aba Dados.");
+  if (!meta.statement) warnings.push("Enunciado ausente na aba Dados.");
+
+  const base = sheetToExercise(
+    meta.title ?? "Exercício importado",
+    t.planilha.map((c) => ({ address: c.address, value: c.value })),
+  );
+  const answers: Record<CellAddress, AnswerCell> = {};
+  let rows = base.grid.rows;
+  let cols = base.grid.cols;
+  for (const [ref, resposta] of t.gabarito) {
+    const pos = parseAddress(ref);
+    const expected = resposta.trim();
+    if (!pos || !expected) continue;
+    answers[ref.trim().toUpperCase()] = expected.startsWith("=")
+      ? { kind: "FORMULA", expected }
+      : { kind: "VALUE", expected, tolerance: 0 };
+    rows = Math.max(rows, Math.min(MAX_ROWS, pos.row + 2));
+    cols = Math.max(cols, Math.min(MAX_COLS, pos.col + 2));
+  }
+  const grid = { ...base.grid, rows, cols };
+  const answerIssues = validateAnswers(grid, answers);
+  if (Object.keys(answers).length === 0)
+    warnings.push("Sem gabarito: preencha a aba Gabarito (Célula | Resposta).");
+  else answerIssues.forEach((i) => warnings.push(i.message));
+  const valid =
+    Object.keys(answers).length > 0 &&
+    answerIssues.length === 0 &&
+    !!meta.title &&
+    !!meta.statement &&
+    !!meta.level &&
+    !!meta.difficulty;
+  return {
+    name: meta.title ?? "Exercício importado",
+    meta,
+    grid,
+    answers,
+    warnings: [...base.warnings.filter((w) => !w.startsWith("Nenhuma fórmula")), ...warnings],
+    valid,
+  };
 }
 
 /** Arquivos .xlsx são ZIP: começam com "PK\x03\x04". */
@@ -119,6 +230,36 @@ export async function parseXlsx(fileName: string, buffer: ArrayBuffer): Promise<
     const { default: ExcelJS } = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
+    const readCells = (name: string): RawCell[] => {
+      const ws = workbook.getWorksheet(name);
+      const cells: RawCell[] = [];
+      ws?.eachRow({ includeEmpty: false }, (row) =>
+        row.eachCell({ includeEmpty: false }, (cell) => {
+          cells.push({ address: cell.address, ...cellText(cell.value) });
+        }),
+      );
+      return cells;
+    };
+    const pairs = (name: string): [string, string][] => {
+      const ws = workbook.getWorksheet(name);
+      const out: [string, string][] = [];
+      ws?.eachRow({ includeEmpty: false }, (row) => {
+        const a = cellText(row.getCell(1).value);
+        const b = cellText(row.getCell(2).value);
+        out.push([a.value, b.formula ? `=${b.formula}` : b.value]);
+      });
+      return out;
+    };
+    if (workbook.getWorksheet("Dados") && workbook.getWorksheet("Gabarito")) {
+      const gabarito = pairs("Gabarito").filter(([cell]) => norm(cell) !== "celula");
+      return {
+        fileName,
+        sheets: [
+          templateToExercise({ dados: pairs("Dados"), planilha: readCells("Planilha"), gabarito }),
+        ],
+        error: null,
+      };
+    }
     const sheets: ImportedSheet[] = [];
     workbook.eachSheet((ws) => {
       const cells: RawCell[] = [];

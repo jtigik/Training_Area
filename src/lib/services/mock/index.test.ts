@@ -175,14 +175,22 @@ describe("mock: banco de exercícios", () => {
 
   it("importa vários itens do .xlsx e valida gabarito", async () => {
     const s = createMockServices();
-    const created = await s.bank.importMany([{ ...content, level: "FUNDAMENTAL", tags: ["xlsx"] }]);
+    const created = await s.bank.importMany([
+      { ...content, level: "FUNDAMENTAL", tags: ["xlsx"], status: "PUBLISHED" },
+    ]);
     expect(created[0]).toMatchObject({
       source: "XLSX",
       origin: "INSTITUTION",
       institutionId: "inst-1",
+      status: "DRAFT",
+    });
+    await expect(s.bank.copyToSet(created[0].id, "set-1")).rejects.toMatchObject({
+      code: "item_em_rascunho",
     });
     await expect(
-      s.bank.importMany([{ ...content, answers: {}, level: "FUNDAMENTAL", tags: [] }]),
+      s.bank.importMany([
+        { ...content, answers: {}, level: "FUNDAMENTAL", tags: [], status: "DRAFT" },
+      ]),
     ).rejects.toMatchObject({
       code: "gabarito_invalido",
     });
@@ -218,10 +226,10 @@ describe("mock: feedback", () => {
     });
     expect(ok.generatedText).not.toBe(ok.finalText);
     await expect(s.reviews.reject("rv-1", "motivo")).rejects.toMatchObject({ code: "ja_revisado" });
-    await expect(s.reviews.reject("rv-2", " ")).rejects.toMatchObject({
-      code: "motivo_obrigatorio",
+    expect(await s.reviews.reject("rv-2")).toMatchObject({
+      status: "REJECTED",
+      rejectionReason: null,
     });
-    expect((await s.reviews.reject("rv-2", "Tom inadequado")).status).toBe("REJECTED");
   });
 });
 
