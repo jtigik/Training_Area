@@ -35,6 +35,7 @@ export type {
 export {
   columnName,
   fromSchemaExercise,
+  toSchemaExercise,
   gradeMultiCellSubmission,
   resolveTargetExpectations,
   toStudentSheet,

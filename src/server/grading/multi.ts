@@ -176,7 +176,14 @@ export function fromSchemaExercise(
   const sheet: Record<string, CellInput> = {};
   for (const [addr, cell] of Object.entries(initialSheet?.cells ?? {})) {
     if (!parseA1(addr)) continue;
-    sheet[canonicalAddress(addr)] = cell.formula ?? cell.value ?? null;
+    const value = cell.formula ?? cell.value ?? null;
+    // A text value that looks like a formula (or starts with the apostrophe marker) stays text.
+    sheet[canonicalAddress(addr)] =
+      cell.formula === undefined &&
+      typeof value === "string" &&
+      (value.trimStart().startsWith("=") || value.startsWith("'"))
+        ? `'${value}`
+        : value;
   }
   const targets: ExerciseTarget[] = (expectedResult ?? []).map((e) => ({
     cell: e.cell,
@@ -184,6 +191,40 @@ export function fromSchemaExercise(
     ...(e.tolerance !== undefined ? { numberTolerance: e.tolerance } : {}),
   }));
   return { sheet, targets, rules };
+}
+
+/**
+ * Inverse of `fromSchemaExercise`: engine content → Backend 1's JSON columns
+ * (`Exercise.initialSheet` / `Exercise.expectedResult`). Strings starting with "=" become
+ * `formula`; the Excel apostrophe marker is removed from text values. Target cells are
+ * omitted from the initial sheet. Per-target rules other than tolerance are dropped (they need
+ * a `gradingRules` column — requested from Backend 1).
+ */
+export function toSchemaExercise(exercise: MultiCellExercise): {
+  initialSheet: SchemaInitialSheet;
+  expectedResult: SchemaExpectedCell[];
+} {
+  const targets = new Set(exercise.targets.map((t) => canonicalAddress(t.cell)));
+  const cells: SchemaInitialSheet["cells"] = {};
+  for (const [addr, v] of Object.entries(toA1Map(exercise.sheet))) {
+    if (targets.has(addr) || v === null || v === undefined || v === "") continue;
+    if (typeof v === "string" && v.trim().startsWith("="))
+      cells[addr] = { formula: v.trim(), locked: true };
+    else if (typeof v === "string" && v.startsWith("'"))
+      cells[addr] = { value: v.slice(1), locked: true };
+    else cells[addr] = { value: v as string | number | boolean, locked: true };
+  }
+  const expectedResult = exercise.targets.map((t): SchemaExpectedCell => {
+    const tol = t.numberTolerance ?? exercise.rules?.numberTolerance;
+    return {
+      cell: canonicalAddress(t.cell),
+      ...("formula" in t.expected
+        ? { formula: t.expected.formula }
+        : { value: t.expected.value as SchemaExpectedCell["value"] }),
+      ...(tol !== undefined ? { tolerance: tol } : {}),
+    };
+  });
+  return { initialSheet: { cells }, expectedResult };
 }
 
 export interface TargetValidationError {
