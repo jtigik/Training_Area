@@ -3,14 +3,17 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isUnauthenticated } from "@/lib/api";
+import { hadSession, loginRedirectPath } from "@/lib/auth/session-marker";
 
-/** Redirect to the login page with the "session expired" notice (TA-001 AC4). */
+/**
+ * Redirect to /login?callbackUrl=… on 401; adds the "session expired" notice
+ * (TA-001 AC4) only when this browser actually had a session before.
+ */
 export function useSessionExpiredRedirect() {
   const router = useRouter();
   const pathname = usePathname();
   return useCallback(() => {
-    const callbackUrl = encodeURIComponent(pathname || "/aluno");
-    router.replace(`/login?motivo=sessao-expirada&callbackUrl=${callbackUrl}`);
+    router.replace(loginRedirectPath(pathname, hadSession()));
   }, [router, pathname]);
 }
 

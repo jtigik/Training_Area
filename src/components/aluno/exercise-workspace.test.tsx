@@ -124,4 +124,31 @@ describe("ExerciseWorkspace", () => {
     await user.click(screen.getByTestId("cell-B3"));
     expect(screen.getByRole("textbox", { name: /célula B3/ })).toHaveValue("'10");
   });
+
+  it("shows dateCells as dd/mm/aaaa while formulas use the serial", async () => {
+    const user = userEvent.setup();
+    const withDates: Exercise = {
+      ...exercise,
+      sheet: {
+        rows: 5,
+        cols: 3,
+        cells: { A1: 10, A2: 20, A3: 30, B1: 46347, B2: { f: "=B1+7" }, B3: 60, C1: 46347 },
+      },
+      dateCells: ["B1", "B2", "B3"],
+    };
+    render(<ExerciseWorkspace exercise={withDates} submit={vi.fn()} />);
+    expect(screen.getByTestId("cell-B1")).toHaveTextContent("21/11/2026");
+    expect(screen.getByTestId("cell-B2")).toHaveTextContent("28/11/2026");
+    expect(screen.getByTestId("cell-B3")).toHaveTextContent("29/02/1900");
+    // Not a date cell: plain number.
+    expect(screen.getByTestId("cell-C1")).toHaveTextContent("46.347");
+    await user.click(screen.getByTestId("cell-B1"));
+    expect(screen.getByRole("textbox", { name: /célula B1/ })).toHaveValue("21/11/2026");
+    await user.click(screen.getByTestId("cell-B2"));
+    expect(screen.getByRole("textbox", { name: /célula B2/ })).toHaveValue("=B1+7");
+    // Formulas see the serial number.
+    await user.click(screen.getByTestId("cell-A4"));
+    await user.type(formula(), "=B2-B1{Enter}");
+    expect(screen.getByTestId("cell-A4")).toHaveTextContent("7");
+  });
 });

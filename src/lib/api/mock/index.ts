@@ -365,6 +365,7 @@ export const mockApi: StudentApi = {
       title: e.title,
       statement: e.statement,
       sheet: e.sheet,
+      ...(e.dateCells ? { dateCells: e.dateCells } : {}),
       targetCell: e.targetCell,
       relatedSection: related ? { id: related.id, title: related.title } : null,
       status: exerciseStatus(state, id),

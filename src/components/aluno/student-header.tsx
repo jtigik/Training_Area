@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api, type SessionUser } from "@/lib/api";
+import { clearSessionMarker } from "@/lib/auth/session-marker";
 import { cn } from "@/lib/utils";
 import { initials } from "./format";
 
@@ -43,6 +44,7 @@ export function StudentHeader({ user }: { user: SessionUser }) {
     try {
       await api.logout();
     } finally {
+      clearSessionMarker();
       router.replace("/login");
     }
   }

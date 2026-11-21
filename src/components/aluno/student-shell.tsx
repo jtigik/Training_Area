@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, ApiError, ROLE_HOME } from "@/lib/api";
 import { ErrorState, LoadingState, Skeleton } from "@/components/common/page-states";
 import { useApiResource } from "@/components/common/use-api-resource";
+import { markSignedIn } from "@/lib/auth/session-marker";
 import { SessionProvider } from "./session-context";
 import { StudentHeader } from "./student-header";
 
@@ -30,6 +31,12 @@ export function StudentShell({ children }: { children: ReactNode }) {
   const me = useApiResource("me", () => api.me());
   const router = useRouter();
   const otherRoleHome = me.data && me.data.role !== "ALUNO" ? ROLE_HOME[me.data.role] : null;
+
+  const signedIn = Boolean(me.data);
+
+  useEffect(() => {
+    if (signedIn) markSignedIn();
+  }, [signedIn]);
 
   useEffect(() => {
     if (otherRoleHome) router.replace(otherRoleHome);

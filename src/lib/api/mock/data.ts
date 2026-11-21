@@ -110,6 +110,8 @@ export interface MockExercise {
   statement: string;
   sheet: { rows: number; cols: number; cells: Record<string, CellInput> };
   targetCell: string;
+  /** Excel date serials shown as dd/mm/aaaa (exercises imported from .xlsx). */
+  dateCells?: string[];
   hint: string;
   relatedSectionId: string | null;
   expected: ExpectedValue;
@@ -200,7 +202,12 @@ export const MOCK_EXERCISES: MockExercise[] = [
       A7: "Total",
       A8: "Meta (5 x seg)",
       B8: { f: "=B2*5", v: 600 },
+      A9: "Atualizado em",
+      B9: 46347,
+      A10: "Próxima revisão",
+      B10: { f: "=B9+7", v: 46354 },
     },
+    dateCells: ["B9", "B10"],
     targetCell: "B7",
     expected: 656,
     hint: "Use a função SOMA com o intervalo B2:B6.",

@@ -253,6 +253,11 @@ export interface Exercise {
    * null | { f: "=SOMA(A1:A3)", v? }. Formulas only come as { f }; strings are literal text.
    */
   sheet: { rows: number; cols: number; cells: Record<string, CellInput> };
+  /**
+   * A1 refs whose values are Excel date serials (1900 system, e.g. imported from .xlsx);
+   * shown as dd/mm/aaaa, while the engine and formulas keep the serial number.
+   */
+  dateCells?: string[];
   /** The single cell the student must fill (ExerciseDefinition.targetCell). */
   targetCell: string;
   /** Content section recommended for this exercise, if any. */

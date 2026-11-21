@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import { MAX_FORMULA_LENGTH, volatileFunctions } from "@/lib/formula/check";
 import { formatValue, type EvaluatedValue } from "@/lib/formula/engine";
+import { formatSerialDate } from "@/lib/formula/dates";
 import { evaluateSheet } from "@/lib/formula/evaluate";
 import { referencedCells } from "@/lib/formula/references";
 import { DifficultyBadge, LevelBadge } from "./badges";
@@ -25,11 +26,13 @@ import { FEEDBACK_MESSAGES } from "./feedback-messages";
 import { exerciseHref, feedbackHref, levelAnchor } from "./level-card";
 
 /** Formula-bar text for a sheet cell: the formula for { f }, apostrophe for text that would parse. */
-function rawContent(value: Exercise["sheet"]["cells"][string] | undefined): string {
+function rawContent(value: Exercise["sheet"]["cells"][string] | undefined, isDate = false): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "object") return value.f;
   if (typeof value === "boolean") return value ? "VERDADEIRO" : "FALSO";
-  if (typeof value === "number") return String(value).replace(".", ",");
+  if (typeof value === "number") {
+    return (isDate && formatSerialDate(value)) || String(value).replace(".", ",");
+  }
   return looksTyped(value) ? `'${value}` : value;
 }
 
@@ -165,7 +168,17 @@ export function ExerciseWorkspace({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(exercise.attempts > 0);
 
-  const sheet = useMemo(() => evaluateSheet(cells, target, committed), [cells, target, committed]);
+  const dateCells = exercise.dateCells;
+  const sheet = useMemo(() => {
+    const result = evaluateSheet(cells, target, committed);
+    // Date serials (1900 system) are shown as dd/mm/aaaa; the engine keeps the number.
+    for (const ref of dateCells ?? []) {
+      const v = result.values[ref];
+      const text = v?.kind === "number" ? formatSerialDate(v.value) : null;
+      if (text) result.display[ref] = text;
+    }
+    return result;
+  }, [cells, target, committed, dateCells]);
   const deferredDraft = useDeferredValue(draft);
   const preview = useMemo(
     () => evaluateSheet(cells, target, deferredDraft).target,
@@ -204,7 +217,9 @@ export function ExerciseWorkspace({
         ? `A fórmula passa do limite de ${MAX_FORMULA_LENGTH} caracteres.`
         : null;
   const volatile = useMemo(() => volatileFunctions(deferredDraft), [deferredDraft]);
-  const barValue = isTargetSelected ? draft : rawContent(cells[selected]);
+  const barValue = isTargetSelected
+    ? draft
+    : rawContent(cells[selected], exercise.dateCells?.includes(selected));
 
   function commit() {
     setCommitted(draft);

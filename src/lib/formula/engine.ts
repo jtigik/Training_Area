@@ -143,7 +143,13 @@ export class SheetEngine {
   private readonly cached = new Map<string, CellScalar>();
 
   constructor(cells: CellMap = {}) {
-    this.hf = HyperFormula.buildEmpty({ licenseKey: HYPERFORMULA_LICENSE_KEY });
+    this.hf = HyperFormula.buildEmpty({
+      licenseKey: HYPERFORMULA_LICENSE_KEY,
+      // Excel 1900 date system: serial 1 = 01/01/1900 and the fake 29/02/1900 (serial 60).
+      // HyperFormula's default (no leap bug, nullDate 1899-12-30) differs from Excel below 61.
+      leapYear1900: true,
+      nullDate: { year: 1899, month: 12, day: 31 },
+    });
     const name = this.hf.addSheet(SHEET);
     const id = this.hf.getSheetId(name);
     if (id === undefined) throw new Error("Falha ao criar a planilha.");
