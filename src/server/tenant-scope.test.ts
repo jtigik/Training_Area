@@ -156,19 +156,10 @@ describe("scopeArgs — SUPER_ADMIN (access platform): só agregados", () => {
     expect(() => scopeArgs(model, op, {}, T, "platform")).toThrow(TenantScopeError);
   });
 
-  it("permite configuração da instituição, ler o próprio tenant e convidar", () => {
-    expect(scopeArgs("TenantGradingConfig", "findFirst", {}, T, "platform").where).toEqual({
-      AND: [{ tenantId: T }],
-    });
-    expect(
-      scopeArgs(
-        "TenantGradingConfig",
-        "upsert",
-        { where: { tenantId: T }, create: {}, update: {} },
-        T,
-        "platform",
-      ).create,
-    ).toMatchObject({ tenantId: T });
+  it("permite ler o próprio tenant e convidar; configuração de notas é só INSTITUTION_ADMIN (Q-S1)", () => {
+    expect(() => scopeArgs("TenantGradingConfig", "findFirst", {}, T, "platform")).toThrow(
+      /SUPER_ADMIN não acessa/,
+    );
     expect(scopeArgs("Tenant", "findFirst", {}, T, "platform").where).toEqual({ AND: [{ id: T }] });
     expect(
       scopeArgs("Invitation", "create", { data: { email: "a@b.com" } }, T, "platform").data,

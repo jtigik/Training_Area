@@ -31,6 +31,7 @@ describe("overrideLevelConcept", () => {
         update: vi.fn().mockImplementation(({ data }) => ({ ...attempt, ...data })),
       },
       conceptOverride: { create: vi.fn().mockResolvedValue({}) },
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
     };
     const db = { $transaction: (fn: (t: typeof tx) => unknown) => fn(tx) };
     return { db, tx };
@@ -45,12 +46,20 @@ describe("overrideLevelConcept", () => {
     const reason = "Demonstrou domínio em sala de aula";
     const result = await overrideLevelConcept(ctx(db), "la", { concept: "D", reason });
     expect(tx.conceptOverride.create).toHaveBeenCalledWith({
+      select: { id: true },
       data: expect.objectContaining({
         levelAttemptId: "la",
         fromConcept: "ED",
         toConcept: "D",
         reason,
         overriddenById: "prof",
+      }),
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "level_attempt.concept_overridden",
+        entityId: "la",
+        actorId: "prof",
       }),
     });
     const update = tx.levelAttempt.update.mock.calls[0]![0].data;
