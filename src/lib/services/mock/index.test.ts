@@ -80,7 +80,19 @@ describe("mock: usuários e configurações", () => {
   it("salva configurações da instituição e chama persist", async () => {
     const persist = vi.fn();
     const s = createMockServices({ persist });
-    const saved = await s.settings.update({ instanceName: "Nome novo", openSignup: true });
+    const saved = await s.settings.update({
+      instanceName: "Nome novo",
+      openSignup: true,
+      conceptThresholds: { ED: 40, D: 60, PD: 85 },
+    });
+    expect(saved.conceptThresholds).toEqual({ ED: 40, D: 60, PD: 85 });
+    await expect(
+      s.settings.update({
+        instanceName: "x",
+        openSignup: true,
+        conceptThresholds: { ED: 80, D: 60, PD: 85 },
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION" });
     expect(saved).toMatchObject({
       tenantId: "inst-1",
       instanceName: "Nome novo",

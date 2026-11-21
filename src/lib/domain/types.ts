@@ -335,9 +335,18 @@ export interface LevelProgress {
   status: ProgressStatus;
   /** Conceito da tentativa atual (definido ao concluir). */
   concept: Concept | null;
+  /** Melhor conceito entre as tentativas do nível — é o que vale. */
+  bestConcept: Concept | null;
   completedAt: IsoDateTime | null;
   /** Histórico de tentativas do nível, da mais antiga para a mais recente. */
   history: LevelAttemptSummary[];
+}
+
+/** Mínimo (%, inclusivo) para cada conceito; abaixo de ED é ND. Padrão: ED 50, D 70, PD 90. */
+export interface ConceptThresholds {
+  ED: number;
+  D: number;
+  PD: number;
 }
 
 export interface InstitutionSettings {
@@ -346,6 +355,8 @@ export interface InstitutionSettings {
   instanceName: string;
   /** Qualquer conta Google/Microsoft dos domínios da instituição entra como aluno. */
   openSignup: boolean;
+  /** Limiares de conceito da instituição (confirmados pelo PO: ND < 50 ≤ ED < 70 ≤ D < 90 ≤ PD). */
+  conceptThresholds: ConceptThresholds;
   locale: "pt-BR";
   updatedAt: IsoDateTime;
 }

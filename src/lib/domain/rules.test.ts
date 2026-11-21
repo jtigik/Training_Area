@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildStudentRows,
+  bestOf,
   canRedoLevel,
   conceptFor,
   filterAttempts,
@@ -49,8 +50,18 @@ describe("publicação de conjunto", () => {
 });
 
 describe("conceitos", () => {
+  it("usa os limiares da instituição e escolhe o melhor conceito", () => {
+    const t = { ED: 40, D: 60, PD: 80 };
+    expect([39, 40, 60, 80].map((p) => conceptFor(p, t))).toEqual(["ND", "ED", "D", "PD"]);
+    expect(bestOf(["ED", null, "D", "ND"])).toBe("D");
+    expect(bestOf([null])).toBeNull();
+    // Vale o melhor: com melhor D não pode refazer, mesmo que a última rodada seja ED.
+    expect(canRedoLevel({ status: "COMPLETED", concept: "ED", bestConcept: "D" })).toBe(false);
+    expect(canRedoLevel({ status: "COMPLETED", concept: "ND", bestConcept: "ED" })).toBe(true);
+  });
+
   it("mapeia taxa de acerto em ND/ED/D/PD", () => {
-    expect([0, 49, 50, 69, 70, 89, 90, 100].map(conceptFor)).toEqual([
+    expect([0, 49, 50, 69, 70, 89, 90, 100].map((p) => conceptFor(p))).toEqual([
       "ND",
       "ND",
       "ED",

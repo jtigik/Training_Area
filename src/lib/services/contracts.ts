@@ -22,7 +22,7 @@
  *   POST   /api/admin/users                 body CreateUserInput     → 201 User | 409 EMAIL_IN_USE
  *   PATCH  /api/admin/users/:id             body UpdateUserInput     → User | 409 LAST_ADMIN
  *   GET    /api/admin/config                                         → InstitutionSettings
- *   PUT    /api/admin/config                body UpdateSettingsInput → InstitutionSettings
+ *   PUT    /api/admin/config                body UpdateSettingsInput → InstitutionSettings (inclui conceptThresholds { ED, D, PD }; 422 se não ED ≤ D ≤ PD)
  *   GET    /api/professor/feedback-templates?setId=  (sem setId = padrão) → FeedbackTemplate
  *   PUT    /api/professor/feedback-templates  body SaveFeedbackTemplateInput → FeedbackTemplate
  *   GET    /api/professor/feedback-reviews?status=DRAFT,REJECTED&level=&search= → ReviewFeedback[]
@@ -185,7 +185,10 @@ export interface UsersService {
   update(id: string, input: UpdateUserInput): Promise<User>;
 }
 
-export type UpdateSettingsInput = Pick<InstitutionSettings, "instanceName" | "openSignup">;
+export type UpdateSettingsInput = Pick<
+  InstitutionSettings,
+  "instanceName" | "openSignup" | "conceptThresholds"
+>;
 
 export interface SettingsService {
   get(): Promise<InstitutionSettings>;

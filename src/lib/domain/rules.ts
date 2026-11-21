@@ -1,6 +1,7 @@
 import type {
   Attempt,
   Concept,
+  ConceptThresholds,
   Difficulty,
   Exercise,
   ExerciseSet,
@@ -80,27 +81,38 @@ export function getPublishIssues(set: ExerciseSet, exercises: Exercise[]): Publi
 /* ------------------------------------------------------------------ */
 
 /**
- * Faixas padrão de conceito por taxa de acerto (inclusivas).
- * Pendente de confirmação do PO; o backend é a fonte oficial do conceito.
+ * Limiares de conceito confirmados pelo PO/Jeferson (configuráveis por instituição):
+ * ND < 50 ≤ ED < 70 ≤ D < 90 ≤ PD. O backend é a fonte oficial do conceito.
  */
-export const CONCEPT_THRESHOLDS: { concept: Concept; min: number }[] = [
-  { concept: "PD", min: 90 },
-  { concept: "D", min: 70 },
-  { concept: "ED", min: 50 },
-  { concept: "ND", min: 0 },
-];
+export const DEFAULT_CONCEPT_THRESHOLDS: ConceptThresholds = { ED: 50, D: 70, PD: 90 };
 
-export function conceptFor(accuracyPercent: number): Concept {
-  return CONCEPT_THRESHOLDS.find((t) => accuracyPercent >= t.min)?.concept ?? "ND";
+export function conceptFor(
+  accuracyPercent: number,
+  thresholds: ConceptThresholds = DEFAULT_CONCEPT_THRESHOLDS,
+): Concept {
+  if (accuracyPercent >= thresholds.PD) return "PD";
+  if (accuracyPercent >= thresholds.D) return "D";
+  if (accuracyPercent >= thresholds.ED) return "ED";
+  return "ND";
+}
+
+const CONCEPT_RANK: Record<Concept, number> = { ND: 0, ED: 1, D: 2, PD: 3 };
+
+/** Melhor conceito entre as tentativas (null se nenhuma foi concluída). */
+export function bestOf(concepts: (Concept | null | undefined)[]): Concept | null {
+  return concepts.reduce<Concept | null>(
+    (best, c) => (c && (!best || CONCEPT_RANK[c] > CONCEPT_RANK[best]) ? c : best),
+    null,
+  );
 }
 
 /** O aluno pode refazer o nível se a tentativa concluída mais recente teve ND ou ED. */
-export function canRedoLevel(progress: Pick<LevelProgress, "status" | "concept">): boolean {
-  return (
-    progress.status === "COMPLETED" &&
-    !!progress.concept &&
-    REDO_CONCEPTS.includes(progress.concept)
-  );
+export function canRedoLevel(
+  progress: Pick<LevelProgress, "status" | "concept"> & { bestConcept?: Concept | null },
+): boolean {
+  // Vale o melhor conceito: refazer enquanto o melhor for ND ou ED.
+  const concept = progress.bestConcept ?? progress.concept;
+  return progress.status === "COMPLETED" && !!concept && REDO_CONCEPTS.includes(concept);
 }
 
 /* ------------------------------------------------------------------ */
@@ -237,6 +249,8 @@ export function filterAttempts<T extends Attempt>(attempts: T[], f: ResultsFilte
 export interface LevelCell {
   status: ProgressStatus;
   concept: Concept | null;
+  /** Melhor conceito entre as tentativas (o que vale). */
+  bestConcept: Concept | null;
   levelAttempt: number;
   canRedo: boolean;
 }
@@ -253,6 +267,7 @@ export interface StudentResultRow {
 const EMPTY_CELL: LevelCell = {
   status: "NOT_STARTED",
   concept: null,
+  bestConcept: null,
   levelAttempt: 0,
   canRedo: false,
 };
@@ -292,6 +307,7 @@ export function buildStudentRows(
           ? {
               status: best.status,
               concept: best.concept,
+              bestConcept: best.bestConcept ?? bestOf(best.history.map((h) => h.concept)),
               levelAttempt: best.levelAttempt,
               canRedo: canRedoLevel(best),
             }

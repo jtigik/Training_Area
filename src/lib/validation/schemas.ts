@@ -57,9 +57,25 @@ export const userFormSchema = z.object({
 });
 export type UserFormValues = z.infer<typeof userFormSchema>;
 
+const thresholdPercent = (label: string) =>
+  z
+    .number({ message: `Informe o mínimo de ${label}.` })
+    .int(`O mínimo de ${label} deve ser inteiro.`)
+    .min(1, `O mínimo de ${label} deve ficar entre 1 e 100.`)
+    .max(100, `O mínimo de ${label} deve ficar entre 1 e 100.`);
+
+/** Limiares de conceito (ND abaixo de ED); exige ED ≤ D ≤ PD, como o BE2. */
+export const conceptThresholdsSchema = z
+  .object({ ED: thresholdPercent("ED"), D: thresholdPercent("D"), PD: thresholdPercent("PD") })
+  .refine((t) => t.ED <= t.D && t.D <= t.PD, {
+    message: "Os mínimos devem seguir a ordem ED ≤ D ≤ PD.",
+    path: ["PD"],
+  });
+
 export const settingsFormSchema = z.object({
   instanceName: required("Nome da instância").max(80, "Use no máximo 80 caracteres."),
   openSignup: z.boolean(),
+  conceptThresholds: conceptThresholdsSchema,
 });
 export type SettingsFormValues = z.infer<typeof settingsFormSchema>;
 

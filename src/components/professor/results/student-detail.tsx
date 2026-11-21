@@ -85,17 +85,25 @@ export function StudentDetailPage({ id }: { id: string }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <LevelBadge level={p.level} />
                     <ProgressBadge status={p.status} />
-                    {p.concept ? <ConceptBadge concept={p.concept} /> : null}
+                    {(p.bestConcept ?? p.concept) ? (
+                      <ConceptBadge concept={(p.bestConcept ?? p.concept)!} />
+                    ) : null}
                   </div>
+                  {p.bestConcept || p.concept ? (
+                    <p className="text-sm" data-testid="level-concepts">
+                      Conceito que vale (melhor): <strong>{p.bestConcept ?? "—"}</strong> ·
+                      Tentativa atual: <strong>{p.concept ?? "em andamento"}</strong>
+                    </p>
+                  ) : null}
                   <p className="text-muted-foreground text-sm">
                     {setName(p.setId)} · {p.levelAttempt}ª tentativa do nível · {p.correct}/
                     {p.required} acertos
                   </p>
                   <p className="text-sm">
                     {eligible
-                      ? "Pode refazer o nível (conceito ND ou ED)."
+                      ? "Pode refazer o nível (melhor conceito ND ou ED)."
                       : p.status === "COMPLETED"
-                        ? "Concluído com D ou PD: refazer não se aplica."
+                        ? "Melhor conceito D ou PD: refazer não se aplica."
                         : "Refazer fica disponível ao concluir com ND ou ED."}
                   </p>
                   {eligible ? (

@@ -192,7 +192,18 @@ export function ResultsPage() {
                         {cell ? (
                           <div className="flex flex-wrap items-center gap-1.5">
                             <ProgressBadge status={cell.status} />
-                            {cell.concept ? <ConceptBadge concept={cell.concept} /> : null}
+                            {(cell.bestConcept ?? cell.concept) ? (
+                              <span title="Melhor conceito entre as tentativas (o que vale)">
+                                <ConceptBadge concept={(cell.bestConcept ?? cell.concept)!} />
+                              </span>
+                            ) : null}
+                            {cell.concept &&
+                            cell.bestConcept &&
+                            cell.concept !== cell.bestConcept ? (
+                              <span className="text-muted-foreground text-xs">
+                                última: {cell.concept}
+                              </span>
+                            ) : null}
                             {cell.levelAttempt > 1 ? (
                               <span className="text-muted-foreground text-xs">
                                 {cell.levelAttempt}ª vez

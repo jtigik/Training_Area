@@ -1,4 +1,5 @@
 import { validateAnswers } from "../../domain/grid";
+import { DEFAULT_CONCEPT_THRESHOLDS } from "../../domain/rules";
 import {
   canRedoLevel,
   filterAttempts,
@@ -200,6 +201,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
             tenantId: inst.id,
             instanceName: inst.name,
             openSignup: false,
+            conceptThresholds: { ...DEFAULT_CONCEPT_THRESHOLDS },
             locale: "pt-BR",
             updatedAt: now(),
           });
@@ -291,6 +293,9 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
       update: (input) =>
         delay(() => {
           const s = db.settings.find((x) => x.tenantId === tenant) ?? notFound("Configuração");
+          const t = input.conceptThresholds;
+          if (t && !(t.ED <= t.D && t.D <= t.PD))
+            throw new ApiError(422, "VALIDATION", "Os mínimos devem seguir a ordem ED ≤ D ≤ PD.");
           return Object.assign(s, input, { updatedAt: now() });
         }),
     },

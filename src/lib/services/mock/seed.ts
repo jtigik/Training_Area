@@ -1,3 +1,4 @@
+import { DEFAULT_CONCEPT_THRESHOLDS } from "../../domain/rules";
 import { parseCellInput } from "../../domain/grid";
 import type {
   SetExercise,
@@ -37,7 +38,7 @@ export interface MockDb {
   classrooms: Classroom[];
 }
 
-export const MOCK_DB_VERSION = 5;
+export const MOCK_DB_VERSION = 6;
 /** Instituição da sessão simulada (professor e admin da instituição). */
 export const MOCK_INSTITUTION_ID = "inst-1";
 
@@ -454,6 +455,7 @@ export function createSeed(): MockDb {
       required: 2,
       status: "COMPLETED",
       concept: "D",
+      bestConcept: "D",
       completedAt: "2026-11-13T15:00:00.000Z",
       history: [
         {
@@ -476,6 +478,7 @@ export function createSeed(): MockDb {
       required: 1,
       status: "IN_PROGRESS",
       concept: null,
+      bestConcept: null,
       completedAt: null,
       history: [{ levelAttempt: 1, done: 1, correct: 0, concept: null, completedAt: null }],
     },
@@ -490,6 +493,7 @@ export function createSeed(): MockDb {
       required: 2,
       status: "COMPLETED",
       concept: "ND",
+      bestConcept: "ND",
       completedAt: "2026-11-14T12:10:00.000Z",
       history: [
         {
@@ -512,6 +516,7 @@ export function createSeed(): MockDb {
       required: 1,
       status: "COMPLETED",
       concept: "PD",
+      bestConcept: "PD",
       completedAt: "2026-11-19T18:30:00.000Z",
       history: [
         {
@@ -520,6 +525,37 @@ export function createSeed(): MockDb {
           correct: 1,
           concept: "PD",
           completedAt: "2026-11-19T18:30:00.000Z",
+        },
+      ],
+    },
+    {
+      tenantId: "inst-1",
+      studentId: "u-al3",
+      setId: "set-1",
+      level: "PROFESSIONAL",
+      levelAttempt: 2,
+      done: 1,
+      correct: 0,
+      required: 1,
+      status: "COMPLETED",
+      // Rodada 2 foi pior (ED); vale o melhor conceito entre as rodadas (D).
+      concept: "ED",
+      bestConcept: "D",
+      completedAt: "2026-11-20T18:00:00.000Z",
+      history: [
+        {
+          levelAttempt: 1,
+          done: 1,
+          correct: 1,
+          concept: "D",
+          completedAt: "2026-11-19T19:00:00.000Z",
+        },
+        {
+          levelAttempt: 2,
+          done: 1,
+          correct: 0,
+          concept: "ED",
+          completedAt: "2026-11-20T18:00:00.000Z",
         },
       ],
     },
@@ -617,6 +653,7 @@ export function createSeed(): MockDb {
         tenantId: "inst-1",
         instanceName: "Escola Exemplo — Excel",
         openSignup: false,
+        conceptThresholds: { ...DEFAULT_CONCEPT_THRESHOLDS },
         locale: "pt-BR",
         updatedAt: T0,
       },
@@ -624,6 +661,7 @@ export function createSeed(): MockDb {
         tenantId: "inst-2",
         instanceName: "Beta Academy",
         openSignup: true,
+        conceptThresholds: { ...DEFAULT_CONCEPT_THRESHOLDS },
         locale: "pt-BR",
         updatedAt: T0,
       },
