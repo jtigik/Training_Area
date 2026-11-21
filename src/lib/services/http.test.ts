@@ -69,13 +69,11 @@ describe("http: importação .xlsx", () => {
         message: "Sem gabarito",
       },
     ];
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ error: { code: "IMPORT_INVALID" }, errors }), {
-          status: 422,
-        }),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "IMPORT_INVALID" }, errors }), {
+        status: 422,
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const s = createHttpServices();
     const file = new File(["x"], "a.xlsx");
