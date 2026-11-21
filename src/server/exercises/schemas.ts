@@ -30,6 +30,8 @@ export const gradingRulesSchema = z
     allowConstants: z.boolean().optional(),
     requireCellReference: z.boolean().optional(),
     forbidLiteralExpectedValue: z.boolean().optional(),
+    sensitivityCheck: z.boolean().optional(),
+    allowVolatileFunctions: z.boolean().optional(),
   })
   .strict();
 

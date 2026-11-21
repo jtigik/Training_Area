@@ -48,6 +48,12 @@ export interface ExerciseDefinition {
   requiredFunctionsMode?: "all" | "any";
   /** Functions the formula must NOT use. */
   forbiddenFunctions?: string[];
+  /**
+   * Allow volatile functions (RAND/ALEATÓRIO, RANDBETWEEN/ALEATÓRIOENTRE, NOW/AGORA,
+   * TODAY/HOJE, RANDARRAY). Default `false` (PO decision 21/11/2026): answer keys using them
+   * are rejected by `validateExercise` and submissions using them get `VOLATILE_FUNCTION`.
+   */
+  allowVolatileFunctions?: boolean;
   /** Accept a plain constant (no leading '='). Default `false`. */
   allowConstants?: boolean;
   /**
@@ -107,6 +113,7 @@ export type FeedbackCode =
   | "MISSING_REQUIRED_FUNCTION"
   | "INPUT_INSENSITIVE"
   | "FORBIDDEN_FUNCTION"
+  | "VOLATILE_FUNCTION"
   | "UNSUPPORTED_FUNCTION"
   | "HARDCODED_VALUE"
   | "FORMULA_REQUIRED"

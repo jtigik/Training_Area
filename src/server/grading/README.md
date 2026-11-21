@@ -41,7 +41,8 @@ return toStudentResult(result); // nunca envie expectedValue ao aluno (TA-022)
 `normalizedFormula`, `elapsedMs`.
 
 `feedbackCode` (ordem de prioridade): `INVALID_EXERCISE`, `EMPTY_SUBMISSION`, `LIMIT_EXCEEDED`,
-`FORMULA_REQUIRED`, `PARSE_ERROR`, `UNSUPPORTED_FUNCTION`, `FORBIDDEN_FUNCTION`, `HARDCODED_VALUE`,
+`FORMULA_REQUIRED`, `PARSE_ERROR`, `UNSUPPORTED_FUNCTION`, `FORBIDDEN_FUNCTION`, `VOLATILE_FUNCTION`,
+`HARDCODED_VALUE`,
 `FORMULA_ERROR`, `WRONG_TYPE`, `WRONG_VALUE`, `INPUT_INSENSITIVE`, `MISSING_REQUIRED_FUNCTION`,
 `CORRECT`.
 
@@ -78,13 +79,17 @@ return toStudentResult(result); // nunca envie expectedValue ao aluno (TA-022)
   não vira data). Um apóstrofo inicial segue a convenção do Excel (`"'10"` = texto `10`); use `''` para um
   apóstrofo literal. Números, booleanos e `{ date }` mantêm seus tipos.
 - Aritmética de matriz no estilo Excel 365 (`=SOMA(A1:A3*1)`) é aceita (`useArrayArithmetic`).
+- **Funções voláteis proibidas por padrão** (decisão do PO): `ALEATÓRIO`/RAND, `ALEATÓRIOENTRE`/RANDBETWEEN,
+  `AGORA`/NOW, `HOJE`/TODAY (e RANDARRAY). Resposta do aluno com uma delas → `VOLATILE_FUNCTION`;
+  gabarito (ou `referenceFormula`) com uma delas → `validateExercise` inválido com código
+  `VOLATILE_FUNCTION` (e `gradeSubmission` → `INVALID_EXERCISE`). `allowVolatileFunctions: true` libera.
 - Todas as funções do HyperFormula são permitidas por padrão (`allowedFunctions` restringe, se informado).
 
 ## pt-BR e separadores
 
 - Nomes de função em pt-BR (dicionário `ptPT` do HyperFormula, que segue os nomes do Excel brasileiro:
   SOMA, PROCV, CONT.SE, ARRUMAR…), também sem acento (`MEDIA`).
-- Apelidos pt-BR que o dicionário não traz: `SES`→IFS, `SENÃODISP`→IFNA, `PARÂMETRO`→SWITCH,
+- Apelidos pt-BR que o dicionário não traz: `SES`→IFS, `SENÃODISP`→IFNA, `HIPERLINK`→HYPERLINK, `PARÂMETRO`→SWITCH,
   `MÁXIMOSES`/`MÍNIMOSES`, `FILTRO`, `ÚNICO`, `CLASSIFICAR`, `SEQUÊNCIA`, `DATADIF`… (com e sem acento;
   só os que o HyperFormula implementa — `MÉDIASES`, `CORRESPX`, `ORDEM`, `CONCAT` continuam sem suporte).
 - `locale: "auto"` (padrão): se houver `;` fora de strings/arrays, `;` vira separador de argumentos e
@@ -131,3 +136,10 @@ O schema do Backend 1 guarda vários alvos por exercício (`expectedResult: [{ c
 `fromSchemaExercise(initialSheet, expectedResult, rules?)` converte esse JSON e `gradeMultiCellSubmission`
 corrige todos os alvos. Os gabaritos são resolvidos com todos os gabaritos preenchidos; as respostas do aluno
 para outros alvos entram na planilha (um alvo pode depender de outro). Células fora dos alvos são ignoradas.
+
+## Dataset de regressão do QA (`dataset.test.ts`)
+
+Cópia do dataset de 157 fórmulas (`__fixtures__/qa-dataset`, origem `qa/excel_formulas`). Divergências
+do oráculo **por design** (decisões do PO de 21/11/2026): F-050, F-118, F-120, F-122 →
+`INPUT_INSENSITIVE` (teste de sensibilidade). Todo o resto bate com o oráculo (inclusive os casos
+de `VOLATILE_FUNCTION` e de aritmética de matriz).

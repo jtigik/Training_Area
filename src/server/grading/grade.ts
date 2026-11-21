@@ -214,10 +214,23 @@ function resolveReference(exercise: ExerciseDefinition, formula: string, ctx: Co
   return { ...ev, normalized: normalizeFormula(formula, ctx.options.locale ?? "auto") };
 }
 
+function assertNoForbiddenVolatile(exercise: ExerciseDefinition, used: readonly string[]): void {
+  if (exercise.allowVolatileFunctions) return;
+  const volatile = used.filter((f) => FORBIDDEN_VOLATILE_FUNCTIONS.has(f));
+  if (volatile.length > 0) {
+    throw new GradingFailure(
+      "EXERCISE",
+      "VOLATILE_FUNCTION",
+      `Answer key uses volatile functions (not allowed by default): ${volatile.join(", ")}`,
+    );
+  }
+}
+
 function resolveExpected(exercise: ExerciseDefinition, ctx: Context): ResolvedExpected {
   const exp = exercise.expected as { value?: unknown; formula?: unknown } | undefined;
   if (exp && typeof exp.formula === "string") {
     const ev = resolveReference(exercise, exp.formula, ctx);
+    assertNoForbiddenVolatile(exercise, ev.usedFunctions);
     if (ev.errors.length > 0 || ev.value === null || ev.type === "error") {
       const detail = ev.errors[0]?.code ?? "no value";
       throw new GradingFailure(
@@ -243,6 +256,7 @@ function resolveExpected(exercise: ExerciseDefinition, ctx: Context): ResolvedEx
     }
     if (typeof exercise.referenceFormula === "string" && exercise.referenceFormula.trim()) {
       const ev = resolveReference(exercise, exercise.referenceFormula, ctx);
+      assertNoForbiddenVolatile(exercise, ev.usedFunctions);
       return {
         value,
         unsupported: ev.unsupportedFunctions,
@@ -449,6 +463,9 @@ export function gradeSubmission(
   if (ev.errors.some((e) => e.kind === "LIMIT")) return finish("LIMIT_EXCEEDED");
   if (result.unsupportedFunctions.length > 0) return finish("UNSUPPORTED_FUNCTION");
   if (result.forbiddenFunctionsUsed.length > 0) return finish("FORBIDDEN_FUNCTION");
+  if (!exercise.allowVolatileFunctions && used.some((f) => FORBIDDEN_VOLATILE_FUNCTIONS.has(f))) {
+    return finish("VOLATILE_FUNCTION");
+  }
 
   // When the reference formula itself contains a literal equal to the expected value
   // (e.g. `=A1*2` → 2, or `=IF(C1>=60,"Aprovado",…)` → "Aprovado"), that literal is part of
@@ -489,6 +506,16 @@ export function gradeSubmission(
   return finish("CORRECT");
 }
 
+/** Volatile functions forbidden by default (`allowVolatileFunctions`). */
+export const FORBIDDEN_VOLATILE_FUNCTIONS: ReadonlySet<string> = new Set([
+  "RAND",
+  "RANDBETWEEN",
+  "RANDARRAY",
+  "NOW",
+  "TODAY",
+]);
+
+/** Functions whose result does not depend only on the cell inputs (sensitivity check skips). */
 const VOLATILE_FUNCTIONS = new Set([
   "NOW",
   "TODAY",

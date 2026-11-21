@@ -84,20 +84,21 @@ describe("teste de sensibilidade (fórmula que ignora a entrada)", () => {
       sheet: { A1: 1 },
       targetCell: "B1",
       expected: { formula: "=TODAY()" },
+      allowVolatileFunctions: true,
     };
     const r = gradeSubmission(today, "=TODAY()");
     expect(r.correct).toBe(true);
     expect(r.sensitivity.skippedReason).toBe("VOLATILE_FUNCTION");
   });
 
-  it("gabarito sem referência a células (=TODAY()) passa na autoverificação", () => {
-    const today: ExerciseDefinition = {
+  it("gabarito sem referência a células (=PI()*2) passa na autoverificação", () => {
+    const pi: ExerciseDefinition = {
       sheet: [],
       targetCell: "A1",
-      expected: { formula: "=TODAY()" },
+      expected: { formula: "=PI()*2" },
     };
-    expect(validateExercise(today).valid).toBe(true);
-    expect(gradeSubmission(today, "=HOJE()").correct).toBe(true);
+    expect(validateExercise(pi).valid).toBe(true);
+    expect(gradeSubmission(pi, "=2*PI()").correct).toBe(true);
     // with a cell-referencing key, a formula without references is still rejected
     expect(gradeSubmission({ ...sum, forbidLiteralExpectedValue: true }, "=60").feedbackCode).toBe(
       "HARDCODED_VALUE",
@@ -160,5 +161,52 @@ describe("aritmética de matriz (Excel 365)", () => {
   it("=SUM(A1:A3*1) e =SUMPRODUCT funcionam sem CSE", () => {
     expect(gradeSubmission(sum, "=SUM(A1:A3*1)").correct).toBe(true);
     expect(gradeSubmission(sum, "=SOMA(A1:A3*1)").correct).toBe(true);
+  });
+});
+
+describe("funções voláteis (proibidas por padrão)", () => {
+  const dateEx: ExerciseDefinition = {
+    sheet: { A1: 2026 },
+    targetCell: "B1",
+    expected: { formula: "=A1+1" },
+  };
+  it.each([
+    "=YEAR(HOJE())+1",
+    "=ANO(TODAY())+1",
+    "=YEAR(AGORA())+1",
+    "=A1+1+ALEATÓRIO()*0",
+    "=ALEATORIOENTRE(1;1)*A1+1",
+  ])("%s → VOLATILE_FUNCTION", (f) => {
+    expect(gradeSubmission(dateEx, f).feedbackCode).toBe("VOLATILE_FUNCTION");
+  });
+  it("gabarito com HOJE/ALEATÓRIO é rejeitado por validateExercise", () => {
+    for (const key of ["=TODAY()", "=HOJE()-A1", "=RAND()", "=RANDBETWEEN(1,6)", "=NOW()"]) {
+      const v = validateExercise({
+        sheet: { A1: 1 },
+        targetCell: "B1",
+        expected: { formula: key },
+      });
+      expect(v.valid, key).toBe(false);
+      expect(v.errors[0]?.code).toBe("VOLATILE_FUNCTION");
+    }
+    const ref = validateExercise({
+      sheet: { A1: 1 },
+      targetCell: "B1",
+      expected: { value: 1 },
+      referenceFormula: "=TODAY()*0+A1",
+    });
+    expect(ref.errors[0]?.code).toBe("VOLATILE_FUNCTION");
+  });
+  it("allowVolatileFunctions libera", () => {
+    const r = gradeSubmission({ ...dateEx, allowVolatileFunctions: true }, "=A1+1+0*HOJE()");
+    expect(r.feedbackCode).not.toBe("VOLATILE_FUNCTION");
+  });
+  it("HIPERLINK é aceito (ENG-001)", () => {
+    const ex: ExerciseDefinition = {
+      sheet: { A1: "https://x.y" },
+      targetCell: "B1",
+      expected: { formula: '=HYPERLINK(A1,"site")' },
+    };
+    expect(gradeSubmission(ex, '=HIPERLINK(A1;"site")').correct).toBe(true);
   });
 });
