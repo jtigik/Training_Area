@@ -105,18 +105,20 @@ model Tenant {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  users            User[]
-  invitations      Invitation[]
-  classrooms       Classroom[]
-  classroomMembers ClassroomMember[]
-  contentSections  ContentSection[]
-  exerciseSets     ExerciseSet[]
-  levels           Level[]
-  exercises        Exercise[]
-  quotas           ExerciseQuota[]
-  levelAttempts    LevelAttempt[]
-  exerciseAttempts ExerciseAttempt[]
-  feedbacks        Feedback[]
+  users                User[]
+  invitations          Invitation[]
+  classrooms           Classroom[]
+  classroomMembers     ClassroomMember[]
+  contentSections      ContentSection[]
+  exerciseSets         ExerciseSet[]
+  levels               Level[]
+  exercises            Exercise[]
+  quotas               ExerciseQuota[]
+  levelAttempts        LevelAttempt[]
+  exerciseAttempts     ExerciseAttempt[]
+  feedbacks            Feedback[]
+  tenantGradingConfigs TenantGradingConfig[]
+  conceptOverrides     ConceptOverride[]
 
   @@map("tenants")
 }
@@ -140,21 +142,22 @@ model User {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  tenant               Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  sessions             Session[]
-  accounts             Account[]
-  invitationsSent      Invitation[]      @relation("InvitationInviter")
-  classroomMemberships ClassroomMember[]
-  classroomsTaught     Classroom[]       @relation("ClassroomTeacher")
-  authoredSections     ContentSection[]  @relation("SectionAuthor")
-  authoredSets         ExerciseSet[]     @relation("ExerciseSetAuthor")
-  authoredExercises    Exercise[]        @relation("ExerciseAuthor")
-  quotas               ExerciseQuota[]   @relation("QuotaStudent")
-  levelAttempts        LevelAttempt[]    @relation("LevelAttemptStudent")
-  gradedLevelAttempts  LevelAttempt[]    @relation("LevelAttemptGrader")
-  exerciseAttempts     ExerciseAttempt[]
-  feedbacks            Feedback[]        @relation("FeedbackStudent")
-  reviewedFeedbacks    Feedback[]        @relation("FeedbackReviewer")
+  tenant                  Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  sessions                Session[]
+  accounts                Account[]
+  invitationsSent         Invitation[]      @relation("InvitationInviter")
+  classroomMemberships    ClassroomMember[]
+  classroomsTaught        Classroom[]       @relation("ClassroomTeacher")
+  authoredSections        ContentSection[]  @relation("SectionAuthor")
+  authoredSets            ExerciseSet[]     @relation("ExerciseSetAuthor")
+  authoredExercises       Exercise[]        @relation("ExerciseAuthor")
+  quotas                  ExerciseQuota[]   @relation("QuotaStudent")
+  levelAttempts           LevelAttempt[]    @relation("LevelAttemptStudent")
+  overriddenLevelAttempts LevelAttempt[]    @relation("LevelAttemptOverrider")
+  conceptOverrides        ConceptOverride[]
+  exerciseAttempts        ExerciseAttempt[]
+  feedbacks               Feedback[]        @relation("FeedbackStudent")
+  reviewedFeedbacks       Feedback[]        @relation("FeedbackReviewer")
 
   @@index([tenantId, role])
   @@map("users")
@@ -420,42 +423,92 @@ model ExerciseQuota {
 // ---------------------------------------------------------------------------
 
 /// Tentativa do aluno em um NÍVEL, com conceito formal (ND/ED/D/PD).
-/// Refazer: nova tentativa (attemptNumber + 1) só se a anterior terminou com
-/// ND ou ED (canRetryLevel em src/lib/grading.ts).
+/// Conceito: calculado automaticamente pela taxa de acerto (computedConcept,
+/// faixas de TenantGradingConfig, snapshot em gradingBands) ao concluir; o
+/// professor pode ajustar com justificativa obrigatória (override*), registrada
+/// também em ConceptOverride. `concept` = conceito final vigente.
+/// Refazer: nova tentativa (attemptNumber + 1) só se o conceito final da última
+/// concluída for ND ou ED (decideStartLevel em src/lib/grading.ts).
 model LevelAttempt {
-  id             String             @id @default(cuid())
-  tenantId       String             @map("tenant_id")
-  studentId      String             @map("student_id")
-  levelId        String             @map("level_id")
+  id              String             @id @default(cuid())
+  tenantId        String             @map("tenant_id")
+  studentId       String             @map("student_id")
+  levelId         String             @map("level_id")
   /// 1, 2, 3...
-  attemptNumber  Int                @map("attempt_number")
-  status         LevelAttemptStatus @default(IN_PROGRESS)
-  /// Nulo até a conclusão/avaliação.
-  concept        GradeConcept?
+  attemptNumber   Int                @map("attempt_number")
+  status          LevelAttemptStatus @default(IN_PROGRESS)
+  /// Conceito final (computado ou ajustado). Nulo até a conclusão.
+  concept         GradeConcept?
+  /// Conceito calculado pelas faixas no momento da conclusão.
+  computedConcept GradeConcept?      @map("computed_concept")
+  /// Faixas usadas no cálculo: { edMinPercent, dMinPercent, pdMinPercent }.
+  gradingBands    Json?              @map("grading_bands")
   /// Snapshot da cota resolvida ao iniciar.
-  requiredCount  Int?               @map("required_count")
-  completedCount Int                @default(0) @map("completed_count")
-  correctCount   Int                @default(0) @map("correct_count")
-  startedAt      DateTime           @default(now()) @map("started_at")
-  completedAt    DateTime?          @map("completed_at")
-  gradedAt       DateTime?          @map("graded_at")
-  /// Professor que atribuiu/confirmou o conceito (nulo = automático).
-  gradedById     String?            @map("graded_by_id")
-  createdAt      DateTime           @default(now()) @map("created_at")
-  updatedAt      DateTime           @updatedAt @map("updated_at")
+  requiredCount   Int?               @map("required_count")
+  completedCount  Int                @default(0) @map("completed_count")
+  correctCount    Int                @default(0) @map("correct_count")
+  startedAt       DateTime           @default(now()) @map("started_at")
+  completedAt     DateTime?          @map("completed_at")
+  /// Quando computedConcept foi calculado.
+  gradedAt        DateTime?          @map("graded_at")
+  /// Ajuste manual do professor (os três juntos — CHECK).
+  overriddenById  String?            @map("overridden_by_id")
+  overrideReason  String?            @map("override_reason")
+  overriddenAt    DateTime?          @map("overridden_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
 
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   student          User              @relation("LevelAttemptStudent", fields: [studentId], references: [id], onDelete: Cascade)
   level            Level             @relation(fields: [levelId], references: [id], onDelete: Cascade)
-  gradedBy         User?             @relation("LevelAttemptGrader", fields: [gradedById], references: [id], onDelete: SetNull)
+  overriddenBy     User?             @relation("LevelAttemptOverrider", fields: [overriddenById], references: [id], onDelete: SetNull)
   exerciseAttempts ExerciseAttempt[]
   feedback         Feedback?
+  conceptOverrides ConceptOverride[]
 
   @@unique([studentId, levelId, attemptNumber])
   /// No máximo uma tentativa em andamento por aluno e nível.
   @@unique([studentId, levelId], map: "level_attempts_one_in_progress_key", where: { status: "IN_PROGRESS" })
   @@index([tenantId, levelId, status])
   @@map("level_attempts")
+}
+
+/// Faixas de conceito da instituição (percentual mínimo de acerto, inclusivo).
+/// ND < edMinPercent <= ED < dMinPercent <= D < pdMinPercent <= PD.
+/// Sem linha = padrão da plataforma (50/70/90 — DEFAULT_GRADING_BANDS).
+model TenantGradingConfig {
+  tenantId     String   @id @map("tenant_id")
+  edMinPercent Int      @default(50) @map("ed_min_percent")
+  dMinPercent  Int      @default(70) @map("d_min_percent")
+  pdMinPercent Int      @default(90) @map("pd_min_percent")
+  updatedById  String?  @map("updated_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_grading_configs")
+}
+
+/// Auditoria imutável de ajustes manuais de conceito (um registro por ajuste).
+model ConceptOverride {
+  id             String       @id @default(cuid())
+  tenantId       String       @map("tenant_id")
+  levelAttemptId String       @map("level_attempt_id")
+  /// Conceito vigente antes do ajuste.
+  fromConcept    GradeConcept @map("from_concept")
+  toConcept      GradeConcept @map("to_concept")
+  /// Justificativa obrigatória (mín. 10 caracteres — CHECK).
+  reason         String
+  overriddenById String?      @map("overridden_by_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  levelAttempt LevelAttempt @relation(fields: [levelAttemptId], references: [id], onDelete: Cascade)
+  overriddenBy User?        @relation(fields: [overriddenById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, levelAttemptId, createdAt])
+  @@map("concept_overrides")
 }
 
 /// Envio de resposta a um exercício dentro de uma LevelAttempt (testes locais

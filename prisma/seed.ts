@@ -208,6 +208,13 @@ async function main() {
     create: DEMO_TENANT,
   });
 
+  // Faixas de conceito padrão da plataforma, explícitas para a instituição demo.
+  await prisma.tenantGradingConfig.upsert({
+    where: { tenantId: DEMO_TENANT.id },
+    update: {},
+    create: { tenantId: DEMO_TENANT.id, edMinPercent: 50, dMinPercent: 70, pdMinPercent: 90 },
+  });
+
   const users = new Map<string, { id: string }>();
   for (const seed of SEED_USERS) {
     const user = await seedUser(seed);
