@@ -18,15 +18,17 @@ permissions:
 env:
   NEXT_TELEMETRY_DISABLED: 1
   DATABASE_URL: postgresql://training:training@localhost:5432/training_area?schema=public
-  AUTH_SECRET: ${{ secrets.AUTH_SECRET || 'ci-only-insecure-auth-secret-do-not-use' }}
-  AUTH_URL: http://localhost:3000
-  AUTH_GOOGLE_ID: ${{ secrets.AUTH_GOOGLE_ID || 'ci-google-client-id' }}
-  AUTH_GOOGLE_SECRET: ${{ secrets.AUTH_GOOGLE_SECRET || 'ci-google-client-secret' }}
-  AUTH_MICROSOFT_ENTRA_ID_ID: ${{ secrets.AUTH_MICROSOFT_ENTRA_ID_ID || 'ci-entra-client-id' }}
-  AUTH_MICROSOFT_ENTRA_ID_SECRET: ${{ secrets.AUTH_MICROSOFT_ENTRA_ID_SECRET || 'ci-entra-client-secret' }}
-  AUTH_MICROSOFT_ENTRA_ID_ISSUER: https://login.microsoftonline.com/common/v2.0
+  # Better Auth. Valores fictícios só para CI quando o secret não existe (não são segredos reais).
+  BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET || 'ci-only-not-a-real-secret-0123456789abcdef' }}
+  BETTER_AUTH_URL: http://localhost:3000
+  GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID || 'ci-google-client-id' }}
+  GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET || 'ci-google-client-secret' }}
+  MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID || 'ci-microsoft-client-id' }}
+  MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET || 'ci-microsoft-client-secret' }}
+  MICROSOFT_TENANT_ID: common
   AI_PROVIDER: mock
   AI_API_KEY: ""
+  AI_BASE_URL: ""
   AI_MODEL: ""
   TENANT_RESOLUTION: single
   DEFAULT_TENANT_SLUG: default

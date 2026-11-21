@@ -29,7 +29,7 @@ cp .env.example .env         # ajuste se precisar (veja "Variáveis de ambiente"
 npm ci                       # instala dependências e gera o Prisma Client (postinstall)
 npm run db:up                # sobe o PostgreSQL e espera o healthcheck
 npm run db:migrate           # aplica as migrações (prisma migrate dev)
-npm run db:seed              # opcional: cria o admin inicial admin@training-area.local
+npm run db:seed              # instituição demo, 1 usuário por papel e banco global de exercícios
 npm run dev                  # http://localhost:3000
 ```
 
@@ -73,6 +73,183 @@ Com `CI=1`, o Playwright usa o build de produção (rode `npm run build` antes).
 | `db:seed`                               | Executa `prisma/seed.ts`                                                        |
 | `db:studio`                             | Abre o Prisma Studio                                                            |
 | `db:reset`                              | Recria o banco do zero (apaga dados!)                                           |
+
+## Autenticação, papéis e multi-tenant
+
+Login via [Better Auth](https://www.better-auth.com) (`src/server/auth/auth.ts`, rota `/api/auth/*`).
+
+- **Lançamento:** Google e Microsoft. Cada provedor liga quando `GOOGLE_CLIENT_ID/SECRET` ou `MICROSOFT_CLIENT_ID/SECRET` estão no `.env` (veja `.env.example`; URIs de callback `${BETTER_AUTH_URL}/api/auth/callback/google|microsoft`).
+- **OAuth mockado (E2E):** `AUTH_OAUTH_MOCK_BASE_URL`, veja abaixo.
+- **E-mail e senha:** só para dev/teste, com `AUTH_EMAIL_PASSWORD_ENABLED=true` (ignorado em produção, exceto com `AUTH_TEST_MODE=1` — ver abaixo). Cadastro por e-mail fica desligado; as contas vêm do seed.
+- **Primeiro login social:** o usuário entra na instituição de um convite pendente (`invitations`) ou, se a instituição tiver `autoJoinByDomain`, pelo domínio do e-mail (como Aluno). Sem vínculo, o login é recusado.
+- `BETTER_AUTH_SECRET` é obrigatório (gere com `openssl rand -base64 32`): em produção o boot recusa vazio, placeholder (`troque…`, `changeme`, `placeholder`, `example`…) e menos de 32 caracteres. No `.env.example` ela vem vazia de propósito. `BETTER_AUTH_URL` é a URL pública do app.
+- **Modo de teste em build de produção (CI/E2E):** `AUTH_TEST_MODE=1` libera `AUTH_EMAIL_PASSWORD_ENABLED` e `AUTH_OAUTH_MOCK_BASE_URL` com `NODE_ENV=production` (o E2E da CI roda `npm run start`; `e2e/support/env.ts` já passa a variável). **Marcador de deploy real:** `APP_ENV=production` (ou `DEPLOY_ENV=production`) — defina no ambiente de staging/produção de verdade. Com o marcador, `AUTH_TEST_MODE=1` faz o boot **falhar** (`validateServerEnv`, `src/instrumentation.ts`). Variáveis de teste em produção sem `AUTH_TEST_MODE` são ignoradas e geram **aviso** no log.
+- **Callback OAuth:** `${BETTER_AUTH_URL}/api/auth/callback/{id}` nos dois modos (nativo e mock/genericOAuth). No better-auth 1.7.27 o genericOAuth usa o endpoint core `/callback/:id` (`node_modules/better-auth/dist/plugins/generic-oauth/index.mjs:106`, `dist/api/routes/callback.mjs:24`, `dist/oauth2/utils.mjs:29`); `/api/auth/oauth2/callback/{id}` não existe nesta versão.
+
+### OAuth mockado (E2E)
+
+Com `AUTH_OAUTH_MOCK_BASE_URL` (ex.: `http://localhost:3199`) e fora de produção, Google e Microsoft são registrados pelo plugin `genericOAuth` do Better Auth com os mesmos ids, no lugar dos provedores nativos (nunca os dois ao mesmo tempo). O cliente não muda: `authClient.signIn.social({ provider: "google" | "microsoft" })` (no Better Auth 1.7 o genericOAuth usa o fluxo social; não existe `signIn.oauth2`). A lista de botões vem de `GET /api/login-options` (público) ou `getLoginOptions()` no servidor.
+
+Contrato do provedor falso (para cada `{id}` em `google`, `microsoft`):
+
+| Endpoint                    | O app envia                                                                                                       | O mock responde                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `GET {base}/{id}/authorize` | `response_type=code`, `client_id`, `redirect_uri`, `state`, `scope=openid email profile`, `code_challenge` (S256) | `302` para `redirect_uri?code=…&state=…` (mesmo `state`)                                             |
+| `POST {base}/{id}/token`    | form: `grant_type=authorization_code`, `code`, `code_verifier`, `redirect_uri`, `client_id`, `client_secret`      | JSON `{ "access_token", "token_type": "Bearer", "expires_in" }` (sem `id_token`)                     |
+| `GET {base}/{id}/userinfo`  | `Authorization: Bearer <access_token>`                                                                            | JSON `{ "sub", "email", "email_verified": true, "name", "picture" }` (`id` aceito no lugar de `sub`) |
+
+Callback: `${BETTER_AUTH_URL}/api/auth/callback/{id}`. As regras de vínculo valem igual: e-mail de usuário existente (ex.: seed) é vinculado à conta (provedores confiáveis); e-mail novo precisa de convite pendente ou domínio da instituição com `autoJoinByDomain`; sem vínculo o callback **redireciona** para `/login?error=ACCOUNT_NOT_REGISTERED` (mensagem: "Sua conta não está cadastrada nesta instituição. Fale com seu professor ou administrador."). Outros erros do callback (provedor negou, state expirado, conta desativada `ACCOUNT_DISABLED`) também voltam para `/login?error=<código>` (`onAPIError.errorURL`). A tela usa `authErrorMessage(code)` de `src/lib/auth-errors.ts`; chamadas JSON em `/api/*` continuam 401/403.
+
+**Papéis:** `SUPER_ADMIN` (plataforma, sem instituição), `INSTITUTION_ADMIN`, `PROFESSOR`, `ALUNO`.
+
+Cada área é exclusiva de um papel (sem "prévia do aluno" para PROFESSOR no MVP):
+
+| Rota                                                  | Acesso                         |
+| ----------------------------------------------------- | ------------------------------ |
+| `/super-admin`, `/api/super-admin`                    | SUPER_ADMIN                    |
+| `/api/admin/grading-config`, `/api/admin/invitations` | INSTITUTION_ADMIN, SUPER_ADMIN |
+| `/admin`, `/api/admin` (demais)                       | INSTITUTION_ADMIN              |
+| `/professor`, `/api/professor`                        | PROFESSOR                      |
+| `/aluno`, `/api/aluno`                                | ALUNO                          |
+| `/api/me`                                             | qualquer sessão                |
+
+As regras ficam em `src/lib/authz/route-rules.ts` e são aplicadas por `src/proxy.ts`: página sem sessão → `/login?callbackUrl=…`; API sem sessão → 401 `UNAUTHENTICATED`; **página de outra área → redireciona para a home do próprio papel** (ALUNO → `/aluno`, PROFESSOR → `/professor`, INSTITUTION_ADMIN → `/admin`, SUPER_ADMIN → `/super-admin`); **API de outra área → 403 `FORBIDDEN`** no envelope padrão. Nível fora do MVP em `/aluno/niveis/:nivel` → 404. **A proxy não basta:** todo route handler e server action deve chamar:
+
+```ts
+import { requireTenant } from "@/server/auth/tenant";
+const { tenantId, user } = await requireTenant(["PROFESSOR"]);
+await prisma.exerciseSet.findMany({ where: { tenantId } }); // sempre filtre pelo tenant
+```
+
+`requireTenant` usa o `tenantId` da sessão; só o SUPER_ADMIN atravessa instituições e precisa informar `requestedTenantId`. Também existem `requireSession`/`requireRole` (`src/server/auth/session.ts`). Feedback para o aluno: use `listApprovedFeedbackForStudent` (`src/server/feedback/student.ts`), que só devolve feedback `APPROVED`.
+
+#### Formato de erro das APIs
+
+Todas as rotas `/api/*` do app (exceto `/api/auth/*`, que é do Better Auth) respondem erros como:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Dados inválidos",
+    "details": [{ "path": "email", "message": "E-mail inválido" }]
+  }
+}
+```
+
+- `code` é estável (decida por ele no front); `message` vem pronta em pt-BR; `details` é opcional.
+- Códigos genéricos: `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `SCOPE_DENIED` (403), `NOT_FOUND` (404), `VALIDATION_ERROR` (400), `CONFLICT` (409); serviços usam códigos próprios (`LAST_ADMIN`, `EMAIL_IN_USE`, `LEVEL_LOCKED`...).
+- Helpers em `src/lib/api-error.ts`: `ApiError` (lance nos serviços), `apiError()`, `validationError(zodIssues)`, `isApiErrorBody()` (cliente). Nas rotas: `try { ... } catch (e) { return handleApiError(e) }` (`src/server/api-response.ts`).
+
+### Sessão no cliente e `/api/me`
+
+- `GET /api/me` → `{ user: { id, name, email, role, tenantId, tenant: { id, name, slug } | null } }` (401 sem sessão).
+- `GET /api/auth/get-session` / `authClient.useSession()` → `{ user: { ...campos do Better Auth, role, tenantId, active, tenant }, session }` (ou `null`), via plugin `customSession` + `customSessionClient`.
+- `tenant` é `null` só para SUPER_ADMIN. O resumo fica em cache por 60 s por processo
+  (`src/server/auth/tenant-summary.ts`); chame `invalidateTenantSummary(id)` ao renomear.
+
+## Desbloqueio de níveis (por conjunto)
+
+Ordem: **Fundamental → Profissional → Avançado** (`DASHBOARD` é ignorado no MVP).
+Regra pura em `src/lib/level-unlock.ts` (`computeLevelUnlocks`), aplicada pelos serviços
+`startLevelAttempt` / `getSetProgress` (`src/server/levels/start.ts`). **As rotas HTTP do aluno
+(`/api/aluno/...`) são do Backend 2**; este módulo exporta só os serviços
+(`startLevelAttempt`, `drawForLevelAttempt`, `listAttemptExercises`, `getSetProgress`;
+conclusão em `completeLevelAttempt(db, levelAttemptId)`, `src/server/grading/service.ts`).
+
+- só conjuntos **PUBLICADOS**: rascunho/arquivado → 404 `NOT_FOUND` (dentro dos serviços);
+- o primeiro nível existente do conjunto está sempre aberto;
+- vale o **conceito efetivo** = ajuste do professor (`concept`) senão o calculado (`computedConcept`).
+  O próximo nível abre quando o **melhor conceito efetivo** do anterior é **D ou PD**;
+  ND/ED permitem refazer (nova `attemptNumber`, sem herdar ajuste); D/PD encerram o nível;
+- erros 409: `LEVEL_LOCKED`, `LEVEL_IN_PROGRESS`, `LEVEL_AWAITING_GRADE`, `LEVEL_ALREADY_PASSED`,
+  `LEVEL_NOT_AVAILABLE` (DASHBOARD), `EMPTY_POOL`.
+
+**Cota por nível E por dificuldade** (`ExerciseQuota.difficulty` obrigatório; `src/lib/quota.ts`):
+para cada dificuldade do conjunto vale aluno > turma (maior) > padrão do nível. Se o nível tem
+alguma cota, dificuldade sem linha = 0; sem nenhuma cota, padrão de **3 por dificuldade**. O total
+é a soma. **Falta de exercícios:** sorteia o que existe em cada dificuldade e devolve
+`shortfalls: [{ difficulty, required, available }]`; `EMPTY_POOL` só quando nada pode ser sorteado
+(ou total 0). Sorteio congelado em `LevelAttemptExercise`; resposta só com campos de aluno.
+
+## SUPER_ADMIN: só números agregados
+
+Decisão do PO: o SUPER_ADMIN administra a plataforma, mas **nunca** vê registros individuais
+dentro das instituições (alunos, tentativas, textos de feedback, PII).
+
+- `requireTenant()` dá ao SUPER_ADMIN `ctx.access = "platform"`: `ctx.db` só permite
+  ler o próprio `Tenant` e criar `Invitation` (faixas da instituição: só o INSTITUTION_ADMIN, Q-S1). Qualquer outro
+  acesso (inclusive `count`) lança `TenantScopeError` → `403 SCOPE_DENIED`.
+- Rotas exclusivas (`/api/super-admin/*`, só SUPER_ADMIN):
+  - `GET /api/super-admin/metrics` → `{ generatedAt, totals, tenants: [{ tenant: { id, name, slug, active }, users: { INSTITUTION_ADMIN, PROFESSOR, ALUNO, total }, levelAttempts: { total, inProgress, completed, abandoned }, concepts: { ND, ED, D, PD } }] }` (só `groupBy`).
+  - `GET|POST /api/super-admin/tenants`, `PATCH /api/super-admin/tenants/:id` (`name`, `slug`, `emailDomains`, `autoJoinByDomain` — padrão `false`, `locale`, `active`). `409 SLUG_IN_USE`.
+  - `GET|POST /api/super-admin/exercises`, `PATCH /api/super-admin/exercises/:id`: banco **global** de exercícios.
+- Também pode: `POST /api/admin/invitations` com `tenantId` (convidar o primeiro INSTITUTION_ADMIN de uma instituição). Não pode: faixas de uma instituição (só o ADMIN, em `/api/admin/grading-config`), trocar papel de usuários, rotas de professor/aluno.
+- Faixas padrão da plataforma: `GET|PUT /api/super-admin/grading-defaults` `{ edMinPercent, dMinPercent, pdMinPercent }` (padrão 50/70/90). Valem só para instituições **novas**: `POST /api/super-admin/tenants` copia o padrão para `TenantGradingConfig`; as existentes não mudam. Regra do PO `0 < ND < ED < D ≤ 100` = `0 < edMinPercent < dMinPercent < pdMinPercent ≤ 100` (limites ND→ED, ED→D, D→PD); inválido → 422 `VALIDATION_ERROR`.
+
+## Isolamento por tenant (`forTenant`)
+
+Todo código de servidor que lê/grava dados de instituição usa o cliente com escopo
+(`src/server/tenant-db.ts`, regras em `src/server/tenant-scope.ts`):
+
+```ts
+const { db, user } = await requireTenant(["PROFESSOR"]); // ctx.db = forTenant(ctx.tenantId)
+await db.levelAttempt.findMany({ where: { status: "COMPLETED" } }); // tenantId injetado
+await db.exercise.findMany(); // exercícios do tenant + globais (tenantId nulo)
+```
+
+- Modelos de tenant: `where` recebe `AND: [{ tenantId }]` em leituras/updates/deletes
+  (inclusive `findUnique`); `create`/`createMany`/`upsert` recebem `tenantId`; outro
+  `tenantId` ou trocar de tenant ⇒ `TenantScopeError`.
+- `Exercise`/`ContentSection`: leitura `tenantId = X OU nulo`; escrita só do tenant
+  (`isGlobal` forçado a `false`). Globais só pelo cliente base (SUPER_ADMIN/seed).
+- `Tenant`: só o próprio, leitura. `Session`/`Account`/`Verification`: bloqueados.
+- Vale em `$transaction` interativa. **Não** reescreve relações aninhadas
+  (`include`, nested writes) nem `$queryRaw` — consulte o filho pelo `db`.
+- Cliente base (`prisma`) só em: Better Auth e seus hooks de provisionamento, seed,
+  operações de plataforma e verificações globais (e-mail único).
+- Testes: `npm test` (regras puras) e `npm run test:db` (Postgres real, `.env` carregado).
+
+## Contas de desenvolvimento (seed)
+
+Senhas **apenas para dev** (sobrescreva com `SEED_*_PASSWORD`; em produção o seed exige as variáveis). Login por senha exige `AUTH_EMAIL_PASSWORD_ENABLED=true`.
+
+| Papel             | E-mail                        | Senha               | Instituição |
+| ----------------- | ----------------------------- | ------------------- | ----------- |
+| SUPER_ADMIN       | `admin@training-area.local`   | `SuperAdmin@Dev123` | —           |
+| INSTITUTION_ADMIN | `admin@escola-demo.local`     | `Admin@Dev123`      | Escola Demo |
+| PROFESSOR         | `professor@escola-demo.local` | `Professor@Dev123`  | Escola Demo |
+| ALUNO             | `aluno@escola-demo.local`     | `Aluno@Dev123`      | Escola Demo |
+
+O seed também cria 5 exercícios e 1 seção de conteúdo **globais** e a "Trilha Demo" (nível Fundamental, cota padrão 2 muito fácil + 1 fácil + 1 média) na Escola Demo.
+
+## Modelo de dados
+
+`prisma/schema.prisma` (comentado). Resumo:
+
+- **Tenant** (instituição). Toda entidade de domínio tem `tenantId`, indexado, e unicidades escopadas por tenant.
+- **User / Session / Account / Verification**: tabelas do Better Auth. `users.tenant_id` é nulo só para SUPER_ADMIN (CHECK). **Invitation**: convite com papel. **E-mail é único na plataforma** (uma pessoa, uma instituição): `users.email` UNIQUE e minúsculo, no máximo um convite pendente por e-mail em todas as instituições; `POST /api/admin/invitations` recusa (409) e-mail com conta ou com convite pendente em outra instituição.
+- **Classroom / ClassroomMember**: turmas.
+- **Níveis (`KnowledgeLevel`)**: `FUNDAMENTAL`, `PROFESSIONAL`, `ADVANCED` e `DASHBOARD` (reservado para v1.1). No MVP a validação (`src/lib/validation/content.ts`) recusa DASHBOARD e a UI deve usar `SELECTABLE_LEVEL_OPTIONS` (`src/lib/domain.ts`).
+- **ContentSection / Exercise**: `tenantId` nulo + `isGlobal = true` = **global** (banco inicial da plataforma): toda instituição lê, só o SUPER_ADMIN escreve. Com tenant = exclusivo da instituição.
+- **ExerciseSet → Level → ExerciseQuota**: trilha da instituição, níveis participantes e quantidade por dificuldade (padrão, por turma ou por aluno; precedência em `src/lib/quota.ts`). O pool de um Level são os exercícios **vinculados ao conjunto** (**SetPoolExercise**, `src/server/content/pool-links.ts`: `linkExercisesToSet`/`unlinkExercisesFromSet`/`listSetPoolLinks`) que estão publicados, no mesmo nível e numa das dificuldades do conjunto; podem ser da instituição **ou globais**.
+- **Publicação versionada:** `publishSet` congela o pool numa nova versão de **SetExercise** (`ExerciseSet.publishedVersion`, `SetExercise.version`; único `(setId, version, levelId, position)`). Republicar um rascunho já publicado cria a versão seguinte; publicar o que já está PUBLICADO → 409 `ALREADY_PUBLISHED`. `unpublishSet` só volta o status para DRAFT. SetExercises nunca são apagados; novos sorteios usam a versão atual e rodadas em curso mantêm a sua.
+- **FeedbackTemplate**: modelos de feedback (`tenantId` nulo = global, lido por todas; nome único por instituição e entre os globais). Rotas: Backend 2.
+- **FeedbackGeneration**: histórico append-only de cada (re)geração da IA. `recordFeedbackGeneration` (`src/server/feedback/generation.ts`) é o único caminho que grava `aiText/aiStrengths/aiToReview` (espelham a última geração boa; `generationCount` = nº de gerações) e só em DRAFT; após APPROVED/REJECTED → 409 `NOT_REGENERABLE`. Edições do professor (`edited*`) nunca são tocadas.
+- **LevelAttempt**: tentativa do aluno num nível. Ao concluir, `computedConcept` é calculado pela taxa de acerto com as faixas da instituição (**TenantGradingConfig**: ND < `edMinPercent` (50) ≤ ED < `dMinPercent` (70) ≤ D < `pdMinPercent` (90) ≤ PD; sem linha = padrão; snapshot em `gradingBands`). O professor pode ajustar o conceito final (`concept`) com justificativa obrigatória (≥ 10 caracteres): `overriddenById`, `overrideReason`, `overriddenAt` e uma linha imutável em **ConceptOverride**. Refazer só após conceito final ND/ED (`src/lib/grading.ts`). APIs: `PATCH /api/professor/level-attempts/:id/concept` (PROFESSOR), `GET|PUT /api/admin/grading-config` (INSTITUTION_ADMIN). **ExerciseAttempt**: cada envio, ligado à LevelAttempt.
+- **Feedback** (1:1 com LevelAttempt): originais da IA **imutáveis** (`aiText`, `aiStrengths`, `aiToReview`; trigger no banco) e edições do professor guardadas à parte (`editedText`, `editedStrengths`, `editedToReview`, `editedById`, `editedAt`); status `DRAFT | APPROVED | REJECTED`. O aluno vê só `APPROVED`, campo a campo: editado senão IA. APIs (PROFESSOR): `GET|PATCH /api/professor/feedbacks/:id` (`{ text?, strengths?, toReview? }`, cada um separado; `null` descarta a edição; aprovado → 409 `NOT_EDITABLE`) e `POST /api/professor/feedbacks/:id/review` (`{ action: "approve" }` | `{ action: "reject", reason }`; 409 `ALREADY_REVIEWED`/`NO_TEXT`).
+- **AuditLog** (append-only): convites criados/renovados, `PATCH` de usuário, ajuste de conceito, edição/aprovação/rejeição de feedback, faixas padrão da plataforma.
+- **Histórico de conceito:** `GET /api/professor/level-attempts/:id/concept-history` → `{ history: [{ previousConcept, concept, computedConcept, reason, adjustedBy: { id, name }, adjustedAt }] }` (mais antigo primeiro; outra instituição → 404).
+- **Usuários (INSTITUTION_ADMIN):** `PATCH /api/admin/users/:id` `{ name?, email?, active? }` (e-mail em minúsculas; 409 `EMAIL_TAKEN`; desativar revoga sessões; desativar a si mesmo → 422; outra instituição → 404; papel continua em `/role`). Convites: `POST /api/admin/invitations` → 201 (novo) ou **200 com `renewed: true`** quando substitui o convite pendente; 409 `EMAIL_IN_USE` (usuário ativo), `USER_INACTIVE` (inativo na mesma instituição).
+- **Erros de validação:** 422 `VALIDATION_ERROR` com `details`.
+- **Conteúdo de exercício** (`src/lib/validation/exercise-content.ts`, combinado com BE2/FE): célula `number | string | boolean | null | { f: "=...", v? }`, `initialSheet = { cells: { A1: célula } }`, gabarito `[{ cell, value | formula, tolerance? }]`, `gradingRules = { rules?, targets?: { A1: opções } }`.
+
+Restrições que o Prisma não modela (CHECKs) estão no SQL da migração `*_multitenant_auth_core_model`.
+
+**Pool do nível (MVP):** um Level sorteia exercícios PUBLICADOS do tenant + globais com o
+mesmo `knowledgeLevel` e uma das `difficulties` do ExerciseSet, até a cota por dificuldade
+resolvida por `resolveDifficultyQuotas` (aluno > turma > padrão). Sem exercícios fixos (v1.1). Helpers:
+`levelPoolWhere`/`drawFromPool`/`drawByDifficulty` (`src/lib/pool.ts`) e `listLevelPool(db, levelId)`.
 
 ## Estrutura de pastas
 
@@ -130,38 +307,44 @@ npm run dev -- -p 3001        # use uma porta diferente por worktree
 
 Modelo em [`.env.example`](.env.example). A validação fica em `src/lib/env.ts` (`validateServerEnv`) e roda na inicialização do servidor (`src/instrumentation.ts`), não durante o `next build`. Integrações externas (OAuth, IA) são opcionais em dev e teste; em produção o servidor só sobe se a configuração for válida.
 
-| Variável                                                        | Obrigatória?                         | Para que serve                                                                        | Valor na CI                                                                 |
-| --------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`           | Só para o Compose                    | Credenciais do container PostgreSQL                                                   | `training` / `training` / `training_area` (service do job e2e)              |
-| `POSTGRES_PORT`                                                 | Não (padrão `5432`)                  | Porta do Postgres no host                                                             | —                                                                           |
-| `DATABASE_URL`                                                  | Sim, para banco, migrações e seed    | Conexão do Prisma                                                                     | `postgresql://training:training@localhost:5432/training_area?schema=public` |
-| `APP_PORT`                                                      | Não (padrão `3000`)                  | Porta do app no perfil `app` do Compose                                               | —                                                                           |
-| `AUTH_SECRET`                                                   | **Sim em produção**                  | Chave do Auth.js para assinar sessão e tokens (`openssl rand -base64 32`)             | secret `AUTH_SECRET` ou valor fictício                                      |
-| `AUTH_URL`                                                      | Recomendado em produção              | URL pública do app, usada nos callbacks OAuth                                         | `http://localhost:3000`                                                     |
-| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`                         | Não (sempre em par)                  | OAuth Google. Callback: `<AUTH_URL>/api/auth/callback/google`                         | secrets ou valores fictícios                                                |
-| `AUTH_MICROSOFT_ENTRA_ID_ID` / `AUTH_MICROSOFT_ENTRA_ID_SECRET` | Não (sempre em par)                  | OAuth Microsoft Entra ID. Callback: `<AUTH_URL>/api/auth/callback/microsoft-entra-id` | secrets ou valores fictícios                                                |
-| `AUTH_MICROSOFT_ENTRA_ID_ISSUER`                                | Não                                  | Issuer do Entra ID: `https://login.microsoftonline.com/<tenant-id ou common>/v2.0`    | `.../common/v2.0`                                                           |
-| `AI_PROVIDER`                                                   | Não (padrão `mock`)                  | Provedor de IA do feedback: `openai`, `anthropic` ou `mock`                           | `mock`                                                                      |
-| `AI_API_KEY`                                                    | Sim se `AI_PROVIDER` ≠ `mock`        | Chave da API do provedor de IA                                                        | vazio                                                                       |
-| `AI_MODEL`                                                      | Não                                  | Modelo do provedor (vazio = padrão definido no código)                                | vazio                                                                       |
-| `TENANT_RESOLUTION`                                             | Não (padrão `single`)                | Como o tenant é identificado: `single`, `path` (`/t/<slug>/...`) ou `subdomain`       | `single`                                                                    |
-| `DEFAULT_TENANT_SLUG`                                           | Não (padrão `default`)               | Tenant usado em `single` e como fallback                                              | `default`                                                                   |
-| `APP_ROOT_DOMAIN`                                               | Sim se `TENANT_RESOLUTION=subdomain` | Domínio raiz dos subdomínios (ex.: `training.example.com`)                            | vazio                                                                       |
+| Variável                                              | Obrigatória?                           | Para que serve                                                                                                      | Valor na CI                                                                 |
+| ----------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Só para o Compose                      | Credenciais do container PostgreSQL                                                                                 | `training` / `training` / `training_area` (service do job e2e)              |
+| `POSTGRES_PORT`                                       | Não (padrão `5432`)                    | Porta do Postgres no host                                                                                           | —                                                                           |
+| `DATABASE_URL`                                        | Sim, para banco, migrações e seed      | Conexão do Prisma                                                                                                   | `postgresql://training:training@localhost:5432/training_area?schema=public` |
+| `APP_PORT`                                            | Não (padrão `3000`)                    | Porta do app no perfil `app` do Compose                                                                             | —                                                                           |
+| `BETTER_AUTH_SECRET`                                  | **Sim em produção**                    | Chave do Better Auth para assinar cookies/tokens (`openssl rand -base64 32`; `AUTH_SECRET` aceito como alternativa) | secret `BETTER_AUTH_SECRET` ou valor fictício                               |
+| `BETTER_AUTH_URL`                                     | Recomendado em produção                | URL pública do app, base dos callbacks OAuth                                                                        | `http://localhost:3000`                                                     |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`           | Não (sempre em par)                    | OAuth Google. Callback: `<BETTER_AUTH_URL>/api/auth/callback/google`                                                | secrets ou valores fictícios                                                |
+| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET`     | Não (sempre em par)                    | OAuth Microsoft (Entra ID). Callback: `<BETTER_AUTH_URL>/api/auth/callback/microsoft`                               | secrets ou valores fictícios                                                |
+| `MICROSOFT_TENANT_ID`                                 | Não (padrão `common`)                  | Diretório do Entra ID: `common`, `organizations` ou o ID do diretório                                               | `common`                                                                    |
+| `AUTH_OAUTH_MOCK_BASE_URL`                            | Não (só dev/teste)                     | Provedor OAuth falso para E2E (genericOAuth); ignorado em produção                                                  | —                                                                           |
+| `AUTH_EMAIL_PASSWORD_ENABLED`                         | Não (padrão `false`)                   | Login por e-mail e senha só em dev/teste (seed/E2E); ignorado em produção sem `AUTH_TEST_MODE=1`                    | —                                                                           |
+| `AUTH_TEST_MODE`                                      | Não (só CI/E2E)                        | `1` libera senha e OAuth falso num build de produção. Proibido com `APP_ENV`/`DEPLOY_ENV=production` (boot falha)   | `1` só no job E2E                                                           |
+| `APP_ENV` / `DEPLOY_ENV`                              | **Sim em deploy real** (`production`)  | Marcador de deploy real (diferente de `NODE_ENV`, que também é `production` no build da CI)                         | não definir                                                                 |
+| `AI_PROVIDER`                                         | Não (padrão `disabled`)                | Provedor de IA do feedback: `disabled` (sem IA), `mock` (texto fixo local) ou `openai-compatible`                   | `mock`                                                                      |
+| `AI_API_KEY`                                          | Sim se `AI_PROVIDER=openai-compatible` | Chave da API compatível com OpenAI                                                                                  | vazio                                                                       |
+| `AI_BASE_URL`                                         | Sim se `AI_PROVIDER=openai-compatible` | URL base da API (ex.: `https://api.openai.com/v1`)                                                                  | vazio                                                                       |
+| `AI_TIMEOUT_MS`                                       | Não                                    | Timeout das chamadas de IA (ms)                                                                                     | `30000`                                                                     |
+| `AI_MODEL`                                            | Não                                    | Modelo do provedor (vazio = padrão definido no código)                                                              | vazio                                                                       |
+| `TENANT_RESOLUTION`                                   | Não (padrão `single`)                  | Como o tenant é identificado: `single`, `path` (`/t/<slug>/...`) ou `subdomain`                                     | `single`                                                                    |
+| `DEFAULT_TENANT_SLUG`                                 | Não (padrão `default`)                 | Tenant usado em `single` e como fallback                                                                            | `default`                                                                   |
+| `APP_ROOT_DOMAIN`                                     | Sim se `TENANT_RESOLUTION=subdomain`   | Domínio raiz dos subdomínios (ex.: `training.example.com`)                                                          | vazio                                                                       |
 
 Notas:
 
-- Os nomes seguem a convenção do Auth.js (`AUTH_*`), que lê essas variáveis automaticamente. A autenticação em si é implementada pelo backend (TA-001); aqui só está a configuração.
+- A autenticação usa **Better Auth** (TA-001); os nomes acima são os lidos por `src/server/auth/config.ts` e validados por `src/lib/env.ts`.
 - Na CI, as variáveis de OAuth usam os secrets do repositório se existirem; se não existirem, usam valores fictícios. Nenhum teste chama Google, Microsoft ou provedor de IA.
 - No Compose, o serviço `app` lê o `.env` (`env_file`) e sobrescreve só a `DATABASE_URL`.
 
 ## Multi-tenant (impacto na infra)
 
-> **Premissa a confirmar pelo backend:** banco **compartilhado**, com coluna `tenant_id` nas tabelas de domínio. Ainda não há modelo `Tenant` no schema; ele entra junto com a modelagem do backend.
+> **Confirmado pelo backend:** banco **compartilhado**, coluna `tenant_id` nas tabelas de domínio, modelo `Tenant` no schema e isolamento centralizado em `forTenant` (veja "Isolamento por tenant"). O tenant da requisição vem da **sessão** (`users.tenant_id`); `TENANT_RESOLUTION` ficam reservadas para resolução por URL e não participam da autorização.
 
 - **Banco:** uma única instância PostgreSQL e um único schema. O isolamento é lógico (`tenant_id` + filtros na camada de dados; Row-Level Security do Postgres pode ser avaliada depois). Migrações continuam únicas para todos os tenants.
 - **Resolução do tenant:** `TENANT_RESOLUTION=single` (dev/piloto: sempre `DEFAULT_TENANT_SLUG`), `path` (`/t/<slug>/...`, não exige DNS) ou `subdomain` (`<slug>.<APP_ROOT_DOMAIN>`).
 - **Subdomínios em produção:** exigem DNS curinga (`*.APP_ROOT_DOMAIN`), certificado TLS curinga e proxy/ingress que preserve o header `Host`.
-- **OAuth com subdomínios:** os redirect URIs do Google e do Entra ID não aceitam curinga. Use um host fixo de autenticação (`AUTH_URL`) e redirecione ao tenant depois do login.
+- **OAuth com subdomínios:** os redirect URIs do Google e do Entra ID não aceitam curinga. Use um host fixo de autenticação (`BETTER_AUTH_URL`) e redirecione ao tenant depois do login.
 - **Dados e operação:** backups, seeds e exportações devem considerar o `tenant_id`. Os logs devem incluir o tenant para depuração.
 
 ## Segurança
