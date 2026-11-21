@@ -22,10 +22,6 @@ test.describe("Smoke [TA-032]", () => {
 
   test("home NÃO mostra Dashboard (v1.1)", async ({ page }) => {
     // PO: DASHBOARD continua no enum do schema (v1.1), mas não aparece nem é selecionável no MVP.
-    // test.fail: o scaffold atual (src/app/page.tsx) ainda lista Dashboard na home.
-    // FE1: remover Dashboard da lista; quando corrigir, este teste "passa inesperadamente"
-    // e o test.fail deve ser removido.
-    test.fail(true, "FE1: home do scaffold ainda lista Dashboard (TA-032 / decisão PO v1.1)");
     await page.goto("/");
     await expect(page.getByRole("list", { name: "Níveis de conhecimento" })).toBeVisible();
     for (const level of POST_MVP_LEVELS) {
