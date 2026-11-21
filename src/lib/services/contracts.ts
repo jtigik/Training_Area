@@ -10,7 +10,7 @@
  * formato ApiErrorBody `{ code, message, details? }` com status HTTP adequado
  * (401 sem sessão, 403 papel sem permissão, 404, 409 conflito, 422 regra).
  * Multi-tenant: o servidor resolve `institutionId` pela sessão. Nenhum
- * endpoint de /api/admin ou /api/teacher aceita institutionId do cliente.
+ * endpoint de /api/admin ou /api/professor aceita institutionId do cliente.
  *
  * Backend 1 — instituições, usuários, configurações, feedback
  *   GET    /api/superadmin/institutions?search=&active=              → Institution[]
@@ -21,47 +21,51 @@
  *   PATCH  /api/admin/users/:id             body UpdateUserInput     → User | 409 ultimo_admin
  *   GET    /api/admin/config                                         → InstitutionSettings
  *   PUT    /api/admin/config                body UpdateSettingsInput → InstitutionSettings
- *   GET    /api/teacher/feedback-templates?setId=  (sem setId = padrão) → FeedbackTemplate
- *   PUT    /api/teacher/feedback-templates  body SaveFeedbackTemplateInput → FeedbackTemplate
- *   GET    /api/teacher/feedback-reviews?status=&level=&search=      → ReviewFeedback[]
- *   GET    /api/teacher/feedback-reviews/:id                         → ReviewFeedback
- *   PATCH  /api/teacher/feedback-reviews/:id body { finalText }      → ReviewFeedback (só PENDING)
- *   POST   /api/teacher/feedback-reviews/:id/approve body { finalText } → ReviewFeedback | 409 ja_revisado
- *   POST   /api/teacher/feedback-reviews/:id/reject  body { reason? }   → ReviewFeedback | 409 ja_revisado
+ *   GET    /api/professor/feedback-templates?setId=  (sem setId = padrão) → FeedbackTemplate
+ *   PUT    /api/professor/feedback-templates  body SaveFeedbackTemplateInput → FeedbackTemplate
+ *   GET    /api/professor/feedback-reviews?status=&level=&search=      → ReviewFeedback[]
+ *   GET    /api/professor/feedback-reviews/:id                         → ReviewFeedback
+ *   PATCH  /api/professor/feedback-reviews/:id body { finalText }      → ReviewFeedback (só PENDING)
+ *   POST   /api/professor/feedback-reviews/:id/approve body { finalText } → ReviewFeedback | 409 ja_revisado
+ *   POST   /api/professor/feedback-reviews/:id/reject  body { reason? }   → ReviewFeedback | 409 ja_revisado
  *
  * Backend 2 — conteúdo, conjuntos, exercícios, banco, resultados
- *   GET    /api/teacher/sections                                     → ContentSection[] (por position)
- *   GET    /api/teacher/sections/:id                                 → ContentSection
- *   POST   /api/teacher/sections            body SectionInput        → 201 ContentSection (DRAFT)
- *   PATCH  /api/teacher/sections/:id        body Partial<SectionInput> → ContentSection
- *   POST   /api/teacher/sections/:id/status body { status }          → ContentSection
- *   PUT    /api/teacher/sections/order      body { ids: string[] }   → ContentSection[]
- *   DELETE /api/teacher/sections/:id        (só DRAFT)               → 204
- *   GET    /api/teacher/sets                                         → ExerciseSet[]
- *   GET    /api/teacher/sets/:id                                     → ExerciseSet
- *   POST   /api/teacher/sets                body ExerciseSetInput    → 201 ExerciseSet (DRAFT)
- *   PATCH  /api/teacher/sets/:id            body Partial<ExerciseSetInput> → ExerciseSet | 409 nivel_com_progresso
- *   POST   /api/teacher/sets/:id/publish                             → ExerciseSet | 422 publicacao_bloqueada { issues }
- *   POST   /api/teacher/sets/:id/unpublish                           → ExerciseSet
- *   GET    /api/teacher/sets/:id/exercises                           → Exercise[]
- *   GET    /api/teacher/exercises/:id                                → Exercise
- *   POST   /api/teacher/sets/:id/exercises  body ExerciseInput       → 201 Exercise | 422 nivel_fora_do_conjunto | gabarito_invalido
- *   PATCH  /api/teacher/exercises/:id       body Partial<ExerciseInput> → Exercise
- *   DELETE /api/teacher/exercises/:id                                → 204
- *   GET    /api/teacher/bank?level=&difficulty=&origin=&search=      → BankExercise[]
- *   GET    /api/teacher/bank/:id                                     → BankExercise
- *   POST   /api/teacher/bank                body BankExerciseInput   → 201 BankExercise (origin INSTITUTION)
- *   POST   /api/teacher/bank/import         body { items: BankExerciseInput[] } → 201 BankExercise[] (source XLSX, DRAFT)
- *          (o .xlsx é lido no navegador; o QA mapeou também POST /api/teacher/exercises/import multipart — a definir com o BE2)
- *   PATCH  /api/teacher/bank/:id            body Partial<BankExerciseInput> → BankExercise | 403 item_da_plataforma
- *   DELETE /api/teacher/bank/:id                                     → 204 | 403 item_da_plataforma
- *   POST   /api/teacher/bank/:id/copy       body { setId }           → 201 Exercise (DRAFT) | 422 nivel_fora_do_conjunto
- *   GET    /api/teacher/classrooms                                   → Classroom[]
- *   GET    /api/teacher/students                                     → StudentSummary[]
- *   GET    /api/teacher/results?setId=&level=&difficulty=&from=&to=  → ResultsData
- *   GET    /api/teacher/results/students/:id                         → StudentDetail
- *   POST   /api/teacher/results/students/:id/redo body { setId, level } → LevelProgress | 409 refazer_nao_permitido
+ *   GET    /api/professor/sections                                     → ContentSection[] (por position)
+ *   GET    /api/professor/sections/:id                                 → ContentSection
+ *   POST   /api/professor/sections            body SectionInput        → 201 ContentSection (DRAFT)
+ *   PATCH  /api/professor/sections/:id        body Partial<SectionInput> → ContentSection
+ *   POST   /api/professor/sections/:id/status body { status }          → ContentSection
+ *   PUT    /api/professor/sections/order      body { ids: string[] }   → ContentSection[]
+ *   DELETE /api/professor/sections/:id        (só DRAFT)               → 204
+ *   GET    /api/professor/sets                                         → ExerciseSet[]
+ *   GET    /api/professor/sets/:id                                     → ExerciseSet
+ *   POST   /api/professor/sets                body ExerciseSetInput    → 201 ExerciseSet (DRAFT)
+ *   PATCH  /api/professor/sets/:id            body Partial<ExerciseSetInput> → ExerciseSet | 409 nivel_com_progresso
+ *   POST   /api/professor/sets/:id/publish                             → ExerciseSet | 422 publicacao_bloqueada { issues }
+ *   POST   /api/professor/sets/:id/unpublish                           → ExerciseSet
+ *   GET    /api/professor/sets/:id/exercises                           → Exercise[]
+ *   GET    /api/professor/exercises/:id                                → Exercise
+ *   POST   /api/professor/sets/:id/exercises  body ExerciseInput       → 201 Exercise | 422 nivel_fora_do_conjunto | gabarito_invalido
+ *   PATCH  /api/professor/exercises/:id       body Partial<ExerciseInput> → Exercise
+ *   DELETE /api/professor/exercises/:id                                → 204
+ *   POST   /api/professor/sets/:id/exercises/import/preview  multipart `file` → 200 ImportPreview { drafts[], errors[] } (não grava)
+ *   POST   /api/professor/sets/:id/exercises/import          multipart `file` → 201 { created: Exercise[] } (DRAFT)
+ *          | 422 { error: { code: "IMPORT_INVALID" }, errors: ImportIssue[] }  — tudo ou nada
+ *          Modelo do arquivo: abas Dados (Título, Nível, Dificuldade, Enunciado, Dica),
+ *          Planilha (grade inicial) e Gabarito (Célula | Resposta), combinado com QA e BE2.
+ *   GET    /api/professor/bank?level=&difficulty=&origin=&search=      → BankExercise[]
+ *   GET    /api/professor/bank/:id                                     → BankExercise
+ *   POST   /api/professor/bank                body BankExerciseInput   → 201 BankExercise (origin INSTITUTION)
+ *   PATCH  /api/professor/bank/:id            body Partial<BankExerciseInput> → BankExercise | 403 item_da_plataforma
+ *   DELETE /api/professor/bank/:id                                     → 204 | 403 item_da_plataforma
+ *   POST   /api/professor/bank/:id/copy       body { setId }           → 201 Exercise (DRAFT) | 422 nivel_fora_do_conjunto
+ *   GET    /api/professor/classrooms                                   → Classroom[]
+ *   GET    /api/professor/students                                     → StudentSummary[]
+ *   GET    /api/professor/results?setId=&level=&difficulty=&from=&to=  → ResultsData
+ *   GET    /api/professor/results/students/:id                         → StudentDetail
+ *   POST   /api/professor/results/students/:id/redo body { setId, level } → LevelProgress | 409 refazer_nao_permitido
  */
+import type { ImportDraft, ImportIssue } from "../xlsx/import";
 import type {
   Attempt,
   BankExercise,
@@ -215,12 +219,27 @@ export interface ExerciseSetsService {
   unpublish(id: string): Promise<ExerciseSet>;
 }
 
+export type { ImportIssue, ImportDraft } from "../xlsx/import";
+
+export interface ImportPreview {
+  drafts: ImportDraft[];
+  errors: ImportIssue[];
+}
+
+export interface ImportCreated {
+  created: Exercise[];
+}
+
 export interface ExercisesService {
   listBySet(setId: string): Promise<Exercise[]>;
   get(id: string): Promise<Exercise>;
   create(setId: string, input: ExerciseInput): Promise<Exercise>;
   update(id: string, input: Partial<ExerciseInput>): Promise<Exercise>;
   remove(id: string): Promise<void>;
+  /** Lê o .xlsx e devolve rascunhos + erros, sem gravar. */
+  previewImport(setId: string, file: File): Promise<ImportPreview>;
+  /** Importa tudo ou nada; erro 422 IMPORT_INVALID traz `details.errors: ImportIssue[]`. */
+  importXlsx(setId: string, file: File): Promise<ImportCreated>;
 }
 
 /* --------------------------- Banco de exercícios -------------------- */
@@ -241,7 +260,6 @@ export interface BankService {
   list(query?: BankQuery): Promise<BankExercise[]>;
   get(id: string): Promise<BankExercise>;
   create(input: BankExerciseInput): Promise<BankExercise>;
-  importMany(items: BankExerciseInput[]): Promise<BankExercise[]>;
   update(id: string, input: Partial<BankExerciseInput>): Promise<BankExercise>;
   remove(id: string): Promise<void>;
   copyToSet(id: string, setId: string): Promise<Exercise>;

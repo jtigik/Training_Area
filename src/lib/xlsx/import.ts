@@ -27,9 +27,20 @@ export interface ImportedMeta {
   hint?: string;
 }
 
+/** Erro de importação, no formato combinado com o Backend 2. */
+export interface ImportIssue {
+  sheet: string | null;
+  row: number | null;
+  column: string | null;
+  cell: string | null;
+  code: string;
+  message: string;
+}
+
 export interface ImportedSheet {
   name: string;
   meta: ImportedMeta;
+  issues: ImportIssue[];
   grid: SpreadsheetGrid;
   answers: Record<CellAddress, AnswerCell>;
   warnings: string[];
@@ -40,6 +51,8 @@ export interface ImportedSheet {
 export interface XlsxImportResult {
   fileName: string;
   sheets: ImportedSheet[];
+  /** true quando o arquivo segue o modelo Dados/Planilha/Gabarito. */
+  template: boolean;
   /** Erro fatal (arquivo ilegível), quando houver. */
   error: string | null;
 }
@@ -87,7 +100,22 @@ export function sheetToExercise(name: string, cells: RawCell[]): ImportedSheet {
   if (answerCount === 0)
     warnings.push("Nenhuma fórmula encontrada: marque o gabarito na grade antes de salvar.");
   const valid = answerCount > 0 && validateAnswers(grid, answers).length === 0;
-  return { name: name.trim() || "Exercício importado", meta: {}, grid, answers, warnings, valid };
+  return {
+    name: name.trim() || "Exercício importado",
+    meta: {},
+    issues: warnings.map((message) => ({
+      sheet: name,
+      row: null,
+      column: null,
+      cell: null,
+      code: "SHEET_WARNING",
+      message,
+    })),
+    grid,
+    answers,
+    warnings,
+    valid,
+  };
 }
 
 const norm = (v: string) =>
@@ -125,62 +153,205 @@ export interface TemplateSheets {
  * (grade inicial, bloqueada para o aluno) e aba **Gabarito** (Célula | Resposta).
  */
 export function templateToExercise(t: TemplateSheets): ImportedSheet {
-  const warnings: string[] = [];
-  const dados = new Map(t.dados.map(([k, v]) => [norm(k), v.trim()]));
+  const issues: ImportIssue[] = [];
+  const issue = (
+    sheet: string,
+    row: number | null,
+    column: string | null,
+    code: string,
+    message: string,
+  ) =>
+    issues.push({
+      sheet,
+      row,
+      column,
+      cell: row && column ? `${column}${row}` : null,
+      code,
+      message,
+    });
+  const dadosRows = new Map(t.dados.map(([k, v], i) => [norm(k), { value: v.trim(), row: i + 1 }]));
+  const dado = (key: string) => dadosRows.get(key)?.value || undefined;
+  const rowOf = (key: string) => dadosRows.get(key)?.row ?? null;
   const meta: ImportedMeta = {
-    title: dados.get("titulo") || undefined,
-    statement: dados.get("enunciado") || undefined,
-    hint: dados.get("dica") || undefined,
+    title: dado("titulo"),
+    statement: dado("enunciado"),
+    hint: dado("dica"),
   };
-  const levelText = dados.get("nivel") ?? "";
+  const levelText = dado("nivel") ?? "";
   meta.level = parseLevel(levelText);
-  if (levelText && !meta.level)
-    warnings.push(
+  if (!levelText) issue("Dados", null, null, "MISSING_LEVEL", "Nível ausente na aba Dados.");
+  else if (!meta.level)
+    issue(
+      "Dados",
+      rowOf("nivel"),
+      "B",
+      "INVALID_LEVEL",
       `Nível "${levelText}" não disponível no MVP (use Fundamental, Profissional ou Avançado).`,
     );
-  const diffText = dados.get("dificuldade") ?? "";
+  const diffText = dado("dificuldade") ?? "";
   meta.difficulty = parseDifficulty(diffText);
-  if (diffText && !meta.difficulty) warnings.push(`Dificuldade "${diffText}" não reconhecida.`);
-  if (!meta.title) warnings.push("Título ausente na aba Dados.");
-  if (!meta.statement) warnings.push("Enunciado ausente na aba Dados.");
+  if (!diffText)
+    issue("Dados", null, null, "MISSING_DIFFICULTY", "Dificuldade ausente na aba Dados.");
+  else if (!meta.difficulty)
+    issue(
+      "Dados",
+      rowOf("dificuldade"),
+      "B",
+      "INVALID_DIFFICULTY",
+      `Dificuldade "${diffText}" não reconhecida.`,
+    );
+  if (!meta.title) issue("Dados", null, null, "MISSING_TITLE", "Título ausente na aba Dados.");
+  if (!meta.statement)
+    issue("Dados", null, null, "MISSING_STATEMENT", "Enunciado ausente na aba Dados.");
 
   const base = sheetToExercise(
     meta.title ?? "Exercício importado",
     t.planilha.map((c) => ({ address: c.address, value: c.value })),
   );
+  base.warnings
+    .filter((w) => !w.startsWith("Nenhuma fórmula"))
+    .forEach((w) => issue("Planilha", null, null, "GRID_LIMIT", w));
   const answers: Record<CellAddress, AnswerCell> = {};
   let rows = base.grid.rows;
   let cols = base.grid.cols;
-  for (const [ref, resposta] of t.gabarito) {
-    const pos = parseAddress(ref);
+  t.gabarito.forEach(([ref, resposta], i) => {
+    const row = i + 2; // linha 1 = cabeçalho
+    const pos = parseAddress(ref.trim());
     const expected = resposta.trim();
-    if (!pos || !expected) continue;
+    if (!ref.trim() && !expected) return;
+    if (!pos) {
+      issue("Gabarito", row, "A", "INVALID_CELL", `Referência de célula inválida: "${ref}".`);
+      return;
+    }
+    if (!expected) {
+      issue(
+        "Gabarito",
+        row,
+        "B",
+        "MISSING_ANSWER",
+        `${ref.trim().toUpperCase()}: informe a resposta esperada.`,
+      );
+      return;
+    }
     answers[ref.trim().toUpperCase()] = expected.startsWith("=")
       ? { kind: "FORMULA", expected }
       : { kind: "VALUE", expected, tolerance: 0 };
     rows = Math.max(rows, Math.min(MAX_ROWS, pos.row + 2));
     cols = Math.max(cols, Math.min(MAX_COLS, pos.col + 2));
-  }
+  });
   const grid = { ...base.grid, rows, cols };
-  const answerIssues = validateAnswers(grid, answers);
-  if (Object.keys(answers).length === 0)
-    warnings.push("Sem gabarito: preencha a aba Gabarito (Célula | Resposta).");
-  else answerIssues.forEach((i) => warnings.push(i.message));
-  const valid =
-    Object.keys(answers).length > 0 &&
-    answerIssues.length === 0 &&
-    !!meta.title &&
-    !!meta.statement &&
-    !!meta.level &&
-    !!meta.difficulty;
+  if (Object.keys(answers).length === 0) {
+    if (!issues.some((x) => x.sheet === "Gabarito"))
+      issue(
+        "Gabarito",
+        null,
+        null,
+        "MISSING_ANSWER_KEY",
+        "Sem gabarito: preencha a aba Gabarito (Célula | Resposta).",
+      );
+  } else {
+    validateAnswers(grid, answers).forEach((a) =>
+      issues.push({
+        sheet: "Gabarito",
+        row: null,
+        column: null,
+        cell: a.address || null,
+        code: "INVALID_ANSWER",
+        message: a.message,
+      }),
+    );
+  }
   return {
     name: meta.title ?? "Exercício importado",
     meta,
     grid,
     answers,
-    warnings: [...base.warnings.filter((w) => !w.startsWith("Nenhuma fórmula")), ...warnings],
-    valid,
+    issues,
+    warnings: issues.map((x) => x.message),
+    valid: issues.length === 0,
   };
+}
+
+/** Rascunho pronto para virar exercício (mesmo formato do POST de exercícios). */
+export interface ImportDraft {
+  title: string;
+  statement: string;
+  level: MvpLevel;
+  difficulty: Difficulty;
+  hint: string | null;
+  grid: SpreadsheetGrid;
+  answers: Record<CellAddress, AnswerCell>;
+}
+
+export interface ImportReport {
+  drafts: ImportDraft[];
+  errors: ImportIssue[];
+}
+
+const fileIssue = (code: string, message: string): ImportIssue => ({
+  sheet: null,
+  row: null,
+  column: null,
+  cell: null,
+  code,
+  message,
+});
+
+/**
+ * Relatório da importação, no formato do BE2 (preview): rascunhos + erros com
+ * aba/linha/coluna/célula. Tudo ou nada: com qualquer erro, nada é criado.
+ */
+export function buildImportReport(
+  parsed: XlsxImportResult,
+  allowedLevels?: readonly string[],
+): ImportReport {
+  if (parsed.error) return { drafts: [], errors: [fileIssue("FILE_UNREADABLE", parsed.error)] };
+  if (!parsed.template)
+    return {
+      drafts: [],
+      errors: [
+        fileIssue("TEMPLATE_INVALID", "Use o modelo com as abas Dados, Planilha e Gabarito."),
+      ],
+    };
+  const errors: ImportIssue[] = [];
+  const drafts: ImportDraft[] = [];
+  for (const sheet of parsed.sheets) {
+    errors.push(...sheet.issues);
+    const { title, statement, level, difficulty, hint } = sheet.meta;
+    if (level && allowedLevels && !allowedLevels.includes(level)) {
+      errors.push({
+        sheet: "Dados",
+        row: null,
+        column: null,
+        cell: null,
+        code: "LEVEL_NOT_IN_SET",
+        message: `O nível ${LEVEL_LABELS[level]} não faz parte do conjunto de destino.`,
+      });
+    }
+    if (sheet.issues.length === 0 && title && statement && level && difficulty) {
+      drafts.push({
+        title,
+        statement,
+        level,
+        difficulty,
+        hint: hint ?? null,
+        grid: sheet.grid,
+        answers: sheet.answers,
+      });
+    }
+  }
+  return { drafts: errors.length ? [] : drafts, errors };
+}
+
+/** "Aba Gabarito, célula A4: mensagem" — referência legível para o professor. */
+export function formatImportIssue(i: ImportIssue): string {
+  const where = [
+    i.sheet ? `Aba ${i.sheet}` : null,
+    i.cell ? `célula ${i.cell}` : i.row ? `linha ${i.row}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  return where ? `${where}: ${i.message}` : i.message;
 }
 
 /** Arquivos .xlsx são ZIP: começam com "PK\x03\x04". */
@@ -223,6 +394,7 @@ export async function parseXlsx(fileName: string, buffer: ArrayBuffer): Promise<
     return {
       fileName,
       sheets: [],
+      template: false,
       error: "O conteúdo do arquivo não é uma planilha .xlsx válida.",
     };
   }
@@ -257,6 +429,7 @@ export async function parseXlsx(fileName: string, buffer: ArrayBuffer): Promise<
         sheets: [
           templateToExercise({ dados: pairs("Dados"), planilha: readCells("Planilha"), gabarito }),
         ],
+        template: true,
         error: null,
       };
     }
@@ -270,12 +443,14 @@ export async function parseXlsx(fileName: string, buffer: ArrayBuffer): Promise<
       });
       sheets.push(sheetToExercise(ws.name, cells));
     });
-    if (sheets.length === 0) return { fileName, sheets, error: "A planilha não tem abas." };
-    return { fileName, sheets, error: null };
+    if (sheets.length === 0)
+      return { fileName, sheets, template: false, error: "A planilha não tem abas." };
+    return { fileName, sheets, template: false, error: null };
   } catch {
     return {
       fileName,
       sheets: [],
+      template: false,
       error: "Não foi possível ler o arquivo. Ele pode estar corrompido ou protegido por senha.",
     };
   }

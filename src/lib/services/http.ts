@@ -30,6 +30,29 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
+/** Envio multipart do .xlsx; converte o 422 do BE2 `{ error: { code }, errors }` em ApiError. */
+async function upload<T>(path: string, file: File): Promise<T> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(path, { method: "POST", credentials: "include", body: form });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    const b = (body ?? {}) as {
+      error?: { code?: string; message?: string };
+      errors?: unknown;
+      code?: string;
+      message?: string;
+    };
+    const code = b.error?.code ?? b.code ?? "erro_http";
+    const message =
+      b.error?.message ??
+      b.message ??
+      (code === "IMPORT_INVALID" ? "A planilha tem erros; nada foi importado." : res.statusText);
+    throw new ApiError(res.status, code, message, { errors: b.errors ?? [] });
+  }
+  return body as T;
+}
+
 /** Implementação real (fetch) seguindo os endpoints documentados em `contracts.ts`. */
 export function createHttpServices(): Services {
   const get = <T>(p: string, q?: Query) => request<T>("GET", p + qs(q));
@@ -49,61 +72,64 @@ export function createHttpServices(): Services {
       update: (i) => request("PUT", "/api/admin/config", i),
     },
     sections: {
-      list: () => get("/api/teacher/sections"),
-      get: (id) => get(`/api/teacher/sections/${id}`),
-      create: (i) => request("POST", "/api/teacher/sections", i),
-      update: (id, i) => request("PATCH", `/api/teacher/sections/${id}`, i),
-      setStatus: (id, status) => request("POST", `/api/teacher/sections/${id}/status`, { status }),
-      reorder: (ids) => request("PUT", "/api/teacher/sections/order", { ids }),
-      remove: (id) => request("DELETE", `/api/teacher/sections/${id}`),
+      list: () => get("/api/professor/sections"),
+      get: (id) => get(`/api/professor/sections/${id}`),
+      create: (i) => request("POST", "/api/professor/sections", i),
+      update: (id, i) => request("PATCH", `/api/professor/sections/${id}`, i),
+      setStatus: (id, status) =>
+        request("POST", `/api/professor/sections/${id}/status`, { status }),
+      reorder: (ids) => request("PUT", "/api/professor/sections/order", { ids }),
+      remove: (id) => request("DELETE", `/api/professor/sections/${id}`),
     },
     sets: {
-      list: () => get("/api/teacher/sets"),
-      get: (id) => get(`/api/teacher/sets/${id}`),
-      create: (i) => request("POST", "/api/teacher/sets", i),
-      update: (id, i) => request("PATCH", `/api/teacher/sets/${id}`, i),
-      publish: (id) => request("POST", `/api/teacher/sets/${id}/publish`),
-      unpublish: (id) => request("POST", `/api/teacher/sets/${id}/unpublish`),
+      list: () => get("/api/professor/sets"),
+      get: (id) => get(`/api/professor/sets/${id}`),
+      create: (i) => request("POST", "/api/professor/sets", i),
+      update: (id, i) => request("PATCH", `/api/professor/sets/${id}`, i),
+      publish: (id) => request("POST", `/api/professor/sets/${id}/publish`),
+      unpublish: (id) => request("POST", `/api/professor/sets/${id}/unpublish`),
     },
     exercises: {
-      listBySet: (setId) => get(`/api/teacher/sets/${setId}/exercises`),
-      get: (id) => get(`/api/teacher/exercises/${id}`),
-      create: (setId, i) => request("POST", `/api/teacher/sets/${setId}/exercises`, i),
-      update: (id, i) => request("PATCH", `/api/teacher/exercises/${id}`, i),
-      remove: (id) => request("DELETE", `/api/teacher/exercises/${id}`),
+      listBySet: (setId) => get(`/api/professor/sets/${setId}/exercises`),
+      get: (id) => get(`/api/professor/exercises/${id}`),
+      create: (setId, i) => request("POST", `/api/professor/sets/${setId}/exercises`, i),
+      update: (id, i) => request("PATCH", `/api/professor/exercises/${id}`, i),
+      remove: (id) => request("DELETE", `/api/professor/exercises/${id}`),
+      previewImport: (setId, file) =>
+        upload(`/api/professor/sets/${setId}/exercises/import/preview`, file),
+      importXlsx: (setId, file) => upload(`/api/professor/sets/${setId}/exercises/import`, file),
     },
     bank: {
-      list: (q) => get("/api/teacher/bank", { ...q }),
-      get: (id) => get(`/api/teacher/bank/${id}`),
-      create: (i) => request("POST", "/api/teacher/bank", i),
-      importMany: (items) => request("POST", "/api/teacher/bank/import", { items }),
-      update: (id, i) => request("PATCH", `/api/teacher/bank/${id}`, i),
-      remove: (id) => request("DELETE", `/api/teacher/bank/${id}`),
-      copyToSet: (id, setId) => request("POST", `/api/teacher/bank/${id}/copy`, { setId }),
+      list: (q) => get("/api/professor/bank", { ...q }),
+      get: (id) => get(`/api/professor/bank/${id}`),
+      create: (i) => request("POST", "/api/professor/bank", i),
+      update: (id, i) => request("PATCH", `/api/professor/bank/${id}`, i),
+      remove: (id) => request("DELETE", `/api/professor/bank/${id}`),
+      copyToSet: (id, setId) => request("POST", `/api/professor/bank/${id}/copy`, { setId }),
     },
     feedback: {
-      get: (setId) => get("/api/teacher/feedback-templates", { setId }),
-      save: (i) => request("PUT", "/api/teacher/feedback-templates", i),
+      get: (setId) => get("/api/professor/feedback-templates", { setId }),
+      save: (i) => request("PUT", "/api/professor/feedback-templates", i),
     },
     reviews: {
-      list: (q) => get("/api/teacher/feedback-reviews", { ...q }),
-      get: (id) => get(`/api/teacher/feedback-reviews/${id}`),
+      list: (q) => get("/api/professor/feedback-reviews", { ...q }),
+      get: (id) => get(`/api/professor/feedback-reviews/${id}`),
       saveDraft: (id, finalText) =>
-        request("PATCH", `/api/teacher/feedback-reviews/${id}`, { finalText }),
+        request("PATCH", `/api/professor/feedback-reviews/${id}`, { finalText }),
       approve: (id, finalText) =>
-        request("POST", `/api/teacher/feedback-reviews/${id}/approve`, { finalText }),
+        request("POST", `/api/professor/feedback-reviews/${id}/approve`, { finalText }),
       reject: (id, reason) =>
-        request("POST", `/api/teacher/feedback-reviews/${id}/reject`, { reason: reason ?? null }),
+        request("POST", `/api/professor/feedback-reviews/${id}/reject`, { reason: reason ?? null }),
     },
     results: {
-      list: (q) => get("/api/teacher/results", { ...q }),
-      student: (id) => get(`/api/teacher/results/students/${id}`),
+      list: (q) => get("/api/professor/results", { ...q }),
+      student: (id) => get(`/api/professor/results/students/${id}`),
       redoLevel: (studentId, setId, level) =>
-        request("POST", `/api/teacher/results/students/${studentId}/redo`, { setId, level }),
+        request("POST", `/api/professor/results/students/${studentId}/redo`, { setId, level }),
     },
     people: {
-      students: () => get("/api/teacher/students"),
-      classrooms: () => get("/api/teacher/classrooms"),
+      students: () => get("/api/professor/students"),
+      classrooms: () => get("/api/professor/classrooms"),
     },
   };
 }

@@ -8,6 +8,8 @@ import {
 } from "../../domain/rules";
 import type { BankExercise, ContentSection, Exercise, ExerciseSet, User } from "../../domain/types";
 import { ApiError, type Services } from "../contracts";
+import { buildImportReport, parseXlsx, type XlsxImportResult } from "../../xlsx/import";
+import { validateXlsxFile } from "../../validation/schemas";
 import { createSeed, DEFAULT_BANDS, MOCK_INSTITUTION_ID, type MockDb } from "./seed";
 
 export interface MockOptions {
@@ -39,6 +41,13 @@ const newId = (prefix: string) =>
  * Implementação em memória de todos os serviços, com as mesmas regras e o
  * mesmo escopo por instituição esperados das APIs reais.
  */
+/** Lê o arquivo como o servidor faria (validação de nome/tamanho + leitura). */
+async function readXlsxFile(file: File): Promise<XlsxImportResult> {
+  const invalid = validateXlsxFile(file);
+  if (invalid) return { fileName: file.name, sheets: [], template: false, error: invalid };
+  return parseXlsx(file.name, await file.arrayBuffer());
+}
+
 export function createMockServices(options: MockOptions = {}): Services & { db: MockDb } {
   const db = options.db ?? createSeed();
   const latency = options.latency ?? 0;
@@ -408,6 +417,33 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           findExercise(id);
           db.exercises = db.exercises.filter((e) => e.id !== id);
         }),
+      previewImport: async (setId, file) => {
+        const set = findSet(setId);
+        return buildImportReport(await readXlsxFile(file), set.levels);
+      },
+      importXlsx: async (setId, file) => {
+        const set = findSet(setId);
+        const report = buildImportReport(await readXlsxFile(file), set.levels);
+        if (report.errors.length) {
+          throw new ApiError(422, "IMPORT_INVALID", "A planilha tem erros; nada foi importado.", {
+            errors: report.errors,
+          });
+        }
+        return delay(() => {
+          const created = report.drafts.map<Exercise>((d) => ({
+            id: newId("ex"),
+            institutionId: tenant,
+            setId,
+            status: "DRAFT",
+            bankItemId: null,
+            ...d,
+            createdAt: now(),
+            updatedAt: now(),
+          }));
+          db.exercises.push(...created);
+          return { created };
+        });
+      },
     },
 
     bank: {
@@ -442,29 +478,6 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           };
           db.bank.push(item);
           return item;
-        }),
-      importMany: (items) =>
-        delay(() => {
-          const invalid = items.findIndex((i) => validateAnswers(i.grid, i.answers).length > 0);
-          if (invalid >= 0) {
-            throw new ApiError(
-              422,
-              "gabarito_invalido",
-              `O item ${invalid + 1} está sem gabarito válido.`,
-            );
-          }
-          const created = items.map<BankExercise>((input) => ({
-            id: newId("bank"),
-            institutionId: tenant,
-            origin: "INSTITUTION",
-            source: "XLSX",
-            ...input,
-            status: "DRAFT",
-            createdAt: now(),
-            updatedAt: now(),
-          }));
-          db.bank.push(...created);
-          return created;
         }),
       update: (id, input) =>
         delay(() => {

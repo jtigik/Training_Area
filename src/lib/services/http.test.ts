@@ -46,13 +46,47 @@ describe("http services", () => {
     await s.results.redoLevel("u1", "s1", "FUNDAMENTAL");
     expect(fetchMock.mock.calls.map((c) => `${c[1].method} ${c[0]}`)).toEqual([
       "PATCH /api/superadmin/institutions/i1",
-      "POST /api/teacher/feedback-reviews/r1/approve",
-      "POST /api/teacher/results/students/u1/redo",
+      "POST /api/professor/feedback-reviews/r1/approve",
+      "POST /api/professor/results/students/u1/redo",
     ]);
   });
 
   it("aceita 204 sem corpo", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
     await expect(createHttpServices().sections.remove("x")).resolves.toBeUndefined();
+  });
+});
+
+describe("http: importação .xlsx", () => {
+  it("envia multipart e converte o 422 IMPORT_INVALID do BE2", async () => {
+    const errors = [
+      {
+        sheet: "Gabarito",
+        row: null,
+        column: null,
+        cell: null,
+        code: "MISSING_ANSWER_KEY",
+        message: "Sem gabarito",
+      },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ error: { code: "IMPORT_INVALID" }, errors }), {
+          status: 422,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const s = createHttpServices();
+    const file = new File(["x"], "a.xlsx");
+    await expect(s.exercises.importXlsx("set-1", file)).rejects.toMatchObject({
+      status: 422,
+      code: "IMPORT_INVALID",
+      details: { errors },
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/professor/sets/set-1/exercises/import");
+    expect((init.body as FormData).get("file")).toBeInstanceOf(File);
+    vi.unstubAllGlobals();
   });
 });

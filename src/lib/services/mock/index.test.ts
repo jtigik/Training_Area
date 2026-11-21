@@ -173,27 +173,70 @@ describe("mock: banco de exercícios", () => {
     expect((await s.bank.update("bank-i1", { title: "Desconto" })).title).toBe("Desconto");
   });
 
-  it("importa vários itens do .xlsx e valida gabarito", async () => {
+  it("itens criados no banco começam em rascunho e não vão para conjuntos", async () => {
     const s = createMockServices();
-    const created = await s.bank.importMany([
-      { ...content, level: "FUNDAMENTAL", tags: ["xlsx"], status: "PUBLISHED" },
-    ]);
-    expect(created[0]).toMatchObject({
-      source: "XLSX",
-      origin: "INSTITUTION",
-      institutionId: "inst-1",
+    const created = await s.bank.create({
+      ...content,
+      level: "FUNDAMENTAL",
+      tags: [],
       status: "DRAFT",
     });
-    await expect(s.bank.copyToSet(created[0].id, "set-1")).rejects.toMatchObject({
+    await expect(s.bank.copyToSet(created.id, "set-1")).rejects.toMatchObject({
       code: "item_em_rascunho",
     });
-    await expect(
-      s.bank.importMany([
-        { ...content, answers: {}, level: "FUNDAMENTAL", tags: [], status: "DRAFT" },
-      ]),
-    ).rejects.toMatchObject({
-      code: "gabarito_invalido",
+  });
+});
+
+async function xlsxFile(withAnswer = true, level = "Fundamental") {
+  const { default: ExcelJS } = await import("exceljs");
+  const wb = new ExcelJS.Workbook();
+  const dados = wb.addWorksheet("Dados");
+  [
+    ["Título", "Soma importada"],
+    ["Nível", level],
+    ["Dificuldade", "Muito fácil"],
+    ["Enunciado", "Some."],
+  ].forEach((r) => dados.addRow(r));
+  wb.addWorksheet("Planilha").getCell("A1").value = 10;
+  const g = wb.addWorksheet("Gabarito");
+  g.addRow(["Célula", "Resposta"]);
+  if (withAnswer) g.addRow(["A2", "=SOMA(A1)"]);
+  const buf = (await wb.xlsx.writeBuffer()) as ArrayBuffer;
+  return new File([buf], "ex.xlsx", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
+describe("mock: importação .xlsx por conjunto", () => {
+  it("preview não grava; import cria exercícios em rascunho no conjunto", async () => {
+    const s = createMockServices();
+    const before = (await s.exercises.listBySet("set-1")).length;
+    const preview = await s.exercises.previewImport("set-1", await xlsxFile());
+    expect(preview.errors).toEqual([]);
+    expect(preview.drafts[0]).toMatchObject({ title: "Soma importada", level: "FUNDAMENTAL" });
+    expect((await s.exercises.listBySet("set-1")).length).toBe(before);
+    const { created } = await s.exercises.importXlsx("set-1", await xlsxFile());
+    expect(created[0]).toMatchObject({ setId: "set-1", status: "DRAFT" });
+    expect((await s.exercises.listBySet("set-1")).length).toBe(before + 1);
+  });
+
+  it("tudo ou nada: sem gabarito → 422 IMPORT_INVALID com aba/célula", async () => {
+    const s = createMockServices();
+    await expect(s.exercises.importXlsx("set-1", await xlsxFile(false))).rejects.toMatchObject({
+      status: 422,
+      code: "IMPORT_INVALID",
+      details: {
+        errors: [expect.objectContaining({ sheet: "Gabarito", code: "MISSING_ANSWER_KEY" })],
+      },
     });
+  });
+
+  it("recusa nível fora do conjunto e arquivo que não é .xlsx", async () => {
+    const s = createMockServices();
+    const preview = await s.exercises.previewImport("set-1", await xlsxFile(true, "Avançado"));
+    expect(preview.errors.map((e) => e.code)).toContain("LEVEL_NOT_IN_SET");
+    const csv = new File(["A1,10"], "x.csv", { type: "text/csv" });
+    expect((await s.exercises.previewImport("set-1", csv)).errors[0].code).toBe("FILE_UNREADABLE");
   });
 });
 

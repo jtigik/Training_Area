@@ -170,7 +170,9 @@ export function evaluateFormula(formula: string, lookup: Lookup, depth = 0): Cel
       next();
       const r = additive();
       const [a, b] = typeof v === "number" || typeof r === "number" ? [num(v), num(r)] : [v, r];
-      return { "=": a === b, "<>": a !== b, "<": a < b, ">": a > b, "<=": a <= b, ">=": a >= b }[op.v]!;
+      return { "=": a === b, "<>": a !== b, "<": a < b, ">": a > b, "<=": a <= b, ">=": a >= b }[
+        op.v
+      ]!;
     }
     return v;
   }
@@ -196,6 +198,7 @@ export function displayValue(raw: string, lookup: Lookup): string {
 export function sameValue(a: string, b: string, lookup: Lookup, tolerance = 0): boolean {
   const va = literal(displayValue(a, lookup));
   const vb = literal(displayValue(b, lookup));
-  if (typeof va === "number" && typeof vb === "number") return Math.abs(va - vb) <= tolerance + 1e-9;
+  if (typeof va === "number" && typeof vb === "number")
+    return Math.abs(va - vb) <= tolerance + 1e-9;
   return String(va).trim().toLowerCase() === String(vb).trim().toLowerCase();
 }
