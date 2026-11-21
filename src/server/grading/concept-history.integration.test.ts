@@ -71,22 +71,44 @@ describe.skipIf(!enabled)("overrideLevelConcept / getConceptHistory", () => {
       reason: "Revisei de novo: todos corretos",
     });
     const r = await grading.getConceptHistory(forTenant(T), attemptId);
-    expect(r).toMatchObject({ computedConcept: "ED", concept: "PD" });
-    expect(r.history.map((h) => [h.previousConcept, h.newConcept, h.reason, h.author?.id])).toEqual(
-      [
-        ["ED", "D", "Erro de digitação na célula B2", professor.id],
-        ["D", "PD", "Revisei de novo: todos corretos", professor.id],
-      ],
-    );
-    expect(r.history[0]!.author?.name).toBe(professor.name);
-    expect(r.history[0]!.createdAt.getTime()).toBeLessThanOrEqual(
-      r.history[1]!.createdAt.getTime(),
-    );
+    expect(r.history).toEqual([
+      {
+        previousConcept: "ED",
+        concept: "D",
+        computedConcept: "ED",
+        reason: "Erro de digitação na célula B2",
+        adjustedBy: professor,
+        adjustedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
+      },
+      {
+        previousConcept: "D",
+        concept: "PD",
+        computedConcept: "ED",
+        reason: "Revisei de novo: todos corretos",
+        adjustedBy: professor,
+        adjustedAt: expect.any(String),
+      },
+    ]);
+    expect(r.history[0]!.adjustedAt <= r.history[1]!.adjustedAt).toBe(true);
     expect(
       await prisma.auditLog.count({
         where: { action: "level_attempt.concept_overridden", entityId: attemptId },
       }),
     ).toBe(2);
+  });
+
+  it("sem ajustes → { history: [] }", async () => {
+    const other = await prisma.levelAttempt.create({
+      data: {
+        tenantId: T,
+        studentId: (await prisma.levelAttempt.findUniqueOrThrow({ where: { id: attemptId } }))
+          .studentId,
+        levelId: (await prisma.levelAttempt.findUniqueOrThrow({ where: { id: attemptId } }))
+          .levelId,
+        attemptNumber: 2,
+      },
+    });
+    expect(await grading.getConceptHistory(forTenant(T), other.id)).toEqual({ history: [] });
   });
 
   it("tentativa de outra instituição → 404 NOT_FOUND", async () => {

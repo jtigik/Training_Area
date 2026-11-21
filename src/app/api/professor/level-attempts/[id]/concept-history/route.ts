@@ -3,9 +3,9 @@ import { requireTenant } from "@/server/auth/tenant";
 import { getConceptHistory } from "@/server/grading/service";
 
 /**
- * GET — histórico de ajustes manuais do conceito da tentativa, ordenado do mais
- * antigo ao mais recente: { levelAttemptId, computedConcept, concept, history:
- * [{ id, previousConcept, newConcept, reason, author: { id, name } | null, createdAt }] }.
+ * GET — histórico de ajustes manuais do conceito, do mais antigo ao mais recente:
+ * 200 { history: [{ previousConcept, concept, computedConcept, reason,
+ *   adjustedBy: { id, name }, adjustedAt (ISO) }] } — vazio: { history: [] }.
  * Só PROFESSOR, no próprio tenant; tentativa de outra instituição → 404 NOT_FOUND.
  */
 export async function GET(

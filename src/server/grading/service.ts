@@ -128,40 +128,40 @@ export async function overrideLevelConcept(
   });
 }
 
+/** Item do histórico (contrato combinado com o FE2). */
 export interface ConceptHistoryEntry {
-  id: string;
+  /** Conceito EFETIVO antes deste ajuste. */
   previousConcept: GradeConcept;
-  newConcept: GradeConcept;
+  /** Conceito definido por este ajuste. */
+  concept: GradeConcept;
+  /** Conceito calculado pelas faixas (não muda com ajustes). */
+  computedConcept: GradeConcept | null;
   reason: string;
-  author: { id: string; name: string } | null;
-  createdAt: Date;
+  /** Nulo só se o autor foi removido da plataforma. */
+  adjustedBy: { id: string; name: string } | null;
+  /** ISO 8601. */
+  adjustedAt: string;
 }
 
 /**
  * Histórico COMPLETO de ajustes manuais do conceito de uma tentativa, do mais
  * antigo ao mais recente, a partir da trilha imutável concept_overrides (cada
- * ajuste também vai para AuditLog). Tentativa de outro tenant/inexistente → 404.
- * Autor nulo se o usuário foi removido.
+ * ajuste também vai para AuditLog). Sem ajustes → { history: [] }.
+ * Tentativa de outro tenant/inexistente → 404 NOT_FOUND.
  */
 export async function getConceptHistory(
   db: TenantDb,
   levelAttemptId: string,
-): Promise<{
-  levelAttemptId: string;
-  computedConcept: GradeConcept | null;
-  concept: GradeConcept | null;
-  history: ConceptHistoryEntry[];
-}> {
+): Promise<{ history: ConceptHistoryEntry[] }> {
   const attempt = await db.levelAttempt.findFirst({
     where: { id: levelAttemptId },
-    select: { id: true, computedConcept: true, concept: true },
+    select: { id: true, computedConcept: true },
   });
   if (!attempt) throw new GradingError("NOT_FOUND", "Tentativa não encontrada");
   const rows = await db.conceptOverride.findMany({
     where: { levelAttemptId: attempt.id },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: {
-      id: true,
       fromConcept: true,
       toConcept: true,
       reason: true,
@@ -170,16 +170,13 @@ export async function getConceptHistory(
     },
   });
   return {
-    levelAttemptId: attempt.id,
-    computedConcept: attempt.computedConcept,
-    concept: attempt.concept,
     history: rows.map((r) => ({
-      id: r.id,
       previousConcept: r.fromConcept,
-      newConcept: r.toConcept,
+      concept: r.toConcept,
+      computedConcept: attempt.computedConcept,
       reason: r.reason,
-      author: r.overriddenBy,
-      createdAt: r.createdAt,
+      adjustedBy: r.overriddenBy,
+      adjustedAt: r.createdAt.toISOString(),
     })),
   };
 }
