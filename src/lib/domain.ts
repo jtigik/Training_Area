@@ -12,6 +12,27 @@ export const KNOWLEDGE_LEVEL_LABELS: Record<KnowledgeLevel, string> = {
   DASHBOARD: "Dashboard",
 };
 
+/**
+ * Níveis liberados no MVP. DASHBOARD existe no enum (reservado para v1.1),
+ * mas não pode ser criado/selecionado agora.
+ */
+export const MVP_LEVELS = [
+  "FUNDAMENTAL",
+  "PROFESSIONAL",
+  "ADVANCED",
+] as const satisfies readonly KnowledgeLevel[];
+export type MvpLevel = (typeof MVP_LEVELS)[number];
+
+export function isMvpLevel(value: unknown): value is MvpLevel {
+  return typeof value === "string" && (MVP_LEVELS as readonly string[]).includes(value);
+}
+
+/** Opções de nível para a UI do MVP (sem Dashboard). */
+export const SELECTABLE_LEVEL_OPTIONS: ReadonlyArray<{ value: MvpLevel; label: string }> =
+  MVP_LEVELS.map((value) => ({ value, label: KNOWLEDGE_LEVEL_LABELS[value] }));
+
+export const LEVEL_NOT_AVAILABLE_IN_MVP = "O nível Dashboard estará disponível apenas na v1.1";
+
 export const DIFFICULTIES = ["VERY_EASY", "EASY", "MEDIUM", "HARD", "VERY_HARD"] as const;
 export type Difficulty = (typeof DIFFICULTIES)[number];
 

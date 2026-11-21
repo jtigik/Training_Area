@@ -41,7 +41,8 @@ enum Role {
   ALUNO
 }
 
-/// Níveis: Fundamental, Profissional, Avançado, Dashboard.
+/// Níveis: Fundamental, Profissional, Avançado e Dashboard.
+/// Dashboard: reservado para v1.1 (o MVP rejeita na validação — MVP_LEVELS em src/lib/domain.ts).
 enum KnowledgeLevel {
   FUNDAMENTAL
   PROFESSIONAL

@@ -123,6 +123,7 @@ O seed também cria 5 exercícios e 1 seção de conteúdo **globais** e a "Tril
 - **Tenant** (instituição). Toda entidade de domínio tem `tenantId`, indexado, e unicidades escopadas por tenant.
 - **User / Session / Account / Verification**: tabelas do Better Auth. `users.tenant_id` é nulo só para SUPER_ADMIN (CHECK). **Invitation**: convite com papel.
 - **Classroom / ClassroomMember**: turmas.
+- **Níveis (`KnowledgeLevel`)**: `FUNDAMENTAL`, `PROFESSIONAL`, `ADVANCED` e `DASHBOARD` (reservado para v1.1). No MVP a validação (`src/lib/validation/content.ts`) recusa DASHBOARD e a UI deve usar `SELECTABLE_LEVEL_OPTIONS` (`src/lib/domain.ts`).
 - **ContentSection / Exercise**: `tenantId` nulo + `isGlobal = true` = **global** (banco inicial da plataforma): toda instituição lê, só o SUPER_ADMIN escreve. Com tenant = exclusivo da instituição.
 - **ExerciseSet → Level → ExerciseQuota**: trilha da instituição, níveis participantes e quantidade (padrão, por turma ou por aluno; precedência em `src/lib/quota.ts`). O pool de um Level são os exercícios publicados do mesmo nível, nas dificuldades do conjunto, da instituição **ou globais**.
 - **LevelAttempt**: tentativa do aluno num nível, com conceito `ND | ED | D | PD`. Refazer só após ND/ED (`src/lib/grading.ts`). **ExerciseAttempt**: cada envio, ligado à LevelAttempt.
