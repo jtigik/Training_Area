@@ -11,6 +11,32 @@ function qs(query?: Query): string {
   return s ? `?${s}` : "";
 }
 
+/**
+ * Converte a resposta de erro no ApiError. Formato padrão de todas as rotas
+ * (BE1/BE2): `{ error: { code, message, details? } }`. A importação .xlsx
+ * pode trazer `errors[]` no topo (422 IMPORT_INVALID); vira `details.errors`.
+ */
+export async function toApiError(res: Response): Promise<ApiError> {
+  const body: unknown = await res.json().catch(() => null);
+  const b = (body ?? {}) as { error?: Partial<ApiErrorBody>; errors?: unknown };
+  const code = typeof b.error?.code === "string" ? b.error.code : "HTTP_ERROR";
+  const fallback =
+    code === "IMPORT_INVALID"
+      ? "A planilha tem erros; nada foi importado."
+      : res.statusText || "Algo deu errado. Tente novamente.";
+  const message =
+    typeof b.error?.message === "string" && b.error.message ? b.error.message : fallback;
+  let details = b.error?.details;
+  if (b.errors !== undefined) {
+    details = { ...(typeof details === "object" && details ? details : {}), errors: b.errors };
+  }
+  if (code === "IMPORT_INVALID") {
+    const d = (details ?? {}) as { errors?: unknown };
+    details = { ...d, errors: Array.isArray(d.errors) ? d.errors : [] };
+  }
+  return new ApiError(res.status, code, message, details);
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
@@ -18,39 +44,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) {
-    let err: ApiErrorBody = { code: "erro_http", message: res.statusText };
-    try {
-      err = (await res.json()) as ApiErrorBody;
-    } catch {
-      /* corpo vazio */
-    }
-    throw new ApiError(res.status, err.code, err.message, err.details);
-  }
+  if (!res.ok) throw await toApiError(res);
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
-/** Envio multipart do .xlsx; converte o 422 do BE2 `{ error: { code }, errors }` em ApiError. */
+/** Envio multipart do .xlsx (campo `file`). */
 async function upload<T>(path: string, file: File): Promise<T> {
   const form = new FormData();
   form.append("file", file);
   const res = await fetch(path, { method: "POST", credentials: "include", body: form });
-  const body: unknown = await res.json().catch(() => null);
-  if (!res.ok) {
-    const b = (body ?? {}) as {
-      error?: { code?: string; message?: string };
-      errors?: unknown;
-      code?: string;
-      message?: string;
-    };
-    const code = b.error?.code ?? b.code ?? "erro_http";
-    const message =
-      b.error?.message ??
-      b.message ??
-      (code === "IMPORT_INVALID" ? "A planilha tem erros; nada foi importado." : res.statusText);
-    throw new ApiError(res.status, code, message, { errors: b.errors ?? [] });
-  }
-  return body as T;
+  if (!res.ok) throw await toApiError(res);
+  return (await res.json()) as T;
 }
 
 /** Implementação real (fetch) seguindo os endpoints documentados em `contracts.ts`. */

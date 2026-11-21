@@ -7,18 +7,18 @@
  * UI usa `./http`, que chama os endpoints abaixo.
  *
  * Convenções: JSON; datas ISO 8601 UTC; enums iguais aos do Prisma; erros no
- * formato ApiErrorBody `{ code, message, details? }` com status HTTP adequado
+ * envelope `{ error: { code, message, details? } }` (code em UPPER_SNAKE) com status HTTP adequado
  * (401 sem sessão, 403 papel sem permissão, 404, 409 conflito, 422 regra).
- * Multi-tenant: o servidor resolve `institutionId` pela sessão. Nenhum
- * endpoint de /api/admin ou /api/professor aceita institutionId do cliente.
+ * Multi-tenant: o servidor resolve `tenantId` pela sessão. Nenhum
+ * endpoint de /api/admin ou /api/professor aceita tenantId do cliente.
  *
  * Backend 1 — instituições, usuários, configurações, feedback
  *   GET    /api/super-admin/institutions?search=&active=              → Institution[]
- *   POST   /api/super-admin/institutions     body CreateInstitutionInput → 201 Institution | 409 slug_duplicado
+ *   POST   /api/super-admin/institutions     body CreateInstitutionInput → 201 Institution | 409 SLUG_IN_USE
  *   PATCH  /api/super-admin/institutions/:id body UpdateInstitutionInput → Institution
  *   GET    /api/admin/users?search=&role=&active=&page=&pageSize=   → Page<User>
- *   POST   /api/admin/users                 body CreateUserInput     → 201 User | 409 email_duplicado
- *   PATCH  /api/admin/users/:id             body UpdateUserInput     → User | 409 ultimo_admin
+ *   POST   /api/admin/users                 body CreateUserInput     → 201 User | 409 EMAIL_IN_USE
+ *   PATCH  /api/admin/users/:id             body UpdateUserInput     → User | 409 LAST_ADMIN
  *   GET    /api/admin/config                                         → InstitutionSettings
  *   PUT    /api/admin/config                body UpdateSettingsInput → InstitutionSettings
  *   GET    /api/professor/feedback-templates?setId=  (sem setId = padrão) → FeedbackTemplate
@@ -26,8 +26,8 @@
  *   GET    /api/professor/feedback-reviews?status=DRAFT,REJECTED&level=&search= → ReviewFeedback[]
  *   GET    /api/professor/feedback-reviews/:id                         → ReviewFeedback
  *   PATCH  /api/professor/feedback-reviews/:id body { finalText }      → ReviewFeedback (só DRAFT ou REJECTED)
- *   POST   /api/professor/feedback-reviews/:id/approve body { finalText } → ReviewFeedback (DRAFT|REJECTED → APPROVED) | 409 ja_revisado
- *   POST   /api/professor/feedback-reviews/:id/reject  body { reason? }   → ReviewFeedback (DRAFT → REJECTED) | 409 ja_revisado
+ *   POST   /api/professor/feedback-reviews/:id/approve body { finalText } → ReviewFeedback (DRAFT|REJECTED → APPROVED) | 409 ALREADY_REVIEWED
+ *   POST   /api/professor/feedback-reviews/:id/reject  body { reason? }   → ReviewFeedback (DRAFT → REJECTED) | 409 ALREADY_REVIEWED
  *   POST   /api/professor/feedback-reviews/:id/regenerate             → ReviewFeedback (novo texto da IA; DRAFT|REJECTED → DRAFT)
  *          Status = enum FeedbackStatus do BE1 (DRAFT "Pendente", APPROVED, REJECTED); o aluno só vê APPROVED.
  *
@@ -42,12 +42,12 @@
  *   GET    /api/professor/sets                                         → ExerciseSet[]
  *   GET    /api/professor/sets/:id                                     → ExerciseSet
  *   POST   /api/professor/sets                body ExerciseSetInput    → 201 ExerciseSet (DRAFT)
- *   PATCH  /api/professor/sets/:id            body Partial<ExerciseSetInput> → ExerciseSet | 409 nivel_com_progresso
- *   POST   /api/professor/sets/:id/publish                             → ExerciseSet | 422 publicacao_bloqueada { issues }
+ *   PATCH  /api/professor/sets/:id            body Partial<ExerciseSetInput> → ExerciseSet | 409 LEVEL_HAS_PROGRESS
+ *   POST   /api/professor/sets/:id/publish                             → ExerciseSet | 422 PUBLISH_BLOCKED { issues }
  *   POST   /api/professor/sets/:id/unpublish                           → ExerciseSet
  *   GET    /api/professor/sets/:id/exercises                           → Exercise[]
  *   GET    /api/professor/exercises/:id                                → Exercise
- *   POST   /api/professor/sets/:id/exercises  body ExerciseInput       → 201 Exercise | 422 nivel_fora_do_conjunto | gabarito_invalido
+ *   POST   /api/professor/sets/:id/exercises  body ExerciseInput       → 201 Exercise | 422 LEVEL_NOT_IN_SET | INVALID_ANSWER_KEY
  *   PATCH  /api/professor/exercises/:id       body Partial<ExerciseInput> → Exercise
  *   DELETE /api/professor/exercises/:id                                → 204
  *   POST   /api/professor/sets/:id/exercises/import/preview  multipart `file` → 200 ImportPreview { drafts[], errors[] } (não grava)
@@ -58,14 +58,14 @@
  *   GET    /api/professor/bank?level=&difficulty=&origin=&search=      → BankExercise[]
  *   GET    /api/professor/bank/:id                                     → BankExercise
  *   POST   /api/professor/bank                body BankExerciseInput   → 201 BankExercise (origin INSTITUTION)
- *   PATCH  /api/professor/bank/:id            body Partial<BankExerciseInput> → BankExercise | 403 item_da_plataforma
- *   DELETE /api/professor/bank/:id                                     → 204 | 403 item_da_plataforma
- *   POST   /api/professor/bank/:id/copy       body { setId }           → 201 Exercise (DRAFT) | 422 nivel_fora_do_conjunto
+ *   PATCH  /api/professor/bank/:id            body Partial<BankExerciseInput> → BankExercise | 403 PLATFORM_ITEM_READ_ONLY
+ *   DELETE /api/professor/bank/:id                                     → 204 | 403 PLATFORM_ITEM_READ_ONLY
+ *   POST   /api/professor/bank/:id/copy       body { setId }           → 201 Exercise (DRAFT) | 422 LEVEL_NOT_IN_SET
  *   GET    /api/professor/classrooms                                   → Classroom[]
  *   GET    /api/professor/students                                     → StudentSummary[]
  *   GET    /api/professor/results?setId=&level=&difficulty=&from=&to=  → ResultsData
  *   GET    /api/professor/results/students/:id                         → StudentDetail
- *   POST   /api/professor/results/students/:id/redo body { setId, level } → LevelProgress | 409 refazer_nao_permitido
+ *   POST   /api/professor/results/students/:id/redo body { setId, level } → LevelProgress | 409 LEVEL_NOT_REDOABLE
  */
 import type { ImportDraft, ImportIssue } from "../xlsx/import";
 import type {
@@ -96,10 +96,17 @@ import type {
   User,
 } from "../domain/types";
 
+/** Corpo de erro dentro do envelope `{ error: ApiErrorBody }`. */
 export interface ApiErrorBody {
+  /** UPPER_SNAKE (ex.: NOT_FOUND, ALREADY_REVIEWED, LEVEL_NOT_REDOABLE). */
   code: string;
   message: string;
   details?: unknown;
+}
+
+/** Envelope padrão de erro de todas as rotas (BE1/BE2). */
+export interface ApiErrorEnvelope {
+  error: ApiErrorBody;
 }
 
 export class ApiError extends Error {

@@ -15,7 +15,7 @@ import {
 import { createSeed } from "../services/mock/seed";
 
 const studentsOf = (db: ReturnType<typeof createSeed>) =>
-  db.users.filter((u) => u.role === "ALUNO" && u.institutionId === "inst-1");
+  db.users.filter((u) => u.role === "ALUNO" && u.tenantId === "inst-1");
 
 describe("publicação de conjunto", () => {
   it("permite publicar quando o pool atende às quantidades", () => {

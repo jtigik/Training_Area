@@ -17,7 +17,7 @@ export interface MockOptions {
   latency?: number;
   db?: MockDb;
   /** Instituição da sessão simulada (admin da instituição e professor). */
-  institutionId?: string;
+  tenantId?: string;
   /** Usuário da sessão simulada (autor/revisor). */
   userId?: string;
   /** Chamado após cada operação (ex.: salvar em localStorage). */
@@ -25,10 +25,10 @@ export interface MockOptions {
 }
 
 /** Remove o campo interno de tenant dos registros que não o expõem no DTO. */
-function stripTenant<T extends { institutionId: string }>(record: T): Omit<T, "institutionId"> {
+function stripTenant<T extends { tenantId: string }>(record: T): Omit<T, "tenantId"> {
   const copy: Partial<T> = { ...record };
-  delete copy.institutionId;
-  return copy as Omit<T, "institutionId">;
+  delete copy.tenantId;
+  return copy as Omit<T, "tenantId">;
 }
 
 const clone = <T>(v: T): T => structuredClone(v);
@@ -51,7 +51,7 @@ async function readXlsxFile(file: File): Promise<XlsxImportResult> {
 export function createMockServices(options: MockOptions = {}): Services & { db: MockDb } {
   const db = options.db ?? createSeed();
   const latency = options.latency ?? 0;
-  const tenant = options.institutionId ?? MOCK_INSTITUTION_ID;
+  const tenant = options.tenantId ?? MOCK_INSTITUTION_ID;
   const actor = options.userId ?? "u-prof";
 
   const delay = <T>(fn: () => T): Promise<T> =>
@@ -70,22 +70,22 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
     });
 
   const notFound = (what: string): never => {
-    throw new ApiError(404, "nao_encontrado", `${what} não encontrado(a).`);
+    throw new ApiError(404, "NOT_FOUND", `${what} não encontrado(a).`);
   };
-  const mine = <T extends { institutionId: string | null }>(list: T[]) =>
-    list.filter((x) => x.institutionId === tenant);
-  const find = <T extends { id: string; institutionId: string | null }>(
+  const mine = <T extends { tenantId: string | null }>(list: T[]) =>
+    list.filter((x) => x.tenantId === tenant);
+  const find = <T extends { id: string; tenantId: string | null }>(
     list: T[],
     id: string,
     what: string,
-  ): T => list.find((x) => x.id === id && x.institutionId === tenant) ?? notFound(what);
+  ): T => list.find((x) => x.id === id && x.tenantId === tenant) ?? notFound(what);
   const findUser = (id: string) => find(db.users, id, "Usuário");
   const findSection = (id: string) => find(db.sections, id, "Seção");
   const findSet = (id: string) => find(db.sets, id, "Conjunto");
   const findExercise = (id: string) => find(db.exercises, id, "Exercício");
   const findReview = (id: string) => find(db.reviews, id, "Feedback");
   const findBank = (id: string): BankExercise =>
-    db.bank.find((b) => b.id === id && (b.institutionId === null || b.institutionId === tenant)) ??
+    db.bank.find((b) => b.id === id && (b.tenantId === null || b.tenantId === tenant)) ??
     notFound("Exercício do banco");
   const sortedSections = () => mine(db.sections).sort((a, b) => a.position - b.position);
   const emailTaken = (email: string, exceptId?: string) =>
@@ -98,22 +98,21 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
     if (!set.levels.includes(level)) {
       throw new ApiError(
         422,
-        "nivel_fora_do_conjunto",
+        "LEVEL_NOT_IN_SET",
         "O nível do exercício não faz parte do conjunto.",
       );
     }
   };
   const assertPending = (r: { status: string }) => {
     if (r.status !== "DRAFT")
-      throw new ApiError(409, "ja_revisado", "Este feedback já foi revisado.");
+      throw new ApiError(409, "ALREADY_REVIEWED", "Este feedback já foi revisado.");
   };
   /** Pendente ou rejeitado: o professor ainda pode editar, aprovar ou gerar de novo. */
   const assertOpen = (r: { status: string }) => {
     if (r.status === "APPROVED")
-      throw new ApiError(409, "ja_revisado", "Este feedback já foi aprovado.");
+      throw new ApiError(409, "ALREADY_REVIEWED", "Este feedback já foi aprovado.");
   };
-  const countUsers = (institutionId: string) =>
-    db.users.filter((u) => u.institutionId === institutionId).length;
+  const countUsers = (tenantId: string) => db.users.filter((u) => u.tenantId === tenantId).length;
 
   return {
     db,
@@ -136,16 +135,12 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if (db.institutions.some((i) => i.slug === input.slug)) {
             throw new ApiError(
               409,
-              "slug_duplicado",
+              "SLUG_IN_USE",
               "Já existe uma instituição com este identificador.",
             );
           }
           if (emailTaken(input.adminEmail)) {
-            throw new ApiError(
-              409,
-              "email_duplicado",
-              "Já existe um usuário com o e-mail do admin.",
-            );
+            throw new ApiError(409, "EMAIL_IN_USE", "Já existe um usuário com o e-mail do admin.");
           }
           const inst = {
             id: newId("inst"),
@@ -160,7 +155,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           db.institutions.push(inst);
           db.users.push({
             id: newId("u"),
-            institutionId: inst.id,
+            tenantId: inst.id,
             name: input.adminName.trim(),
             email: input.adminEmail.trim().toLowerCase(),
             role: "INSTITUTION_ADMIN",
@@ -169,7 +164,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
             updatedAt: now(),
           });
           db.settings.push({
-            institutionId: inst.id,
+            tenantId: inst.id,
             instanceName: inst.name,
             openSignup: false,
             locale: "pt-BR",
@@ -183,7 +178,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if (input.slug && db.institutions.some((i) => i.slug === input.slug && i.id !== id)) {
             throw new ApiError(
               409,
-              "slug_duplicado",
+              "SLUG_IN_USE",
               "Já existe uma instituição com este identificador.",
             );
           }
@@ -218,11 +213,11 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
       create: (input) =>
         delay(() => {
           if (emailTaken(input.email)) {
-            throw new ApiError(409, "email_duplicado", "Já existe um usuário com este e-mail.");
+            throw new ApiError(409, "EMAIL_IN_USE", "Já existe um usuário com este e-mail.");
           }
           const u: User = {
             id: newId("u"),
-            institutionId: tenant,
+            tenantId: tenant,
             name: input.name.trim(),
             email: input.email.trim().toLowerCase(),
             role: input.role,
@@ -241,12 +236,12 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if ((demoting || deactivating) && isLastActiveAdmin(db.users, id)) {
             throw new ApiError(
               409,
-              "ultimo_admin",
+              "LAST_ADMIN",
               "Não é possível rebaixar ou desativar o último admin da instituição.",
             );
           }
           if (input.email && emailTaken(input.email, id)) {
-            throw new ApiError(409, "email_duplicado", "Já existe um usuário com este e-mail.");
+            throw new ApiError(409, "EMAIL_IN_USE", "Já existe um usuário com este e-mail.");
           }
           Object.assign(u, {
             ...input,
@@ -259,12 +254,10 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
 
     settings: {
       get: () =>
-        delay(
-          () => db.settings.find((s) => s.institutionId === tenant) ?? notFound("Configuração"),
-        ),
+        delay(() => db.settings.find((s) => s.tenantId === tenant) ?? notFound("Configuração")),
       update: (input) =>
         delay(() => {
-          const s = db.settings.find((x) => x.institutionId === tenant) ?? notFound("Configuração");
+          const s = db.settings.find((x) => x.tenantId === tenant) ?? notFound("Configuração");
           return Object.assign(s, input, { updatedAt: now() });
         }),
     },
@@ -276,7 +269,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
         delay(() => {
           const s: ContentSection = {
             id: newId("sec"),
-            institutionId: tenant,
+            tenantId: tenant,
             ...input,
             position: mine(db.sections).length,
             status: "DRAFT",
@@ -294,7 +287,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           const s = findSection(id);
           // Arquivada volta como rascunho antes de ser publicada (TA-013).
           if (s.status === "ARCHIVED" && status === "PUBLISHED") {
-            throw new ApiError(422, "transicao_invalida", "Restaure a seção antes de publicar.");
+            throw new ApiError(422, "INVALID_TRANSITION", "Restaure a seção antes de publicar.");
           }
           return Object.assign(s, { status, updatedAt: now() });
         }),
@@ -304,7 +297,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if (ids.length !== own.length || ids.some((id) => !own.find((s) => s.id === id))) {
             throw new ApiError(
               422,
-              "ordem_invalida",
+              "INVALID_ORDER",
               "A lista de ordenação deve conter todas as seções.",
             );
           }
@@ -317,7 +310,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if (s.status !== "DRAFT") {
             throw new ApiError(
               422,
-              "remocao_invalida",
+              "INVALID_REMOVAL",
               "Só seções em rascunho podem ser excluídas; arquive as demais.",
             );
           }
@@ -333,7 +326,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
         delay(() => {
           const set: ExerciseSet = {
             id: newId("set"),
-            institutionId: tenant,
+            tenantId: tenant,
             ...input,
             overrides: input.overrides.map((o) => ({ ...o, id: newId("ov") })),
             status: "DRAFT",
@@ -355,7 +348,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
             if (blocked.length) {
               throw new ApiError(
                 409,
-                "nivel_com_progresso",
+                "LEVEL_HAS_PROGRESS",
                 "Não é possível remover níveis que já têm progresso de alunos.",
                 {
                   levels: blocked,
@@ -375,7 +368,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if (issues.length) {
             throw new ApiError(
               422,
-              "publicacao_bloqueada",
+              "PUBLISH_BLOCKED",
               "O conjunto não atende às regras de quantidade.",
               { issues },
             );
@@ -393,11 +386,11 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
         delay(() => {
           assertLevelInSet(findSet(setId), input.level);
           if (validateAnswers(input.grid, input.answers).length) {
-            throw new ApiError(422, "gabarito_invalido", "Gabarito incompleto.");
+            throw new ApiError(422, "INVALID_ANSWER_KEY", "Gabarito incompleto.");
           }
           const ex: Exercise = {
             id: newId("ex"),
-            institutionId: tenant,
+            tenantId: tenant,
             setId,
             bankItemId: null,
             ...input,
@@ -413,7 +406,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if (input.level) assertLevelInSet(findSet(ex.setId), input.level);
           const merged = { ...ex, ...input };
           if (validateAnswers(merged.grid, merged.answers).length) {
-            throw new ApiError(422, "gabarito_invalido", "Gabarito incompleto.");
+            throw new ApiError(422, "INVALID_ANSWER_KEY", "Gabarito incompleto.");
           }
           return Object.assign(ex, input, { updatedAt: now() });
         }),
@@ -437,7 +430,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
         return delay(() => {
           const created = report.drafts.map<Exercise>((d) => ({
             id: newId("ex"),
-            institutionId: tenant,
+            tenantId: tenant,
             setId,
             status: "DRAFT",
             bankItemId: null,
@@ -457,7 +450,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           const term = q.search?.trim().toLowerCase();
           return db.bank.filter(
             (b) =>
-              (b.institutionId === null || b.institutionId === tenant) &&
+              (b.tenantId === null || b.tenantId === tenant) &&
               (!q.level || b.level === q.level) &&
               (!q.difficulty || b.difficulty === q.difficulty) &&
               (!q.origin || b.origin === q.origin) &&
@@ -470,11 +463,11 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
       create: (input) =>
         delay(() => {
           if (validateAnswers(input.grid, input.answers).length) {
-            throw new ApiError(422, "gabarito_invalido", "Gabarito incompleto.");
+            throw new ApiError(422, "INVALID_ANSWER_KEY", "Gabarito incompleto.");
           }
           const item: BankExercise = {
             id: newId("bank"),
-            institutionId: tenant,
+            tenantId: tenant,
             origin: "INSTITUTION",
             source: "EDITOR",
             ...input,
@@ -490,7 +483,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if (item.origin === "PLATFORM") {
             throw new ApiError(
               403,
-              "item_da_plataforma",
+              "PLATFORM_ITEM_READ_ONLY",
               "Itens do banco inicial não podem ser editados; copie para um conjunto.",
             );
           }
@@ -502,7 +495,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if (item.origin === "PLATFORM") {
             throw new ApiError(
               403,
-              "item_da_plataforma",
+              "PLATFORM_ITEM_READ_ONLY",
               "Itens do banco inicial não podem ser excluídos.",
             );
           }
@@ -515,7 +508,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if (item.status !== "PUBLISHED") {
             throw new ApiError(
               422,
-              "item_em_rascunho",
+              "ITEM_IS_DRAFT",
               "Publique o item no banco antes de usá-lo em um conjunto.",
             );
           }
@@ -523,7 +516,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           const { title, statement, level, difficulty, grid, answers, hint } = item;
           const ex: Exercise = {
             id: newId("ex"),
-            institutionId: tenant,
+            tenantId: tenant,
             setId,
             bankItemId: item.id,
             title,
@@ -545,7 +538,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
     feedback: {
       get: (setId) =>
         delay(() => {
-          const t = db.feedback.find((f) => f.institutionId === tenant && f.setId === setId);
+          const t = db.feedback.find((f) => f.tenantId === tenant && f.setId === setId);
           if (t) return stripTenant(t);
           return {
             setId: null,
@@ -556,15 +549,15 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
       save: (input) =>
         delay(() => {
           const errors = validateBands(input.bands);
-          if (errors.length) throw new ApiError(422, "faixas_invalidas", errors.join(" "));
+          if (errors.length) throw new ApiError(422, "INVALID_BANDS", errors.join(" "));
           const t = {
             setId: input.setId,
             bands: input.bands.map((b) => ({ ...b, id: newId("fb") })),
             updatedAt: now(),
           };
           db.feedback = [
-            ...db.feedback.filter((f) => !(f.institutionId === tenant && f.setId === input.setId)),
-            { ...t, institutionId: tenant },
+            ...db.feedback.filter((f) => !(f.tenantId === tenant && f.setId === input.setId)),
+            { ...t, tenantId: tenant },
           ];
           return t;
         }),
@@ -595,7 +588,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           const r = findReview(id);
           assertOpen(r);
           if (!finalText.trim())
-            throw new ApiError(422, "texto_vazio", "O feedback aprovado não pode ficar vazio.");
+            throw new ApiError(422, "EMPTY_TEXT", "O feedback aprovado não pode ficar vazio.");
           return Object.assign(r, {
             finalText,
             status: "APPROVED",
@@ -665,7 +658,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
           if (!canRedoLevel(p)) {
             throw new ApiError(
               409,
-              "refazer_nao_permitido",
+              "LEVEL_NOT_REDOABLE",
               "Só é possível refazer o nível com conceito ND ou ED.",
             );
           }

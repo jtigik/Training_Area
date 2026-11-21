@@ -16,11 +16,11 @@ describe("mock: multi-tenant", () => {
   it("lista só dados da instituição da sessão", async () => {
     const s = createMockServices();
     const users = await s.users.list({ pageSize: 50 });
-    expect(users.items.every((u) => u.institutionId === "inst-1")).toBe(true);
+    expect(users.items.every((u) => u.tenantId === "inst-1")).toBe(true);
     expect(users.total).toBe(7);
     expect((await s.sections.list()).map((x) => x.id)).not.toContain("sec-b1");
     await expect(s.sections.get("sec-b1")).rejects.toMatchObject({ status: 404 });
-    const other = createMockServices({ institutionId: "inst-2" });
+    const other = createMockServices({ tenantId: "inst-2" });
     expect((await other.users.list()).total).toBe(3);
   });
 
@@ -36,7 +36,7 @@ describe("mock: multi-tenant", () => {
     expect(inst.active).toBe(true);
     expect(s.db.users.find((u) => u.email === "admin@nova.edu.br")).toMatchObject({
       role: "INSTITUTION_ADMIN",
-      institutionId: inst.id,
+      tenantId: inst.id,
     });
     await expect(
       s.institutions.create({
@@ -46,7 +46,7 @@ describe("mock: multi-tenant", () => {
         adminName: "a",
         adminEmail: "a@x.com",
       }),
-    ).rejects.toMatchObject({ code: "slug_duplicado" });
+    ).rejects.toMatchObject({ code: "SLUG_IN_USE" });
     expect((await s.institutions.update(inst.id, { active: false })).active).toBe(false);
     expect((await s.institutions.list({ active: true })).map((i) => i.id)).not.toContain(inst.id);
   });
@@ -59,7 +59,7 @@ describe("mock: usuários e configurações", () => {
       s.users.create({ name: "X", email: "PAULO@escola.edu.br", role: "ALUNO" }),
     ).rejects.toMatchObject({
       status: 409,
-      code: "email_duplicado",
+      code: "EMAIL_IN_USE",
     });
   });
 
@@ -82,7 +82,7 @@ describe("mock: usuários e configurações", () => {
     const s = createMockServices({ persist });
     const saved = await s.settings.update({ instanceName: "Nome novo", openSignup: true });
     expect(saved).toMatchObject({
-      institutionId: "inst-1",
+      tenantId: "inst-1",
       instanceName: "Nome novo",
       openSignup: true,
     });
@@ -113,9 +113,9 @@ describe("mock: conteúdo, conjuntos e exercícios", () => {
       overrides: [],
     });
     expect(set.status).toBe("DRAFT");
-    await expect(s.sets.publish(set.id)).rejects.toMatchObject({ code: "publicacao_bloqueada" });
+    await expect(s.sets.publish(set.id)).rejects.toMatchObject({ code: "PUBLISH_BLOCKED" });
     await expect(s.sets.update("set-1", { levels: ["PROFESSIONAL"] })).rejects.toMatchObject({
-      code: "nivel_com_progresso",
+      code: "LEVEL_HAS_PROGRESS",
     });
   });
 
@@ -124,7 +124,7 @@ describe("mock: conteúdo, conjuntos e exercícios", () => {
     await expect(
       s.exercises.create("set-1", { ...content, level: "ADVANCED", status: "DRAFT" }),
     ).rejects.toMatchObject({
-      code: "nivel_fora_do_conjunto",
+      code: "LEVEL_NOT_IN_SET",
     });
     await expect(
       s.exercises.create("set-1", {
@@ -133,7 +133,7 @@ describe("mock: conteúdo, conjuntos e exercícios", () => {
         level: "FUNDAMENTAL",
         status: "DRAFT",
       }),
-    ).rejects.toMatchObject({ code: "gabarito_invalido" });
+    ).rejects.toMatchObject({ code: "INVALID_ANSWER_KEY" });
     const ex = await s.exercises.create("set-1", {
       ...content,
       level: "FUNDAMENTAL",
@@ -167,7 +167,7 @@ describe("mock: banco de exercícios", () => {
       title: "Maior venda",
     });
     await expect(s.bank.copyToSet("bank-6", "set-1")).rejects.toMatchObject({
-      code: "nivel_fora_do_conjunto",
+      code: "LEVEL_NOT_IN_SET",
     });
     await expect(s.bank.update("bank-1", { title: "x" })).rejects.toMatchObject({ status: 403 });
     expect((await s.bank.update("bank-i1", { title: "Desconto" })).title).toBe("Desconto");
@@ -182,7 +182,7 @@ describe("mock: banco de exercícios", () => {
       status: "DRAFT",
     });
     await expect(s.bank.copyToSet(created.id, "set-1")).rejects.toMatchObject({
-      code: "item_em_rascunho",
+      code: "ITEM_IS_DRAFT",
     });
   });
 });
@@ -251,7 +251,7 @@ describe("mock: feedback", () => {
         setId: "set-1",
         bands: [{ minPercent: 0, maxPercent: 40, label: "a", template: "b" }],
       }),
-    ).rejects.toMatchObject({ code: "faixas_invalidas" });
+    ).rejects.toMatchObject({ code: "INVALID_BANDS" });
   });
 
   it("fila de revisão: edita, aprova, rejeita e impede revisar de novo", async () => {
@@ -268,7 +268,9 @@ describe("mock: feedback", () => {
       reviewerId: "u-prof",
     });
     expect(ok.generatedText).not.toBe(ok.finalText);
-    await expect(s.reviews.reject("rv-1", "motivo")).rejects.toMatchObject({ code: "ja_revisado" });
+    await expect(s.reviews.reject("rv-1", "motivo")).rejects.toMatchObject({
+      code: "ALREADY_REVIEWED",
+    });
     expect(await s.reviews.reject("rv-2")).toMatchObject({
       status: "REJECTED",
       rejectionReason: null,
@@ -277,7 +279,7 @@ describe("mock: feedback", () => {
     expect((await s.reviews.list({ status: ["DRAFT", "REJECTED"] })).map((r) => r.id)).toEqual([
       "rv-2",
     ]);
-    await expect(s.reviews.reject("rv-2")).rejects.toMatchObject({ code: "ja_revisado" });
+    await expect(s.reviews.reject("rv-2")).rejects.toMatchObject({ code: "ALREADY_REVIEWED" });
     const again = await s.reviews.regenerate("rv-2");
     expect(again).toMatchObject({ status: "DRAFT", reviewerId: null });
     expect(again.finalText).toBe(again.generatedText);
@@ -291,7 +293,7 @@ describe("mock: resultados e refazer nível", () => {
     expect(p).toMatchObject({ levelAttempt: 2, status: "IN_PROGRESS", concept: null });
     expect(p.history).toHaveLength(2);
     await expect(s.results.redoLevel("u-al1", "set-1", "FUNDAMENTAL")).rejects.toMatchObject({
-      code: "refazer_nao_permitido",
+      code: "LEVEL_NOT_REDOABLE",
     });
   });
 
@@ -299,6 +301,6 @@ describe("mock: resultados e refazer nível", () => {
     const s = createMockServices();
     const d = await s.results.student("u-al1");
     expect(d.attempts[0].id).toBe("a-4");
-    expect(d.attempts[0]).not.toHaveProperty("institutionId");
+    expect(d.attempts[0]).not.toHaveProperty("tenantId");
   });
 });

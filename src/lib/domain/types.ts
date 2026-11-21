@@ -5,7 +5,7 @@
  * branch do Backend 1); rótulos pt-BR em ./labels.ts. Os Backends 1 e 2 devem
  * expor DTOs JSON com estes formatos (datas em ISO 8601 UTC).
  *
- * Multi-tenant: toda entidade de uma instituição carrega `institutionId`.
+ * Multi-tenant: toda entidade de uma instituição carrega `tenantId`.
  * O escopo vem da sessão no servidor; o cliente nunca escolhe o tenant,
  * exceto o SUPER_ADMIN na gestão de instituições.
  */
@@ -69,7 +69,7 @@ export interface Institution {
 export interface User {
   id: string;
   /** `null` apenas para SUPER_ADMIN. */
-  institutionId: string | null;
+  tenantId: string | null;
   name: string;
   email: string;
   role: Role;
@@ -81,7 +81,7 @@ export interface User {
 
 export interface ContentSection {
   id: string;
-  institutionId: string;
+  tenantId: string;
   title: string;
   /** Corpo em Markdown. */
   body: string;
@@ -136,7 +136,7 @@ export interface ExerciseContent {
 
 export interface Exercise extends ExerciseContent {
   id: string;
-  institutionId: string;
+  tenantId: string;
   setId: string;
   status: ExerciseSetStatus;
   /** Item do banco de origem, quando o exercício foi copiado do banco. */
@@ -149,13 +149,13 @@ export type BankOrigin = "PLATFORM" | "INSTITUTION";
 export type BankSource = "SEED" | "EDITOR" | "XLSX";
 
 /**
- * Item do banco de exercícios. `institutionId = null` = banco inicial da
+ * Item do banco de exercícios. `tenantId = null` = banco inicial da
  * plataforma (somente leitura para professores); itens da instituição podem
  * ser editados pelos professores dela.
  */
 export interface BankExercise extends ExerciseContent {
   id: string;
-  institutionId: string | null;
+  tenantId: string | null;
   origin: BankOrigin;
   source: BankSource;
   /** Itens importados entram como rascunho; só itens publicados podem ir para conjuntos. */
@@ -186,7 +186,7 @@ export interface QuantityOverride {
 
 export interface ExerciseSet {
   id: string;
-  institutionId: string;
+  tenantId: string;
   name: string;
   description: string;
   levels: Level[];
@@ -201,7 +201,7 @@ export interface ExerciseSet {
 
 export interface Classroom {
   id: string;
-  institutionId: string;
+  tenantId: string;
   name: string;
   studentIds: string[];
 }
@@ -226,7 +226,7 @@ export interface FeedbackTemplate {
 /** Feedback gerado (IA) aguardando revisão do professor antes de chegar ao aluno. */
 export interface ReviewFeedback {
   id: string;
-  institutionId: string;
+  tenantId: string;
   studentId: string;
   studentName: string;
   setId: string;
@@ -292,7 +292,7 @@ export interface LevelProgress {
 }
 
 export interface InstitutionSettings {
-  institutionId: string;
+  tenantId: string;
   /** Nome exibido no cabeçalho e no login. */
   instanceName: string;
   /** Qualquer conta Google/Microsoft dos domínios da instituição entra como aluno. */

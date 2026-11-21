@@ -183,7 +183,7 @@ export function isLastActiveAdmin(users: User[], userId: string): boolean {
   const target = users.find((u) => u.id === userId);
   if (!target || target.role !== "INSTITUTION_ADMIN") return false;
   const admins = users.filter(
-    (u) => u.role === "INSTITUTION_ADMIN" && u.active && u.institutionId === target.institutionId,
+    (u) => u.role === "INSTITUTION_ADMIN" && u.active && u.tenantId === target.tenantId,
   );
   return admins.length === 1 && admins[0].id === userId;
 }

@@ -19,20 +19,39 @@ describe("http services", () => {
     expect(fetchMock.mock.calls[0][1].method).toBe("GET");
   });
 
-  it("converte erro em ApiError", async () => {
+  it("converte o envelope { error: { code, message, details } } em ApiError", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ code: "email_duplicado", message: "Duplicado" }), {
-          status: 409,
-        }),
+        new Response(
+          JSON.stringify({
+            error: { code: "ALREADY_REVIEWED", message: "Já revisado", details: { id: "r1" } },
+          }),
+          { status: 409 },
+        ),
       ),
     );
     const err = await createHttpServices()
-      .users.create({ name: "a", email: "a@a.com", role: "ALUNO" })
+      .reviews.approve("r1", "ok")
       .catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
-    expect(err).toMatchObject({ status: 409, code: "email_duplicado" });
+    expect(err).toMatchObject({
+      status: 409,
+      code: "ALREADY_REVIEWED",
+      message: "Já revisado",
+      details: { id: "r1" },
+    });
+  });
+
+  it("usa HTTP_ERROR e statusText quando o corpo não é o envelope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("oops", { status: 502, statusText: "Bad Gateway" })),
+    );
+    const err = await createHttpServices()
+      .sets.list()
+      .catch((e) => e);
+    expect(err).toMatchObject({ status: 502, code: "HTTP_ERROR", message: "Bad Gateway" });
   });
 
   it("usa os endpoints do super admin e da revisão de feedback", async () => {
@@ -58,6 +77,28 @@ describe("http services", () => {
 });
 
 describe("http: importação .xlsx", () => {
+  it("lê errors[] de details no envelope", async () => {
+    const errors = [
+      { sheet: "Dados", row: 2, column: "B", cell: "B2", code: "MISSING_TITLE", message: "x" },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              error: { code: "IMPORT_INVALID", message: "Inválido", details: { errors } },
+            }),
+            { status: 422 },
+          ),
+        ),
+    );
+    await expect(
+      createHttpServices().exercises.importXlsx("s", new File(["x"], "a.xlsx")),
+    ).rejects.toMatchObject({ code: "IMPORT_INVALID", message: "Inválido", details: { errors } });
+  });
+
   it("envia multipart e converte o 422 IMPORT_INVALID do BE2", async () => {
     const errors = [
       {

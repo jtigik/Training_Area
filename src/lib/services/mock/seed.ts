@@ -26,26 +26,26 @@ export interface MockDb {
   exercises: Exercise[];
   bank: BankExercise[];
   /** Templates por instituição; `setId = null` = padrão da instituição. */
-  feedback: (FeedbackTemplate & { institutionId: string })[];
+  feedback: (FeedbackTemplate & { tenantId: string })[];
   reviews: ReviewFeedback[];
-  attempts: (Attempt & { institutionId: string })[];
-  progress: (LevelProgress & { institutionId: string })[];
+  attempts: (Attempt & { tenantId: string })[];
+  progress: (LevelProgress & { tenantId: string })[];
   classrooms: Classroom[];
 }
 
-export const MOCK_DB_VERSION = 3;
+export const MOCK_DB_VERSION = 4;
 /** Instituição da sessão simulada (professor e admin da instituição). */
 export const MOCK_INSTITUTION_ID = "inst-1";
 
 function user(
   id: string,
-  institutionId: string | null,
+  tenantId: string | null,
   name: string,
   email: string,
   role: User["role"],
   active = true,
 ): User {
-  return { id, institutionId, name, email, role, active, createdAt: T0, updatedAt: T0 };
+  return { id, tenantId, name, email, role, active, createdAt: T0, updatedAt: T0 };
 }
 
 /** Três faixas padrão (0–49 / 50–79 / 80–100); o professor ajusta em /professor/feedback. */
@@ -136,13 +136,13 @@ function bankItem(
   id: string,
   c: ExerciseContent,
   tags: string[],
-  institutionId: string | null = null,
+  tenantId: string | null = null,
 ): BankExercise {
   return {
     id,
-    institutionId,
-    origin: institutionId ? "INSTITUTION" : "PLATFORM",
-    source: institutionId ? "EDITOR" : "SEED",
+    tenantId,
+    origin: tenantId ? "INSTITUTION" : "PLATFORM",
+    source: tenantId ? "EDITOR" : "SEED",
     status: "PUBLISHED",
     tags,
     ...structuredClone(c),
@@ -191,7 +191,7 @@ export function createSeed(): MockDb {
 
   const section = (
     id: string,
-    institutionId: string,
+    tenantId: string,
     title: string,
     body: string,
     position: number,
@@ -199,7 +199,7 @@ export function createSeed(): MockDb {
     status: ContentSection["status"],
   ): ContentSection => ({
     id,
-    institutionId,
+    tenantId,
     title,
     body,
     position,
@@ -251,7 +251,7 @@ export function createSeed(): MockDb {
   const sets: ExerciseSet[] = [
     {
       id: "set-1",
-      institutionId: "inst-1",
+      tenantId: "inst-1",
       name: "Trilha Fundamental",
       description: "Primeiros passos com fórmulas.",
       levels: ["FUNDAMENTAL", "PROFESSIONAL"],
@@ -273,7 +273,7 @@ export function createSeed(): MockDb {
 
   const exercise = (id: string, c: ExerciseContent, bankItemId: string | null): Exercise => ({
     id,
-    institutionId: "inst-1",
+    tenantId: "inst-1",
     setId: "set-1",
     status: "PUBLISHED",
     bankItemId,
@@ -413,7 +413,7 @@ export function createSeed(): MockDb {
     levelAttempt = 1,
   ): MockDb["attempts"][number] => ({
     id,
-    institutionId: "inst-1",
+    tenantId: "inst-1",
     studentId,
     exerciseId: ex.id,
     exerciseTitle: ex.title,
@@ -439,7 +439,7 @@ export function createSeed(): MockDb {
 
   const progress: MockDb["progress"] = [
     {
-      institutionId: "inst-1",
+      tenantId: "inst-1",
       studentId: "u-al1",
       setId: "set-1",
       level: "FUNDAMENTAL",
@@ -461,7 +461,7 @@ export function createSeed(): MockDb {
       ],
     },
     {
-      institutionId: "inst-1",
+      tenantId: "inst-1",
       studentId: "u-al1",
       setId: "set-1",
       level: "PROFESSIONAL",
@@ -475,7 +475,7 @@ export function createSeed(): MockDb {
       history: [{ levelAttempt: 1, done: 1, correct: 0, concept: null, completedAt: null }],
     },
     {
-      institutionId: "inst-1",
+      tenantId: "inst-1",
       studentId: "u-al2",
       setId: "set-1",
       level: "FUNDAMENTAL",
@@ -497,7 +497,7 @@ export function createSeed(): MockDb {
       ],
     },
     {
-      institutionId: "inst-1",
+      tenantId: "inst-1",
       studentId: "u-al3",
       setId: "set-1",
       level: "FUNDAMENTAL",
@@ -531,7 +531,7 @@ export function createSeed(): MockDb {
     createdAt: string,
   ): ReviewFeedback => ({
     id,
-    institutionId: "inst-1",
+    tenantId: "inst-1",
     studentId,
     studentName,
     setId: "set-1",
@@ -587,14 +587,14 @@ export function createSeed(): MockDb {
     users,
     settings: [
       {
-        institutionId: "inst-1",
+        tenantId: "inst-1",
         instanceName: "Escola Exemplo — Excel",
         openSignup: false,
         locale: "pt-BR",
         updatedAt: T0,
       },
       {
-        institutionId: "inst-2",
+        tenantId: "inst-2",
         instanceName: "Beta Academy",
         openSignup: true,
         locale: "pt-BR",
@@ -612,7 +612,7 @@ export function createSeed(): MockDb {
     classrooms: [
       {
         id: "tur-1",
-        institutionId: "inst-1",
+        tenantId: "inst-1",
         name: "Turma piloto",
         studentIds: ["u-al1", "u-al2", "u-al3"],
       },
