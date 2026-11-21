@@ -1,9 +1,9 @@
 import "server-only";
 
 import { prisma } from "@/server/db";
-import { scopeArgs } from "@/server/tenant-scope";
+import { scopeArgs, type TenantAccess } from "@/server/tenant-scope";
 
-export { TenantScopeError } from "@/server/tenant-scope";
+export { TenantScopeError, type TenantAccess } from "@/server/tenant-scope";
 
 /**
  * Cliente Prisma com escopo de tenant (isolamento centralizado — decisão do PO).
@@ -23,15 +23,25 @@ export { TenantScopeError } from "@/server/tenant-scope";
  * operações de plataforma (SUPER_ADMIN, globais) e verificações globais
  * explícitas (ex.: e-mail único na plataforma).
  */
-export function forTenant(tenantId: string) {
+/**
+ * access "platform" (SUPER_ADMIN): só configuração da instituição, nunca
+ * registros individuais (PLATFORM_ALLOWED em tenant-scope.ts).
+ */
+export function forTenant(tenantId: string, access: TenantAccess = "member") {
   if (!tenantId) throw new Error("forTenant: tenantId obrigatório");
   return prisma.$extends({
-    name: `tenant:${tenantId}`,
+    name: `tenant:${access}:${tenantId}`,
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
           return query(
-            scopeArgs(model, operation, args as Record<string, unknown>, tenantId) as typeof args,
+            scopeArgs(
+              model,
+              operation,
+              args as Record<string, unknown>,
+              tenantId,
+              access,
+            ) as typeof args,
           );
         },
       },

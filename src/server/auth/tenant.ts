@@ -10,6 +10,8 @@ export interface TenantContext extends AppSession {
   tenantId: string;
   /** Cliente Prisma com escopo do tenant (forTenant): use-o em vez de `prisma`. */
   db: TenantDb;
+  /** "platform" para SUPER_ADMIN: ctx.db recusa registros individuais da instituição. */
+  access: "member" | "platform";
 }
 
 const TENANT_ERRORS = {
@@ -22,7 +24,9 @@ const TENANT_ERRORS = {
  * Exige papel + resolve o tenant da operação (TA-003, multi-tenant).
  * - Usuário de instituição: tenant = session.user.tenantId; pedir outro → 403.
  * - SUPER_ADMIN: precisa informar `requestedTenantId` (senão 400); é o único
- *   que atravessa instituições.
+ *   que atravessa instituições, mas com access "platform": ctx.db só alcança
+ *   configuração (faixas, convite, dados do tenant), nunca alunos, tentativas,
+ *   feedbacks ou PII (TenantScopeError → 403 SCOPE_DENIED).
  *
  * Uso: const { db, user } = await requireTenant(["PROFESSOR", "INSTITUTION_ADMIN"]);
  *      db.exerciseSet.findMany()   // tenantId injetado pela extensão
@@ -34,7 +38,8 @@ export async function requireTenant(
   const session = await requireRole(allowed, options.headers);
   const scope = resolveTenantScope(session.user, options.requestedTenantId);
   if (!scope.ok) throw new AuthError(scope.status, TENANT_ERRORS[scope.code], scope.code);
-  return { ...session, tenantId: scope.tenantId, db: forTenant(scope.tenantId) };
+  const access = session.user.role === "SUPER_ADMIN" ? "platform" : "member";
+  return { ...session, tenantId: scope.tenantId, access, db: forTenant(scope.tenantId, access) };
 }
 
 /** Garante que um registro carregado pertence ao tenant da operação (404 semântico → 403). */

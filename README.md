@@ -143,6 +143,20 @@ Todas as rotas `/api/*` do app (exceto `/api/auth/*`, que é do Better Auth) res
 - `tenant` é `null` só para SUPER_ADMIN. O resumo fica em cache por 60 s por processo
   (`src/server/auth/tenant-summary.ts`); chame `invalidateTenantSummary(id)` ao renomear.
 
+## SUPER_ADMIN: só números agregados
+
+Decisão do PO: o SUPER_ADMIN administra a plataforma, mas **nunca** vê registros individuais
+dentro das instituições (alunos, tentativas, textos de feedback, PII).
+
+- `requireTenant()` dá ao SUPER_ADMIN `ctx.access = "platform"`: `ctx.db` só permite
+  `TenantGradingConfig` (faixas), ler o próprio `Tenant` e criar `Invitation`. Qualquer outro
+  acesso (inclusive `count`) lança `TenantScopeError` → `403 SCOPE_DENIED`.
+- Rotas exclusivas (`/api/super-admin/*`, só SUPER_ADMIN):
+  - `GET /api/super-admin/metrics` → `{ generatedAt, totals, tenants: [{ tenant: { id, name, slug, active }, users: { INSTITUTION_ADMIN, PROFESSOR, ALUNO, total }, levelAttempts: { total, inProgress, completed, abandoned }, concepts: { ND, ED, D, PD } }] }` (só `groupBy`).
+  - `GET|POST /api/super-admin/tenants`, `PATCH /api/super-admin/tenants/:id` (`name`, `slug`, `emailDomains`, `autoJoinByDomain` — padrão `false`, `locale`, `active`). `409 SLUG_IN_USE`.
+  - `GET|POST /api/super-admin/exercises`, `PATCH /api/super-admin/exercises/:id`: banco **global** de exercícios.
+- Também pode: `GET|PUT /api/admin/grading-config?tenantId=` e `POST /api/admin/invitations` com `tenantId` (convidar o primeiro INSTITUTION_ADMIN). Não pode: trocar papel de usuários, rotas de professor/aluno.
+
 ## Isolamento por tenant (`forTenant`)
 
 Todo código de servidor que lê/grava dados de instituição usa o cliente com escopo

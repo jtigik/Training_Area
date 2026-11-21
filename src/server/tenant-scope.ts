@@ -10,6 +10,11 @@
  *    pelo SUPER_ADMIN). create injeta tenantId e isGlobal = false.
  *  - TENANT_SELF (Tenant): só o próprio registro, somente leitura.
  *  - Modelos de autenticação (Session, Account, Verification): bloqueados.
+ *
+ * Acesso "platform" (SUPER_ADMIN dentro de uma instituição — decisão do PO):
+ * NUNCA lê registros individuais (alunos, tentativas, feedbacks, PII), nem por
+ * count/aggregate. Só o que está em PLATFORM_ALLOWED; números agregados vêm de
+ * src/server/platform/metrics.ts.
  */
 export type ScopeKind = "tenant" | "tenant-or-global" | "tenant-self" | "blocked";
 
@@ -42,6 +47,15 @@ export class TenantScopeError extends Error {
     this.name = "TenantScopeError";
   }
 }
+
+export type TenantAccess = "member" | "platform";
+
+/** O que o SUPER_ADMIN pode fazer no escopo de uma instituição (o resto: TenantScopeError). */
+export const PLATFORM_ALLOWED: Readonly<Partial<Record<ScopedModel, readonly string[] | "all">>> = {
+  Tenant: ["findFirst", "findFirstOrThrow", "findUnique", "findUniqueOrThrow"],
+  TenantGradingConfig: "all", // configuração da instituição, sem dados pessoais
+  Invitation: ["create"], // convidar o primeiro INSTITUTION_ADMIN
+};
 
 const READ_OPS = new Set([
   "findMany",
@@ -115,8 +129,17 @@ export function scopeArgs(
   operation: string,
   args: Args | undefined,
   tenantId: string,
+  access: TenantAccess = "member",
 ): Args {
   if (!tenantId) throw new TenantScopeError("tenantId obrigatório");
+  if (access === "platform") {
+    const allowed = PLATFORM_ALLOWED[model as ScopedModel];
+    if (!allowed || (allowed !== "all" && !allowed.includes(operation))) {
+      throw new TenantScopeError(
+        `SUPER_ADMIN não acessa registros individuais da instituição (${model}.${operation}); use as métricas agregadas`,
+      );
+    }
+  }
   const kind = (MODEL_SCOPES as Record<string, ScopeKind | undefined>)[model];
   if (!kind) throw new TenantScopeError(`Modelo sem regra de escopo: ${model}`);
   if (kind === "blocked")

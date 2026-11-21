@@ -136,3 +136,46 @@ describe("scopeArgs — Tenant e autenticação", () => {
     expect(() => scopeArgs("Desconhecido", "findMany", {}, T)).toThrow(TenantScopeError);
   });
 });
+
+describe("scopeArgs — SUPER_ADMIN (access platform): só agregados", () => {
+  const individual = [
+    ["User", "findMany"],
+    ["User", "count"],
+    ["LevelAttempt", "findFirst"],
+    ["LevelAttempt", "aggregate"],
+    ["Feedback", "findMany"],
+    ["ExerciseAttempt", "findMany"],
+    ["ConceptOverride", "findMany"],
+    ["Classroom", "findMany"],
+    ["ClassroomMember", "findMany"],
+    ["Invitation", "findMany"],
+    ["Tenant", "update"],
+  ] as const;
+
+  it.each(individual)("bloqueia %s.%s", (model, op) => {
+    expect(() => scopeArgs(model, op, {}, T, "platform")).toThrow(TenantScopeError);
+  });
+
+  it("permite configuração da instituição, ler o próprio tenant e convidar", () => {
+    expect(scopeArgs("TenantGradingConfig", "findFirst", {}, T, "platform").where).toEqual({
+      AND: [{ tenantId: T }],
+    });
+    expect(
+      scopeArgs(
+        "TenantGradingConfig",
+        "upsert",
+        { where: { tenantId: T }, create: {}, update: {} },
+        T,
+        "platform",
+      ).create,
+    ).toMatchObject({ tenantId: T });
+    expect(scopeArgs("Tenant", "findFirst", {}, T, "platform").where).toEqual({ AND: [{ id: T }] });
+    expect(
+      scopeArgs("Invitation", "create", { data: { email: "a@b.com" } }, T, "platform").data,
+    ).toMatchObject({ tenantId: T });
+  });
+
+  it("membro da instituição continua com acesso normal", () => {
+    expect(() => scopeArgs("User", "findMany", {}, T, "member")).not.toThrow();
+  });
+});
