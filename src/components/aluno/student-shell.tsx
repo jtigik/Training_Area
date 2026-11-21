@@ -38,9 +38,10 @@ export function ForbiddenView({ home }: { home?: string }) {
 }
 
 /**
- * Client-side guard + layout for /aluno/*. The proxy (src/proxy.ts) already
- * redirects anonymous users; this checks the session/role with the API and
- * renders the header with the user's institution.
+ * Client-side guard + layout for /aluno/*. Backend 1's proxy (src/proxy.ts on
+ * feat/auth-modelo) does the route-level RBAC; this checks the session/role with
+ * the API (401 -> /login?callbackUrl=, other roles -> 403 view) and renders the
+ * header with the user's institution.
  */
 export function StudentShell({ children }: { children: ReactNode }) {
   const me = useApiResource("me", () => api.me());
