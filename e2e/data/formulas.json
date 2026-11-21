@@ -1,0 +1,100 @@
+{
+  "$comment": "Dataset e2e do motor de correção (TA-021/TA-022/TA-034). Subconjunto mínimo para fluxos de UI; a suíte de paridade completa vive em qa/excel_formulas/formulas.json (plano de testes) e deve ser sincronizada aqui quando publicada. expected: correct | incorrect | invalid | unsupported | ambiguous (decisão de produto pendente: pergunta em aberto 5).",
+  "exercise": {
+    "slug": "e2e-soma-basica",
+    "title": "e2e — Soma básica",
+    "level": "Fundamental",
+    "difficulty": "Muito fácil",
+    "grid": { "A1": 10, "A2": 20, "A3": 30 },
+    "answerCell": "A4",
+    "answerFormula": "=SOMA(A1:A3)",
+    "answerValue": 60,
+    "hint": "Use a função SOMA com o intervalo A1:A3."
+  },
+  "cases": [
+    {
+      "id": "F-OK-01",
+      "input": "=SOMA(A1:A3)",
+      "value": 60,
+      "expected": "correct",
+      "note": "gabarito em pt-BR"
+    },
+    {
+      "id": "F-OK-02",
+      "input": "=SUM(A1:A3)",
+      "value": 60,
+      "expected": "correct",
+      "note": "nome em inglês aceito (TA-021)"
+    },
+    {
+      "id": "F-OK-03",
+      "input": "=A1+A2+A3",
+      "value": 60,
+      "expected": "correct",
+      "note": "fórmula equivalente por valor"
+    },
+    {
+      "id": "F-OK-04",
+      "input": "=SOMA(A1;A2;A3)",
+      "value": 60,
+      "expected": "correct",
+      "note": "separador ; (pt-BR)"
+    },
+    {
+      "id": "F-OK-05",
+      "input": "=soma(a1:a3)",
+      "value": 60,
+      "expected": "correct",
+      "note": "minúsculas"
+    },
+    {
+      "id": "F-NOK-01",
+      "input": "=SOMA(A1:A2)",
+      "value": 30,
+      "expected": "incorrect",
+      "note": "intervalo errado"
+    },
+    {
+      "id": "F-NOK-02",
+      "input": "=MÉDIA(A1:A3)",
+      "value": 20,
+      "expected": "incorrect",
+      "note": "função errada"
+    },
+    {
+      "id": "F-INV-01",
+      "input": "=SOMA(A1:A3",
+      "value": null,
+      "expected": "invalid",
+      "note": "parêntese não fechado"
+    },
+    {
+      "id": "F-INV-02",
+      "input": "=SOMA(",
+      "value": null,
+      "expected": "invalid",
+      "note": "fórmula incompleta"
+    },
+    {
+      "id": "F-UNS-01",
+      "input": "=LAMBDA(x;x+1)(A1)",
+      "value": null,
+      "expected": "unsupported",
+      "note": "fora do conjunto MVP"
+    },
+    {
+      "id": "F-EDGE-01",
+      "input": "=A1/0",
+      "value": "#DIV/0!",
+      "expected": "incorrect",
+      "note": "erro do Excel exibido, app não quebra"
+    },
+    {
+      "id": "F-EDGE-02",
+      "input": "60",
+      "value": 60,
+      "expected": "ambiguous",
+      "note": "valor digitado sem fórmula — pergunta em aberto 5"
+    }
+  ]
+}
