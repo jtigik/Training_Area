@@ -7,6 +7,7 @@ export type AuditAction =
   | "invitation.created"
   | "invitation.renewed"
   | "user.updated"
+  | "level_attempt.concept_overridden"
   | "feedback.edited"
   | "feedback.approved"
   | "feedback.rejected"
