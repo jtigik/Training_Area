@@ -1,4 +1,10 @@
-import { formatValue, SheetEngine, type CellMap, type EvaluatedValue } from "./engine";
+import {
+  formatValue,
+  SheetEngine,
+  unsupportedFunctions,
+  type CellMap,
+  type EvaluatedValue,
+} from "./engine";
 
 export interface SheetEvaluation {
   /** Display text per A1 address (only non-empty cells). */
@@ -16,7 +22,18 @@ export interface SheetEvaluation {
 export function evaluateSheet(cells: CellMap, target: string, input: string): SheetEvaluation {
   const engine = new SheetEngine(cells);
   try {
-    const targetValue = engine.preview(target, input);
+    let targetValue = engine.preview(target, input);
+    if (targetValue.kind === "error") {
+      // A parse error caused by an unsupported function (e.g. LAMBDA(...)(A1)) is more
+      // useful to the student as "function not supported" than as a generic syntax error.
+      const missing = unsupportedFunctions(input);
+      if (missing.length > 0) {
+        targetValue = {
+          ...targetValue,
+          message: `A função ${missing[0]} não é suportada nesta versão do treinamento.`,
+        };
+      }
+    }
     if (input.trim() !== "" && targetValue.kind !== "error") engine.setCell(target, input);
     const values = engine.snapshot();
     if (targetValue.kind === "error") values[target] = targetValue;

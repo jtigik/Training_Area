@@ -189,7 +189,7 @@ export interface TrailLevel {
   concept: Concept | null;
 }
 
-/** POST /api/student/levels/:level/retake -> 200 TrailLevel (only when concept is ND or ED; 409 otherwise) */
+/** POST /api/student/levels/:level/redo -> 200 TrailLevel (only when concept is ND or ED; 409 otherwise) */
 
 /** GET /api/student/trail -> 200 Trail | 200 { set: null } when nothing is published */
 export interface Trail {

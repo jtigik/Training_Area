@@ -93,7 +93,12 @@ export function ConceptBadge({ concept }: { concept: Concept }) {
   return (
     <span className={cn(pill, CONCEPT_STYLE[concept])} title={CONCEPT_LABELS[concept]}>
       <span className="sr-only">Conceito: </span>
-      <abbr title={CONCEPT_LABELS[concept]} className="font-bold no-underline">
+      {/* QA contract: data-testid="concept-badge" with text exactly ND/ED/D/PD. */}
+      <abbr
+        data-testid="concept-badge"
+        title={CONCEPT_LABELS[concept]}
+        className="font-bold no-underline"
+      >
         {concept}
       </abbr>
       <span className="hidden sm:inline">· {CONCEPT_LABELS[concept]}</span>

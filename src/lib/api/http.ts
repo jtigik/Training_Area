@@ -63,5 +63,5 @@ export const httpApi: StudentApi = {
     }),
   getLevelFeedback: (level) => request(`/api/student/levels/${encodeURIComponent(level)}/feedback`),
   retakeLevel: (level) =>
-    request(`/api/student/levels/${encodeURIComponent(level)}/retake`, { method: "POST" }),
+    request(`/api/student/levels/${encodeURIComponent(level)}/redo`, { method: "POST" }),
 };

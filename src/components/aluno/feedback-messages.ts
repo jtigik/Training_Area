@@ -11,7 +11,8 @@ export const FEEDBACK_MESSAGES: Record<FeedbackCode, string> = {
   UNSUPPORTED_FUNCTION: "Uma das funções usadas ainda não é suportada pela ferramenta.",
   HARDCODED_VALUE:
     "Use uma fórmula que referencie as células da planilha, em vez de digitar o valor.",
-  FORMULA_REQUIRED: 'A resposta deve ser uma fórmula: comece com "=".',
+  FORMULA_REQUIRED:
+    'Use uma fórmula: a resposta deve começar com "=" e usar as células da planilha.',
   FORMULA_ERROR: "A fórmula retornou um erro do Excel (ex.: #DIV/0!, #REF!, #N/D).",
   PARSE_ERROR: "Não foi possível entender a fórmula. Verifique parênteses, aspas e separadores.",
   EMPTY_SUBMISSION: "Digite uma fórmula antes de enviar.",

@@ -49,7 +49,7 @@ export function RetakeLevelButton({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant={variant}>
+        <Button variant={variant} data-testid="redo-button">
           <RotateCcw aria-hidden="true" />
           Refazer nível
         </Button>

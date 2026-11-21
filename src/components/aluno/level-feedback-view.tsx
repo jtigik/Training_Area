@@ -73,6 +73,7 @@ export function LevelFeedbackContent({
     titleRef.current?.focus();
   }, []);
   const { correct, total, percent } = feedback.score;
+  const message = feedback.message;
   const avg = total === 0 ? 0 : feedback.attempts / total;
 
   return (
@@ -128,79 +129,84 @@ export function LevelFeedbackContent({
       </section>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <section aria-labelledby="msg" className="space-y-4 rounded-xl border bg-card p-5">
-          <h2 id="msg" className="text-xl font-semibold">
-            Seu feedback
-          </h2>
-          {feedback.status === "IN_REVIEW" || !feedback.message ? (
-            <div
-              role="status"
-              className="space-y-3 rounded-lg bg-info-subtle p-4 text-info-subtle-foreground"
+        {feedback.status === "IN_REVIEW" || !message ? (
+          // Pending teacher approval: the AI text is never shown, and this region is
+          // deliberately not named "Seu feedback" (QA: ai-feedback-review.spec.ts).
+          <section
+            aria-labelledby="msg-revisao"
+            data-testid="feedback-pending"
+            className="space-y-3 rounded-xl border border-info/40 bg-info-subtle p-5 text-info-subtle-foreground"
+          >
+            <h2 id="msg-revisao" className="flex items-center gap-2 text-xl font-semibold">
+              <Hourglass aria-hidden="true" className="size-5" /> Feedback em revisão
+            </h2>
+            <p role="status">
+              Seu feedback personalizado foi gerado e está aguardando o professor revisar. Ele
+              aparece aqui assim que for aprovado. Enquanto isso, seu resultado já está registrado:{" "}
+              {percent}% de acerto, conceito {feedback.concept}.
+            </p>
+            <Button
+              variant="outline"
+              onClick={onRefresh}
+              disabled={refreshing}
+              aria-busy={refreshing}
             >
-              <p className="flex items-center gap-2 font-semibold">
-                <Hourglass aria-hidden="true" className="size-4" /> Feedback em revisão
-              </p>
-              <p>
-                Seu feedback personalizado foi gerado e está sendo revisado pelo seu professor. Ele
-                aparece aqui assim que for aprovado. Enquanto isso, seu resultado já está
-                registrado: {percent}% de acerto, conceito {feedback.concept}.
-              </p>
-              <Button
-                variant="outline"
-                onClick={onRefresh}
-                disabled={refreshing}
-                aria-busy={refreshing}
-              >
-                <RefreshCw aria-hidden="true" />
-                Verificar novamente
-              </Button>
+              <RefreshCw aria-hidden="true" />
+              Verificar novamente
+            </Button>
+          </section>
+        ) : (
+          <section aria-labelledby="msg" className="space-y-4 rounded-xl border bg-card p-5">
+            <h2 id="msg" className="text-xl font-semibold">
+              Seu feedback
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {percent}% de acerto · conceito {feedback.concept} ({CONCEPT_LABELS[feedback.concept]}
+              )
+            </p>
+            <div className="space-y-3 leading-relaxed">
+              {message.paragraphs.map((p) => (
+                <p key={p}>{p}</p>
+              ))}
             </div>
-          ) : (
-            <>
-              <div className="space-y-3 leading-relaxed">
-                {feedback.message.paragraphs.map((p) => (
-                  <p key={p}>{p}</p>
-                ))}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-lg bg-success-subtle p-3 text-success-subtle-foreground">
+                <h3 className="font-semibold">
+                  <span aria-hidden="true">✓ </span>Pontos fortes
+                </h3>
+                {message.strengths.length ? (
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+                    {message.strengths.map((s) => (
+                      <li key={s}>{s}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-sm">
+                    Continue praticando para destacar seus pontos fortes.
+                  </p>
+                )}
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-lg bg-success-subtle p-3 text-success-subtle-foreground">
-                  <h3 className="font-semibold">
-                    <span aria-hidden="true">✓ </span>Pontos fortes
-                  </h3>
-                  {feedback.message.strengths.length ? (
-                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
-                      {feedback.message.strengths.map((s) => (
-                        <li key={s}>{s}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-1 text-sm">
-                      Continue praticando para destacar seus pontos fortes.
-                    </p>
-                  )}
-                </div>
-                <div className="rounded-lg bg-warning-subtle p-3 text-warning-subtle-foreground">
-                  <h3 className="font-semibold">
-                    <span aria-hidden="true">↻ </span>O que revisar
-                  </h3>
-                  {feedback.message.toReview.length ? (
-                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
-                      {feedback.message.toReview.map((s) => (
-                        <li key={s}>{s}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-1 text-sm">Nada pendente neste nível.</p>
-                  )}
-                </div>
+              <div className="rounded-lg bg-warning-subtle p-3 text-warning-subtle-foreground">
+                <h3 className="font-semibold">
+                  <span aria-hidden="true">↻ </span>O que revisar
+                </h3>
+                {message.toReview.length ? (
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+                    {message.toReview.map((s) => (
+                      <li key={s}>{s}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-sm">Nada pendente neste nível.</p>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Feedback gerado com IA a partir do seu desempenho e revisado pelo seu professor. Ele
-                fica salvo e não muda depois.
-              </p>
-            </>
-          )}
-        </section>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Feedback gerado com IA a partir do seu desempenho e revisado pelo seu professor. Ele
+              fica salvo e não muda depois.
+            </p>
+          </section>
+        )}
 
         <aside aria-label="Próximos passos" className="space-y-3">
           {canRetake(feedback.concept) && (
