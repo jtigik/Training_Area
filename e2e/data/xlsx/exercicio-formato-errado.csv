@@ -1,0 +1,5 @@
+Célula,Valor
+A1,10
+A2,20
+A3,30
+A4,=SOMA(A1:A3)

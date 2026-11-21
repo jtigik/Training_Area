@@ -117,7 +117,7 @@ const authOptions = {
                 autoJoinByDomain: true,
                 emailDomains: { has: emailDomain(email) },
               },
-              select: { id: true, emailDomains: true },
+              select: { id: true, emailDomains: true, autoJoinByDomain: true, active: true },
             }),
           ]);
           const decision = decideProvisioning(
