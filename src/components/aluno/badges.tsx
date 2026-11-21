@@ -110,7 +110,6 @@ const LEVEL_STYLE: Record<KnowledgeLevel, string> = {
   FUNDAMENTAL: "bg-level-fundamental text-level-fundamental-foreground",
   PROFESSIONAL: "bg-level-profissional text-level-profissional-foreground",
   ADVANCED: "bg-level-avancado text-level-avancado-foreground",
-  DASHBOARD: "bg-level-dashboard text-level-dashboard-foreground",
 };
 
 /** Round letter mark for a level (decorative). */

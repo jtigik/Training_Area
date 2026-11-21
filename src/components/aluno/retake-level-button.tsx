@@ -16,7 +16,7 @@ import {
 import { errorMessage } from "@/components/common/page-states";
 import { api, CONCEPT_LABELS, LEVEL_LABELS, type Concept, type KnowledgeLevel } from "@/lib/api";
 
-/** "Refazer nível" — only rendered by callers when the concept is ND or ED. */
+/** "Refazer nível" — unlimited, only rendered by callers while the BEST concept is ND or ED. */
 export function RetakeLevelButton({
   level,
   concept,
@@ -58,9 +58,9 @@ export function RetakeLevelButton({
         <DialogHeader>
           <DialogTitle>Refazer o nível {LEVEL_LABELS[level]}?</DialogTitle>
           <DialogDescription>
-            Seu conceito atual é {concept} ({CONCEPT_LABELS[concept]}). Ao refazer, os exercícios do
-            nível voltam a ficar pendentes e um novo conceito será calculado quando você concluir.
-            Seu histórico continua disponível para o professor.
+            Seu melhor conceito é {concept} ({CONCEPT_LABELS[concept]}). Ao refazer, você recebe uma
+            nova rodada de exercícios e um novo conceito será calculado quando concluir. Vale sempre
+            o melhor conceito entre as tentativas, e o próximo nível é liberado com D ou PD.
           </DialogDescription>
         </DialogHeader>
         {error && (

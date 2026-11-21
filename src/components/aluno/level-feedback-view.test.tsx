@@ -8,6 +8,8 @@ const base: LevelFeedback = {
   level: "FUNDAMENTAL",
   completedAt: "2026-11-20T12:00:00.000Z",
   concept: "D",
+  bestConcept: "D",
+  run: 1,
   status: "IN_REVIEW",
   score: { correct: 4, total: 5, percent: 80 },
   attempts: 7,
@@ -71,7 +73,22 @@ describe("LevelFeedbackContent", () => {
     const { unmount } = renderContent(base);
     expect(screen.queryByTestId("redo-button")).not.toBeInTheDocument();
     unmount();
-    renderContent({ ...base, concept: "ED" });
+    renderContent({ ...base, concept: "ED", bestConcept: "ED" });
     expect(screen.getByTestId("redo-button")).toBeInTheDocument();
+  });
+
+  it("uses the BEST concept for redo and shows the next level locked below D", () => {
+    const { unmount } = renderContent({ ...base, concept: "ND", bestConcept: "D", run: 2 });
+    expect(screen.queryByTestId("redo-button")).not.toBeInTheDocument();
+    expect(screen.getByText(/melhor conceito/i)).toBeInTheDocument();
+    unmount();
+    renderContent({
+      ...base,
+      concept: "ED",
+      bestConcept: "ED",
+      nextLevel: { ...base.nextLevel!, unlocked: false },
+    });
+    expect(screen.getByTestId("next-level-locked")).toHaveTextContent("Profissional bloqueado");
+    expect(screen.queryByText("Nível liberado")).not.toBeInTheDocument();
   });
 });

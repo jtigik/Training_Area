@@ -64,6 +64,7 @@ export function LevelCard({
   const name = LEVEL_LABELS[level.level];
   const headingId = levelAnchor(level.level);
   const locked = level.status === "LOCKED";
+  const counted = level.bestConcept ?? level.concept;
   const { done, required, correct } = level.progress;
   const next = nextExercise(level);
 
@@ -87,7 +88,13 @@ export function LevelCard({
             </h2>
             <div className="flex flex-wrap gap-2">
               <LevelStatusBadge status={level.status} />
-              {level.concept && <ConceptBadge concept={level.concept} />}
+              {/* The BEST concept across runs is the one that counts. */}
+              {counted && <ConceptBadge concept={counted} />}
+              {level.run > 1 && (
+                <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium">
+                  Tentativa {level.run}
+                </span>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -100,12 +107,8 @@ export function LevelCard({
                   Ver feedback
                   <span className="sr-only"> do nível {name}</span>
                 </Link>
-                {canRetake(level.concept) && level.concept && (
-                  <RetakeLevelButton
-                    level={level.level}
-                    concept={level.concept}
-                    onDone={onChanged}
-                  />
+                {counted && canRetake(counted) && (
+                  <RetakeLevelButton level={level.level} concept={counted} onDone={onChanged} />
                 )}
               </>
             )}
@@ -124,7 +127,8 @@ export function LevelCard({
           <p className="mt-3 text-sm">
             {previousLevel ? (
               <>
-                Conclua o nível <strong>{LEVEL_LABELS[previousLevel]}</strong> para liberar.
+                Alcance o conceito <strong>D</strong> ou <strong>PD</strong> no nível{" "}
+                <strong>{LEVEL_LABELS[previousLevel]}</strong> para liberar.
               </>
             ) : (
               "Este nível ainda não foi liberado."
@@ -235,41 +239,6 @@ export function LevelCard({
             )}
           </div>
         )}
-      </article>
-    </li>
-  );
-}
-
-/** v1.1 levels (Dashboard) shown as "Em breve". */
-export function ComingSoonLevelCard({
-  level,
-  index,
-  total,
-}: {
-  level: KnowledgeLevel;
-  index: number;
-  total: number;
-}) {
-  const id = levelAnchor(level);
-  return (
-    <li className="flex gap-3 sm:gap-4">
-      <LevelMark level={level} locked />
-      <article
-        aria-labelledby={id}
-        className="flex-1 rounded-xl border border-dashed bg-muted/40 p-4 sm:p-5"
-      >
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Nível {index + 1} de {total}
-        </p>
-        <h2 id={id} className="text-xl font-semibold text-muted-foreground">
-          {LEVEL_LABELS[level]}
-        </h2>
-        <span className="mt-1 inline-flex rounded-full bg-info-subtle px-2.5 py-0.5 text-xs font-medium text-info-subtle-foreground">
-          Em breve
-        </span>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Este nível chega na próxima versão da plataforma.
-        </p>
       </article>
     </li>
   );

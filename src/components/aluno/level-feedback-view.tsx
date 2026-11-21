@@ -28,12 +28,18 @@ import { Breadcrumbs } from "./breadcrumbs";
 import { formatDateTime } from "./format";
 import { levelAnchor } from "./level-card";
 import { RetakeLevelButton } from "./retake-level-button";
+import { useVisibilityPolling } from "@/components/common/use-visibility-polling";
+
+/** How often the "em revisão" screen checks whether the teacher approved the feedback. */
+export const FEEDBACK_POLL_MS = 30_000;
 import { useRouter } from "next/navigation";
 
 export function LevelFeedbackView({ level }: { level: KnowledgeLevel }) {
   const feedback = useApiResource(`feedback:${level}`, () => api.getLevelFeedback(level));
   const router = useRouter();
-  if (feedback.error) {
+  // "Em revisão": check again every 30 s while the tab is visible (PO), plus the manual button.
+  useVisibilityPolling(feedback.reload, FEEDBACK_POLL_MS, feedback.data?.status === "IN_REVIEW");
+  if (feedback.error && !feedback.data) {
     return (
       <div className="space-y-4">
         <Breadcrumbs items={[{ label: `Feedback do nível ${LEVEL_LABELS[level]}` }]} />
@@ -102,6 +108,11 @@ export function LevelFeedbackContent({
               <ConceptBadge concept={feedback.concept} />
             </dd>
             <dd className="text-sm text-muted-foreground">{CONCEPT_LABELS[feedback.concept]}</dd>
+            {feedback.run > 1 && (
+              <dd className="mt-1 text-xs text-muted-foreground">
+                Tentativa {feedback.run} · melhor conceito: <strong>{feedback.bestConcept}</strong>
+              </dd>
+            )}
           </div>
           <div className="rounded-lg border bg-card p-3">
             <dt className="text-sm text-muted-foreground">Taxa de acerto</dt>
@@ -209,21 +220,35 @@ export function LevelFeedbackContent({
         )}
 
         <aside aria-label="Próximos passos" className="space-y-3">
-          {canRetake(feedback.concept) && (
+          {canRetake(feedback.bestConcept) && (
             <div className="space-y-2 rounded-xl border border-warning/40 bg-warning-subtle p-4 text-warning-subtle-foreground">
               <p className="font-semibold">Quer melhorar seu conceito?</p>
               <p className="text-sm">
-                Com conceito {feedback.concept} você pode refazer este nível e praticar de novo.
+                Com conceito {feedback.bestConcept} o próximo nível continua bloqueado. Refaça este
+                nível quantas vezes quiser: vale o melhor conceito.
               </p>
               <RetakeLevelButton
                 level={feedback.level}
-                concept={feedback.concept}
+                concept={feedback.bestConcept}
                 onDone={onRetaken}
                 variant="default"
               />
             </div>
           )}
-          {feedback.nextLevel ? (
+          {feedback.nextLevel && !feedback.nextLevel.unlocked ? (
+            <div
+              data-testid="next-level-locked"
+              className="space-y-1 rounded-xl border bg-muted/40 p-4 text-sm"
+            >
+              <p className="font-medium">
+                <span aria-hidden="true">🔒 </span>
+                {LEVEL_LABELS[feedback.nextLevel.level]} bloqueado
+              </p>
+              <p className="text-muted-foreground">
+                Alcance o conceito D ou PD neste nível para liberar o próximo.
+              </p>
+            </div>
+          ) : feedback.nextLevel ? (
             <div className="space-y-2 rounded-xl border bg-accent p-4 text-accent-foreground">
               <p className="text-sm font-medium">
                 <span aria-hidden="true">🔓 </span>Nível liberado

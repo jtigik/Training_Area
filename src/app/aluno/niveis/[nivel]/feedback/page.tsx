@@ -1,13 +1,13 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { notFound, useParams } from "next/navigation";
 import { LevelFeedbackView } from "@/components/aluno/level-feedback-view";
-import { EmptyState } from "@/components/common/page-states";
 import { levelFromSlug } from "@/lib/api";
 
 export default function StudentLevelFeedbackPage() {
   const { nivel } = useParams<{ nivel: string }>();
   const level = levelFromSlug(nivel);
-  if (!level) return <EmptyState title="Nível não encontrado" />;
+  // Unknown or non-MVP levels (e.g. "dashboard", v1.1) do not exist in the UI.
+  if (!level) notFound();
   return <LevelFeedbackView level={level} />;
 }

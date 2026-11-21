@@ -5,8 +5,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingState, Skeleton } from "@/components/common/page-states";
 import { ProgressBar } from "@/components/common/progress-bar";
 import { useApiResource } from "@/components/common/use-api-resource";
-import { api, COMING_SOON_LEVELS, LEVEL_ORDER, type Trail } from "@/lib/api";
-import { ComingSoonLevelCard, LevelCard } from "./level-card";
+import { api, LEVEL_ORDER, type Trail } from "@/lib/api";
+import { LevelCard } from "./level-card";
 import { useSessionUser } from "./session-context";
 
 export function TrailView() {
@@ -57,9 +57,7 @@ export function TrailContent({ trail, onChanged }: { trail: Trail; onChanged: ()
 
   const done = trail.levels.reduce((n, l) => n + l.progress.done, 0);
   const required = trail.levels.reduce((n, l) => n + l.progress.required, 0);
-  const present = new Set(trail.levels.map((l) => l.level));
-  const comingSoon = COMING_SOON_LEVELS.filter((l) => !present.has(l));
-  const totalLevels = trail.levels.length + comingSoon.length;
+  const totalLevels = trail.levels.length;
   const ordered = [...trail.levels].sort(
     (a, b) => LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level),
   );
@@ -92,14 +90,6 @@ export function TrailContent({ trail, onChanged }: { trail: Trail; onChanged: ()
             total={totalLevels}
             previousLevel={ordered[i - 1]?.level}
             onChanged={onChanged}
-          />
-        ))}
-        {comingSoon.map((level, i) => (
-          <ComingSoonLevelCard
-            key={level}
-            level={level}
-            index={ordered.length + i}
-            total={totalLevels}
           />
         ))}
       </ol>

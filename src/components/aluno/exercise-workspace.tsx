@@ -8,7 +8,14 @@ import { Markdown } from "@/components/common/markdown";
 import { errorMessage } from "@/components/common/page-states";
 import { FormulaBar } from "@/components/sheet/formula-bar";
 import { SpreadsheetGrid } from "@/components/sheet/spreadsheet-grid";
-import { LEVEL_LABELS, type AttemptResult, type Exercise, type StudentApi } from "@/lib/api";
+import {
+  ApiError,
+  LEVEL_LABELS,
+  type AttemptResult,
+  type Exercise,
+  type StudentApi,
+} from "@/lib/api";
+import { MAX_FORMULA_LENGTH, volatileFunctions } from "@/lib/formula/check";
 import { formatValue, type EvaluatedValue } from "@/lib/formula/engine";
 import { evaluateSheet } from "@/lib/formula/evaluate";
 import { referencedCells } from "@/lib/formula/references";
@@ -119,8 +126,10 @@ function SubmissionFeedback({ result, exercise }: { result: AttemptResult; exerc
 
 /**
  * Exercise screen: statement + grid + formula bar with live HyperFormula evaluation.
- * "Calcular"/Enter is a local test (not graded); "Enviar resposta" records an attempt
- * and the server's verdict is authoritative (TA-022).
+ * "Calcular"/Enter is a local test (unlimited, not graded); "Enviar resposta" is the
+ * single final submission of the exercise in this run (PO rule; Backend 2 answers a
+ * second one with 409 ALREADY_SUBMITTED). Empty or over-limit answers are blocked
+ * here and never sent. The server's verdict is authoritative (TA-022).
  */
 export function ExerciseWorkspace({
   exercise,
@@ -133,7 +142,7 @@ export function ExerciseWorkspace({
   const target = exercise.targetCell;
   const editable = useMemo(() => new Set([target]), [target]);
   const formulaInput = useRef<HTMLInputElement>(null);
-  const ids = { help: useId(), shortcuts: useId(), legend: useId() };
+  const ids = { help: useId(), shortcuts: useId(), legend: useId(), submitHelp: useId() };
 
   const [selected, setSelected] = useState(target);
   const [committed, setCommitted] = useState(exercise.lastSubmission ?? "");
@@ -143,6 +152,7 @@ export function ExerciseWorkspace({
   const [result, setResult] = useState<AttemptResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(exercise.attempts > 0);
 
   const sheet = useMemo(() => evaluateSheet(cells, target, committed), [cells, target, committed]);
   const deferredDraft = useDeferredValue(draft);
@@ -175,6 +185,14 @@ export function ExerciseWorkspace({
   );
 
   const isTargetSelected = selected === target;
+  const trimmed = draft.trim();
+  const blockReason =
+    trimmed === ""
+      ? "Digite uma fórmula na célula-resposta para poder enviar."
+      : trimmed.length > MAX_FORMULA_LENGTH
+        ? `A fórmula passa do limite de ${MAX_FORMULA_LENGTH} caracteres.`
+        : null;
+  const volatile = useMemo(() => volatileFunctions(deferredDraft), [deferredDraft]);
   const barValue = isTargetSelected ? draft : rawContent(cells[selected]);
 
   function commit() {
@@ -198,16 +216,20 @@ export function ExerciseWorkspace({
     setDraft("");
     setCommitted("");
     setCommitError(null);
-    setResult(null);
+    if (!submitted) setResult(null);
     setSubmitError(null);
   }
 
   async function send() {
+    if (submitted || submitting) return;
     const submission = draft;
     if (draft !== committed) commit();
     setSubmitError(null);
-    // An empty answer is still sent: Backend 2 grades it as EMPTY_SUBMISSION (Incorreto),
-    // which is what QA's F-110 case expects.
+    // Empty/over-limit answers are blocked in the UI: never sent, never counted.
+    if (blockReason) {
+      setSubmitError(blockReason);
+      return;
+    }
     setSubmitting(true);
     try {
       const local = evaluateSheet(cells, target, submission).target;
@@ -216,9 +238,15 @@ export function ExerciseWorkspace({
         clientValue: local.kind === "empty" || local.kind === "error" ? null : local.value,
       });
       setResult(res);
-      if (res.feedbackCode !== "EMPTY_SUBMISSION") setAttempts((n) => n + 1);
+      setSubmitted(true);
+      setAttempts((n) => n + 1);
     } catch (e) {
-      setSubmitError(errorMessage(e, "Não foi possível enviar sua resposta. Tente de novo."));
+      if (e instanceof ApiError && e.code === "ALREADY_SUBMITTED") {
+        setSubmitted(true);
+        setSubmitError("Você já enviou a resposta deste exercício. O envio final é único.");
+      } else {
+        setSubmitError(errorMessage(e, "Não foi possível enviar sua resposta. Tente de novo."));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -248,9 +276,9 @@ export function ExerciseWorkspace({
               <dd className="font-formula font-semibold">{target}</dd>
             </div>
             <div className="rounded-md border p-2">
-              <dt className="text-muted-foreground">Tentativas</dt>
-              <dd className="font-semibold">
-                {attempts} {attempts === 1 ? "enviada" : "enviadas"}
+              <dt className="text-muted-foreground">Envio final</dt>
+              <dd className="font-semibold" data-testid="submission-state">
+                {submitted || attempts > 0 ? "Enviado" : "Pendente (1 envio)"}
               </dd>
             </div>
           </dl>
@@ -339,6 +367,7 @@ export function ExerciseWorkspace({
           {commitError?.kind === "error" && (
             <div
               role="alert"
+              data-testid="formula-error"
               className="rounded-md border border-warning/50 bg-warning-subtle p-3 text-sm text-warning-subtle-foreground"
             >
               <p className="font-semibold">
@@ -359,10 +388,46 @@ export function ExerciseWorkspace({
             </p>
           )}
 
+          {!submitted && volatile.length > 0 && (
+            <p
+              role="status"
+              data-testid="volatile-warning"
+              className="rounded-md border border-warning/50 bg-warning-subtle p-3 text-sm text-warning-subtle-foreground"
+            >
+              <span aria-hidden="true">⚠ </span>
+              {FEEDBACK_MESSAGES.VOLATILE_FUNCTION} Se enviar assim, a resposta conta como
+              incorreta.
+            </p>
+          )}
+
+          {submitted && !result && (
+            <p
+              role="status"
+              data-testid="already-submitted"
+              className="rounded-md border bg-muted/50 p-3 text-sm"
+            >
+              Você já enviou a resposta deste exercício
+              {exercise.status === "CORRECT"
+                ? " e ela está correta."
+                : exercise.status === "INCORRECT"
+                  ? " e ela ficou incorreta."
+                  : "."}{" "}
+              Pode continuar testando fórmulas à vontade, mas o envio final é único.
+            </p>
+          )}
+
           <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              Quando estiver satisfeito(a) com o resultado em{" "}
-              <span className="font-formula">{target}</span>, envie sua resposta.
+            <p id={ids.submitHelp} className="text-sm text-muted-foreground">
+              {submitted ? (
+                "Resposta enviada. Testes continuam liberados."
+              ) : blockReason ? (
+                <span data-testid="submit-blocked">{blockReason}</span>
+              ) : (
+                <>
+                  Teste quantas vezes quiser. Quando estiver satisfeito(a) com o resultado em{" "}
+                  <span className="font-formula">{target}</span>, envie: o envio é único.
+                </>
+              )}
             </p>
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={restore} disabled={submitting}>
@@ -371,10 +436,11 @@ export function ExerciseWorkspace({
               <Button
                 type="button"
                 onClick={() => void send()}
-                disabled={submitting}
+                disabled={submitting || submitted || blockReason !== null}
                 aria-busy={submitting}
+                aria-describedby={ids.submitHelp}
               >
-                {submitting ? "Enviando…" : "Enviar resposta"}
+                {submitting ? "Enviando…" : submitted ? "Resposta enviada" : "Enviar resposta"}
               </Button>
             </div>
           </div>

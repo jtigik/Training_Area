@@ -17,5 +17,9 @@ export const FEEDBACK_MESSAGES: Record<FeedbackCode, string> = {
   PARSE_ERROR: "Não foi possível entender a fórmula. Verifique parênteses, aspas e separadores.",
   EMPTY_SUBMISSION: "Digite uma fórmula antes de enviar.",
   LIMIT_EXCEEDED: "A fórmula ou a planilha excede os limites permitidos.",
+  INPUT_INSENSITIVE:
+    "O resultado bate, mas a fórmula não depende dos dados: se os valores da planilha mudarem, ela não acompanha. Use as células de entrada.",
+  VOLATILE_FUNCTION:
+    "Funções que mudam a cada cálculo (ALEATÓRIO, ALEATÓRIOENTRE, AGORA, HOJE) não são aceitas como resposta.",
   INVALID_EXERCISE: "Este exercício está com problema de configuração. Avise o professor.",
 };

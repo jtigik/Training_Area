@@ -1,4 +1,5 @@
-export const LEVELS = ["Fundamental", "Profissional", "Avançado", "Dashboard"] as const;
+/** MVP levels. Dashboard moved to v1.1 and must not appear in the UI. */
+export const LEVELS = ["Fundamental", "Profissional", "Avançado"] as const;
 
 export function Welcome() {
   return (
