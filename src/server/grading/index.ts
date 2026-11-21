@@ -31,6 +31,8 @@ export {
   fromSchemaExercise,
   gradeMultiCellSubmission,
   resolveTargetExpectations,
+  toStudentSheet,
+  validateMultiCellExercise,
 } from "./multi";
 export type {
   ExerciseTarget,
@@ -39,4 +41,6 @@ export type {
   MultiCellGradingResult,
   SchemaExpectedCell,
   SchemaInitialSheet,
+  MultiCellValidationResult,
+  TargetValidationError,
 } from "./multi";

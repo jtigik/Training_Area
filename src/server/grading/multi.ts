@@ -1,4 +1,4 @@
-import { evaluateFormula, gradeSubmission } from "./grade";
+import { evaluateFormula, gradeSubmission, validateExercise } from "./grade";
 import { parseA1 } from "./sheet";
 import type {
   CellInput,
@@ -182,4 +182,105 @@ export function fromSchemaExercise(
     ...(e.tolerance !== undefined ? { numberTolerance: e.tolerance } : {}),
   }));
   return { sheet, targets, rules };
+}
+
+export interface TargetValidationError {
+  cell: string | null;
+  code: string;
+  message: string;
+}
+
+export interface MultiCellValidationResult {
+  valid: boolean;
+  errors: TargetValidationError[];
+  expectedValues: Record<string, ScalarValue | null>;
+}
+
+/**
+ * Validates a multi-cell exercise before saving/publishing: at least one target, unique valid
+ * addresses, every answer key evaluates without error and with supported functions, and grading
+ * the answer keys themselves is CORRECT (TA-016 sanity check, TA-034 unsupported functions).
+ */
+export function validateMultiCellExercise(
+  exercise: MultiCellExercise,
+  options: GradingOptions = {},
+): MultiCellValidationResult {
+  const errors: TargetValidationError[] = [];
+  const expectedValues: Record<string, ScalarValue | null> = {};
+  const targets = exercise?.targets ?? [];
+  if (targets.length === 0) {
+    errors.push({
+      cell: null,
+      code: "NO_TARGETS",
+      message: "Exercise needs at least one target cell",
+    });
+    return { valid: false, errors, expectedValues };
+  }
+  const seen = new Set<string>();
+  for (const t of targets) {
+    const addr = canonicalAddress(String(t.cell ?? ""));
+    if (!parseA1(addr))
+      errors.push({ cell: t.cell, code: "INVALID_TARGET", message: "Invalid address" });
+    else if (seen.has(addr))
+      errors.push({ cell: addr, code: "DUPLICATE_TARGET", message: "Duplicate target" });
+    seen.add(addr);
+  }
+  if (errors.length > 0) return { valid: false, errors, expectedValues };
+
+  const expectations = resolveTargetExpectations(exercise, options);
+  const keys: Record<string, string> = {};
+  for (const t of targets) {
+    const addr = canonicalAddress(t.cell);
+    const resolved = expectations[addr];
+    if ("formula" in t.expected) {
+      keys[addr] = t.expected.formula;
+      if (resolved?.error) {
+        errors.push({
+          cell: addr,
+          code: "INVALID_EXPECTED_FORMULA",
+          message: `Answer-key formula failed: ${resolved.error}`,
+        });
+      }
+      expectedValues[addr] = resolved?.value ?? null;
+    } else {
+      // Literal answer: validate it through the single-cell validator.
+      const v = validateExercise(
+        { ...exercise.rules, ...t, sheet: exercise.sheet, targetCell: addr, expected: t.expected },
+        options,
+      );
+      expectedValues[addr] = v.expectedValue;
+      for (const e of v.errors) errors.push({ cell: addr, code: e.code, message: e.message });
+    }
+  }
+  if (errors.length > 0) return { valid: false, errors, expectedValues };
+
+  const sanity = gradeMultiCellSubmission(exercise, keys, options);
+  for (const [addr, r] of Object.entries(sanity.cells)) {
+    if (!(addr in keys)) continue;
+    if (r.unsupportedFunctions.length > 0) {
+      errors.push({
+        cell: addr,
+        code: "UNSUPPORTED_FUNCTION",
+        message: `Answer key uses unsupported functions: ${r.unsupportedFunctions.join(", ")}`,
+      });
+    } else if (!r.correct) {
+      errors.push({
+        cell: addr,
+        code: "ANSWER_KEY_NOT_ACCEPTED",
+        message: `Answer-key formula is rejected by the exercise rules (${r.feedbackCode})`,
+      });
+    }
+  }
+  return { valid: errors.length === 0, errors, expectedValues };
+}
+
+/** Removes answer keys: what the student grid needs. */
+export function toStudentSheet(exercise: MultiCellExercise): {
+  sheet: SheetData;
+  targetCells: string[];
+} {
+  const targetCells = exercise.targets.map((t) => canonicalAddress(t.cell));
+  const sheet = toA1Map(exercise.sheet);
+  for (const addr of targetCells) delete sheet[addr];
+  return { sheet, targetCells };
 }

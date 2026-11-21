@@ -54,3 +54,29 @@ describe("fromSchemaExercise (JSON do schema do Backend 1)", () => {
     expect(r.correct).toBe(true);
   });
 });
+
+describe("validateMultiCellExercise", () => {
+  it("aceita gabaritos válidos e aponta problemas por célula", async () => {
+    const { validateMultiCellExercise } = await import("./multi");
+    expect(validateMultiCellExercise(exercise)).toMatchObject({
+      valid: true,
+      expectedValues: { A4: 60, A5: 20 },
+    });
+    expect(validateMultiCellExercise({ sheet: [], targets: [] }).errors[0]?.code).toBe(
+      "NO_TARGETS",
+    );
+    const dup = validateMultiCellExercise({
+      sheet: [],
+      targets: [
+        { cell: "A1", expected: { value: 1 } },
+        { cell: "$A$1", expected: { value: 1 } },
+      ],
+    });
+    expect(dup.errors[0]?.code).toBe("DUPLICATE_TARGET");
+    const bad = validateMultiCellExercise({
+      ...exercise,
+      targets: [{ cell: "A4", expected: { formula: "=A1+A2+A3" }, requiredFunctions: ["SUM"] }],
+    });
+    expect(bad.errors[0]).toMatchObject({ cell: "A4", code: "ANSWER_KEY_NOT_ACCEPTED" });
+  });
+});
