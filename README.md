@@ -25,7 +25,7 @@ Plataforma web de treinamento em Excel: o professor publica conteúdo e exercíc
 git clone https://github.com/jtigik/Training_Area.git
 cd Training_Area
 nvm use                      # Node 24
-cp .env.example .env         # ajuste se precisar (porta, senha)
+cp .env.example .env         # ajuste se precisar (veja "Variáveis de ambiente")
 npm ci                       # instala dependências e gera o Prisma Client (postinstall)
 npm run db:up                # sobe o PostgreSQL e espera o healthcheck
 npm run db:migrate           # aplica as migrações (prisma migrate dev)
@@ -125,6 +125,55 @@ npm run dev -- -p 3001        # use uma porta diferente por worktree
 - `node_modules`, `.next` e `src/generated` são locais de cada worktree.
 - Para remover: `git worktree remove ../wt-<papel>`; liste com `git worktree list`.
 - Commits seguem [Conventional Commits](https://www.conventionalcommits.org/pt-br/) (`feat:`, `fix:`, `chore:`, `test:`, `docs:`, `ci:`). PRs para `main` precisam da CI verde.
+
+## Variáveis de ambiente
+
+Modelo em [`.env.example`](.env.example). A validação fica em `src/lib/env.ts` (`validateServerEnv`) e roda na inicialização do servidor (`src/instrumentation.ts`), não durante o `next build`. Integrações externas (OAuth, IA) são opcionais em dev e teste; em produção o servidor só sobe se a configuração for válida.
+
+| Variável                                                        | Obrigatória?                         | Para que serve                                                                        | Valor na CI                                                                 |
+| --------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`           | Só para o Compose                    | Credenciais do container PostgreSQL                                                   | `training` / `training` / `training_area` (service do job e2e)              |
+| `POSTGRES_PORT`                                                 | Não (padrão `5432`)                  | Porta do Postgres no host                                                             | —                                                                           |
+| `DATABASE_URL`                                                  | Sim, para banco, migrações e seed    | Conexão do Prisma                                                                     | `postgresql://training:training@localhost:5432/training_area?schema=public` |
+| `APP_PORT`                                                      | Não (padrão `3000`)                  | Porta do app no perfil `app` do Compose                                               | —                                                                           |
+| `AUTH_SECRET`                                                   | **Sim em produção**                  | Chave do Auth.js para assinar sessão e tokens (`openssl rand -base64 32`)             | secret `AUTH_SECRET` ou valor fictício                                      |
+| `AUTH_URL`                                                      | Recomendado em produção              | URL pública do app, usada nos callbacks OAuth                                         | `http://localhost:3000`                                                     |
+| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`                         | Não (sempre em par)                  | OAuth Google. Callback: `<AUTH_URL>/api/auth/callback/google`                         | secrets ou valores fictícios                                                |
+| `AUTH_MICROSOFT_ENTRA_ID_ID` / `AUTH_MICROSOFT_ENTRA_ID_SECRET` | Não (sempre em par)                  | OAuth Microsoft Entra ID. Callback: `<AUTH_URL>/api/auth/callback/microsoft-entra-id` | secrets ou valores fictícios                                                |
+| `AUTH_MICROSOFT_ENTRA_ID_ISSUER`                                | Não                                  | Issuer do Entra ID: `https://login.microsoftonline.com/<tenant-id ou common>/v2.0`    | `.../common/v2.0`                                                           |
+| `AI_PROVIDER`                                                   | Não (padrão `mock`)                  | Provedor de IA do feedback: `openai`, `anthropic` ou `mock`                           | `mock`                                                                      |
+| `AI_API_KEY`                                                    | Sim se `AI_PROVIDER` ≠ `mock`        | Chave da API do provedor de IA                                                        | vazio                                                                       |
+| `AI_MODEL`                                                      | Não                                  | Modelo do provedor (vazio = padrão definido no código)                                | vazio                                                                       |
+| `TENANT_RESOLUTION`                                             | Não (padrão `single`)                | Como o tenant é identificado: `single`, `path` (`/t/<slug>/...`) ou `subdomain`       | `single`                                                                    |
+| `DEFAULT_TENANT_SLUG`                                           | Não (padrão `default`)               | Tenant usado em `single` e como fallback                                              | `default`                                                                   |
+| `APP_ROOT_DOMAIN`                                               | Sim se `TENANT_RESOLUTION=subdomain` | Domínio raiz dos subdomínios (ex.: `training.example.com`)                            | vazio                                                                       |
+
+Notas:
+
+- Os nomes seguem a convenção do Auth.js (`AUTH_*`), que lê essas variáveis automaticamente. A autenticação em si é implementada pelo backend (TA-001); aqui só está a configuração.
+- Na CI, as variáveis de OAuth usam os secrets do repositório se existirem; se não existirem, usam valores fictícios. Nenhum teste chama Google, Microsoft ou provedor de IA.
+- No Compose, o serviço `app` lê o `.env` (`env_file`) e sobrescreve só a `DATABASE_URL`.
+
+## Multi-tenant (impacto na infra)
+
+> **Premissa a confirmar pelo backend:** banco **compartilhado**, com coluna `tenant_id` nas tabelas de domínio. Ainda não há modelo `Tenant` no schema; ele entra junto com a modelagem do backend.
+
+- **Banco:** uma única instância PostgreSQL e um único schema. O isolamento é lógico (`tenant_id` + filtros na camada de dados; Row-Level Security do Postgres pode ser avaliada depois). Migrações continuam únicas para todos os tenants.
+- **Resolução do tenant:** `TENANT_RESOLUTION=single` (dev/piloto: sempre `DEFAULT_TENANT_SLUG`), `path` (`/t/<slug>/...`, não exige DNS) ou `subdomain` (`<slug>.<APP_ROOT_DOMAIN>`).
+- **Subdomínios em produção:** exigem DNS curinga (`*.APP_ROOT_DOMAIN`), certificado TLS curinga e proxy/ingress que preserve o header `Host`.
+- **OAuth com subdomínios:** os redirect URIs do Google e do Entra ID não aceitam curinga. Use um host fixo de autenticação (`AUTH_URL`) e redirecione ao tenant depois do login.
+- **Dados e operação:** backups, seeds e exportações devem considerar o `tenant_id`. Os logs devem incluir o tenant para depuração.
+
+## Segurança
+
+### Dependências (`npm audit`)
+
+Em 21/11/2026, `npm audit` reporta **3 vulnerabilidades altas**, todas na mesma cadeia: `prisma` → `@prisma/config` → `effect` ([GHSA-7589-6fvf-x4pw](https://github.com/advisories/GHSA-7589-6fvf-x4pw), ReDoS em `Schema.TemplateLiteral`).
+
+- **Escopo:** `prisma` é dependência de desenvolvimento (CLI de generate, migrate e seed). O `effect` é usado só pelo carregamento de configuração da CLI. Não é importado pelo `@prisma/client` nem pelo `@prisma/adapter-pg`, e não aparece na saída `.next/standalone` que vai para a imagem de produção (`runner`).
+- **Por que `npm audit --omit=dev` ainda mostra 3:** o `@prisma/client` declara `prisma` como _peerDependency_ opcional. Por isso o npm marca o pacote como `devOptional`, e o `--omit=dev` não o exclui do relatório. Na prática, ele não é carregado em runtime.
+- **Onde existe:** na máquina de dev, na CI e na imagem `migrator`, que roda só `prisma migrate deploy` com o schema do próprio repositório, sem entrada de usuário.
+- **Decisão:** manter o Prisma 7. A correção sugerida (`npm audit fix --force`) faria downgrade para o Prisma 6.12, o que é uma quebra. Vamos reavaliar quando a Prisma publicar uma versão com `effect` ≥ 3.22.1 (a primeira corrigida). Alternativa, se for preciso zerar o relatório antes disso: um `overrides` no `package.json` forçando `effect` `^3.22.1` (não testado com a CLI do Prisma). Responsável: DevOps.
 
 ## Licença
 
