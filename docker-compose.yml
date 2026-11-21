@@ -40,6 +40,10 @@ services:
     build:
       context: .
       target: runner
+    # Auth, IA e tenancy vêm do .env; DATABASE_URL é sobrescrita para apontar ao serviço db.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-training}:${POSTGRES_PASSWORD:-training}@db:5432/${POSTGRES_DB:-training_area}?schema=public
     ports:
