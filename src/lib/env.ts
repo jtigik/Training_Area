@@ -8,7 +8,11 @@
  * ("Variáveis de ambiente") e em `.env.example`.
  */
 
-export const AI_PROVIDERS = ["openai", "anthropic", "mock"] as const;
+/**
+ * `disabled`: sem IA (feedback só manual); `mock`: texto fixo local (padrão em dev e CI);
+ * `openai-compatible`: qualquer API no formato OpenAI (`AI_BASE_URL` + `AI_API_KEY`).
+ */
+export const AI_PROVIDERS = ["disabled", "mock", "openai-compatible"] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
 export const TENANT_RESOLUTION_MODES = ["single", "path", "subdomain"] as const;
@@ -35,6 +39,8 @@ export interface ServerEnv {
   ai: {
     provider: AiProvider;
     apiKey: string | undefined;
+    /** Base da API compatível com OpenAI (ex.: https://api.openai.com/v1). */
+    baseUrl: string | undefined;
     model: string | undefined;
   };
   tenancy: {
@@ -117,8 +123,14 @@ export function validateServerEnv(source: Source = process.env): ServerEnv {
   // Provedor de IA para feedback
   const aiProvider = oneOf(source, "AI_PROVIDER", AI_PROVIDERS, "mock", issues);
   const aiApiKey = read(source, "AI_API_KEY");
-  if (aiProvider !== "mock" && !aiApiKey) {
-    issues.push(`AI_API_KEY é obrigatória quando AI_PROVIDER=${aiProvider}`);
+  const aiBaseUrl = read(source, "AI_BASE_URL");
+  if (aiProvider === "openai-compatible") {
+    if (!aiApiKey) issues.push("AI_API_KEY é obrigatória quando AI_PROVIDER=openai-compatible");
+    if (!aiBaseUrl) {
+      issues.push("AI_BASE_URL é obrigatória quando AI_PROVIDER=openai-compatible");
+    } else if (!/^https?:\/\/\S+$/.test(aiBaseUrl)) {
+      issues.push("AI_BASE_URL deve ser uma URL http(s)");
+    }
   }
 
   // Multi-tenant
@@ -144,7 +156,12 @@ export function validateServerEnv(source: Source = process.env): ServerEnv {
       microsoft: microsoft ? { ...microsoft, tenantId: microsoftTenantId } : undefined,
       oauthMockBaseUrl: read(source, "AUTH_OAUTH_MOCK_BASE_URL"),
     },
-    ai: { provider: aiProvider, apiKey: aiApiKey, model: read(source, "AI_MODEL") },
+    ai: {
+      provider: aiProvider,
+      apiKey: aiApiKey,
+      baseUrl: aiBaseUrl,
+      model: read(source, "AI_MODEL"),
+    },
     tenancy: { resolution, defaultSlug, rootDomain },
   };
 }

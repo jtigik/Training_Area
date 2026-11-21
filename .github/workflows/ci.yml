@@ -28,6 +28,7 @@ env:
   MICROSOFT_TENANT_ID: common
   AI_PROVIDER: mock
   AI_API_KEY: ""
+  AI_BASE_URL: ""
   AI_MODEL: ""
   TENANT_RESOLUTION: single
   DEFAULT_TENANT_SLUG: default

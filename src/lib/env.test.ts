@@ -50,12 +50,34 @@ describe("validateServerEnv", () => {
     ).toBe("org");
   });
 
-  it("exige AI_API_KEY para provedores reais e rejeita provedor desconhecido", () => {
-    expect(() => validateServerEnv({ AI_PROVIDER: "openai" })).toThrow(/AI_API_KEY/);
-    expect(() => validateServerEnv({ AI_PROVIDER: "foo" })).toThrow(EnvValidationError);
-    expect(validateServerEnv({ AI_PROVIDER: "anthropic", AI_API_KEY: "k" }).ai.provider).toBe(
-      "anthropic",
-    );
+  it("AI_PROVIDER: disabled | mock | openai-compatible", () => {
+    expect(validateServerEnv({}).ai.provider).toBe("mock");
+    expect(validateServerEnv({ AI_PROVIDER: "disabled" }).ai.provider).toBe("disabled");
+    // mock/disabled não exigem chave nem URL
+    expect(validateServerEnv({ AI_PROVIDER: "mock" }).ai.apiKey).toBeUndefined();
+    for (const old of ["openai", "anthropic", "foo"]) {
+      expect(() => validateServerEnv({ AI_PROVIDER: old })).toThrow(EnvValidationError);
+    }
+  });
+
+  it("openai-compatible exige AI_API_KEY e AI_BASE_URL http(s)", () => {
+    expect(() => validateServerEnv({ AI_PROVIDER: "openai-compatible" })).toThrow(/AI_API_KEY/);
+    expect(() => validateServerEnv({ AI_PROVIDER: "openai-compatible" })).toThrow(/AI_BASE_URL/);
+    expect(() =>
+      validateServerEnv({ AI_PROVIDER: "openai-compatible", AI_API_KEY: "k", AI_BASE_URL: "x" }),
+    ).toThrow(/URL http/);
+    const env = validateServerEnv({
+      AI_PROVIDER: "openai-compatible",
+      AI_API_KEY: "k",
+      AI_BASE_URL: "https://llm.example/v1",
+      AI_MODEL: "m",
+    });
+    expect(env.ai).toEqual({
+      provider: "openai-compatible",
+      apiKey: "k",
+      baseUrl: "https://llm.example/v1",
+      model: "m",
+    });
   });
 
   it("valida a configuração de tenancy", () => {
