@@ -1,21 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requireSession, getTenantSummary, AuthError } = vi.hoisted(() => ({
+import { ApiError } from "@/lib/api-error";
+
+const { requireSession, getTenantSummary } = vi.hoisted(() => ({
   requireSession: vi.fn(),
   getTenantSummary: vi.fn(),
-  AuthError: class AuthError extends Error {},
 }));
 
-vi.mock("@/server/auth/session", () => {
-  return {
-    requireSession,
-    authErrorResponse: (e: unknown) =>
-      e instanceof AuthError
-        ? Response.json({ error: "Não autenticado" }, { status: 401 })
-        : Promise.reject(e),
-    AuthError,
-  };
-});
+vi.mock("@/server/auth/session", () => ({ requireSession }));
 vi.mock("@/server/auth/tenant-summary", () => ({ getTenantSummary }));
 
 const { GET } = await import("./route");
@@ -71,8 +63,12 @@ describe("GET /api/me", () => {
     expect(body.user.tenant).toBeNull();
   });
 
-  it("401 sem sessão", async () => {
-    requireSession.mockRejectedValue(new AuthError());
-    expect((await GET(req())).status).toBe(401);
+  it("401 sem sessão no formato padrão de erro", async () => {
+    requireSession.mockRejectedValue(new ApiError(401, "UNAUTHENTICATED", "Não autenticado"));
+    const res = await GET(req());
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: { code: "UNAUTHENTICATED", message: "Não autenticado" },
+    });
   });
 });

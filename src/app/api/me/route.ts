@@ -1,4 +1,5 @@
-import { authErrorResponse, requireSession } from "@/server/auth/session";
+import { handleApiError } from "@/server/api-response";
+import { requireSession } from "@/server/auth/session";
 import { getTenantSummary } from "@/server/auth/tenant-summary";
 
 /**
@@ -11,6 +12,6 @@ export async function GET(request: Request) {
     const { user } = await requireSession(request.headers);
     return Response.json({ user: { ...user, tenant: await getTenantSummary(user.tenantId) } });
   } catch (error) {
-    return authErrorResponse(error);
+    return handleApiError(error);
   }
 }

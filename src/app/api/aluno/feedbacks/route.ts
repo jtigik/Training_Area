@@ -1,4 +1,4 @@
-import { authErrorResponse } from "@/server/auth/session";
+import { handleApiError } from "@/server/api-response";
 import { requireTenant } from "@/server/auth/tenant";
 import { listApprovedFeedbackForStudent } from "@/server/feedback/student";
 
@@ -9,6 +9,6 @@ export async function GET(request: Request) {
     const feedbacks = await listApprovedFeedbackForStudent(ctx);
     return Response.json({ feedbacks });
   } catch (error) {
-    return authErrorResponse(error);
+    return handleApiError(error);
   }
 }

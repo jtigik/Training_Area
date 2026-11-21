@@ -1,15 +1,15 @@
 import "server-only";
 
+import { ApiError } from "@/lib/api-error";
+
 import { normalizeEmail, type InvitationInput } from "@/lib/validation/invitation";
 import { prisma } from "@/server/db";
 import type { TenantContext } from "@/server/auth/tenant";
 
-export class InvitationError extends Error {
-  constructor(
-    readonly code: "EMAIL_IN_USE" | "PENDING_INVITATION",
-    message: string,
-  ) {
-    super(message);
+export class InvitationError extends ApiError {
+  declare readonly code: "EMAIL_IN_USE" | "PENDING_INVITATION";
+  constructor(code: "EMAIL_IN_USE" | "PENDING_INVITATION", message: string) {
+    super(409, code, message);
     this.name = "InvitationError";
   }
 }

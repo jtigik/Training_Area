@@ -118,7 +118,25 @@ await prisma.exerciseSet.findMany({ where: { tenantId } }); // sempre filtre pel
 
 `requireTenant` usa o `tenantId` da sessão; só o SUPER_ADMIN atravessa instituições e precisa informar `requestedTenantId`. Também existem `requireSession`/`requireRole` (`src/server/auth/session.ts`). Feedback para o aluno: use `listApprovedFeedbackForStudent` (`src/server/feedback/student.ts`), que só devolve feedback `APPROVED`.
 
-#### Sessão no cliente e `/api/me`
+#### Formato de erro das APIs
+
+Todas as rotas `/api/*` do app (exceto `/api/auth/*`, que é do Better Auth) respondem erros como:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Dados inválidos",
+    "details": [{ "path": "email", "message": "E-mail inválido" }]
+  }
+}
+```
+
+- `code` é estável (decida por ele no front); `message` vem pronta em pt-BR; `details` é opcional.
+- Códigos genéricos: `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `SCOPE_DENIED` (403), `NOT_FOUND` (404), `VALIDATION_ERROR` (400), `CONFLICT` (409); serviços usam códigos próprios (`LAST_ADMIN`, `EMAIL_IN_USE`, `LEVEL_LOCKED`...).
+- Helpers em `src/lib/api-error.ts`: `ApiError` (lance nos serviços), `apiError()`, `validationError(zodIssues)`, `isApiErrorBody()` (cliente). Nas rotas: `try { ... } catch (e) { return handleApiError(e) }` (`src/server/api-response.ts`).
+
+### Sessão no cliente e `/api/me`
 
 - `GET /api/me` → `{ user: { id, name, email, role, tenantId, tenant: { id, name, slug } | null } }` (401 sem sessão).
 - `GET /api/auth/get-session` / `authClient.useSession()` → `{ user: { ...campos do Better Auth, role, tenantId, active, tenant }, session }` (ou `null`), via plugin `customSession` + `customSessionClient`.

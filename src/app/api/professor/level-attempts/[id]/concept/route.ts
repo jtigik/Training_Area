@@ -1,37 +1,26 @@
+import { validationError } from "@/lib/api-error";
 import { conceptOverrideSchema } from "@/lib/validation/grading";
-import { authErrorResponse } from "@/server/auth/session";
+import { handleApiError } from "@/server/api-response";
 import { requireTenant } from "@/server/auth/tenant";
-import { GradingError, overrideLevelConcept } from "@/server/grading/service";
+import { overrideLevelConcept } from "@/server/grading/service";
 
-/** PATCH { concept, reason } — professor ajusta o conceito final com justificativa. */
+/**
+ * PATCH { concept, reason } — professor ajusta o conceito final com justificativa
+ * (≥ 10 caracteres, registrada). Erros: 404 NOT_FOUND, 409 NOT_COMPLETED | SAME_CONCEPT.
+ */
 export async function PATCH(
   request: Request,
   ctx: RouteContext<"/api/professor/level-attempts/[id]/concept">,
 ) {
-  let tenantCtx;
   try {
-    tenantCtx = await requireTenant(["PROFESSOR", "INSTITUTION_ADMIN"], {
+    const tenantCtx = await requireTenant(["PROFESSOR", "INSTITUTION_ADMIN"], {
       headers: request.headers,
     });
+    const parsed = conceptOverrideSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return validationError(parsed.error.issues);
+    const { id } = await ctx.params;
+    return Response.json({ levelAttempt: await overrideLevelConcept(tenantCtx, id, parsed.data) });
   } catch (error) {
-    return authErrorResponse(error);
-  }
-  const parsed = conceptOverrideSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) {
-    return Response.json(
-      { error: "Dados inválidos", issues: parsed.error.issues },
-      { status: 400 },
-    );
-  }
-  const { id } = await ctx.params;
-  try {
-    const attempt = await overrideLevelConcept(tenantCtx, id, parsed.data);
-    return Response.json({ levelAttempt: attempt });
-  } catch (error) {
-    if (error instanceof GradingError) {
-      const status = error.code === "NOT_FOUND" ? 404 : 409;
-      return Response.json({ error: error.message, code: error.code }, { status });
-    }
-    throw error;
+    return handleApiError(error);
   }
 }

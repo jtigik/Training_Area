@@ -4,6 +4,8 @@ import { headers } from "next/headers";
 
 import type { Role } from "@/lib/roles";
 import { auth } from "@/server/auth/auth";
+import { API_ERROR_CODES, ApiError } from "@/lib/api-error";
+import { handleApiError } from "@/server/api-response";
 import { toSessionUser, type SessionUser } from "@/server/auth/session-user";
 
 export type { SessionUser };
@@ -13,13 +15,18 @@ export interface AppSession {
   user: SessionUser;
 }
 
-export class AuthError extends Error {
+/** 401 UNAUTHENTICATED / 403 FORBIDDEN (ou código específico, ex.: TENANT_REQUIRED). */
+export class AuthError extends ApiError {
   constructor(
-    readonly status: 400 | 401 | 403,
+    status: 400 | 401 | 403,
     message: string = status === 401 ? "Não autenticado" : "Acesso negado",
-    readonly code?: string,
+    code: string = status === 401
+      ? API_ERROR_CODES.UNAUTHENTICATED
+      : status === 403
+        ? API_ERROR_CODES.FORBIDDEN
+        : "BAD_REQUEST",
   ) {
-    super(message);
+    super(status, code, message);
     this.name = "AuthError";
   }
 }
@@ -54,10 +61,6 @@ export async function requireRole(
   return session;
 }
 
-/** Converte AuthError em resposta JSON; repassa outros erros. */
-export function authErrorResponse(error: unknown): Response {
-  if (error instanceof AuthError) {
-    return Response.json({ error: error.message, code: error.code }, { status: error.status });
-  }
-  throw error;
-}
+export { handleApiError };
+/** @deprecated nome antigo; use handleApiError (@/server/api-response). */
+export const authErrorResponse = handleApiError;

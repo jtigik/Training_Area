@@ -1,16 +1,19 @@
 import "server-only";
 
+import { ApiError } from "@/lib/api-error";
+
 import { computeConcept, DEFAULT_GRADING_BANDS, type GradingBands } from "@/lib/grading";
 import type { ConceptOverrideInput, GradingBandsInput } from "@/lib/validation/grading";
 import type { TenantContext } from "@/server/auth/tenant";
 import type { TenantDb } from "@/server/tenant-db";
 
-export class GradingError extends Error {
+export class GradingError extends ApiError {
+  declare readonly code: "NOT_FOUND" | "NOT_COMPLETED" | "NOT_IN_PROGRESS" | "SAME_CONCEPT";
   constructor(
-    readonly code: "NOT_FOUND" | "NOT_COMPLETED" | "NOT_IN_PROGRESS" | "SAME_CONCEPT",
+    code: "NOT_FOUND" | "NOT_COMPLETED" | "NOT_IN_PROGRESS" | "SAME_CONCEPT",
     message: string,
   ) {
-    super(message);
+    super(code === "NOT_FOUND" ? 404 : 409, code, message);
     this.name = "GradingError";
   }
 }

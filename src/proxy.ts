@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { API_ERROR_CODES, ApiError } from "@/lib/api-error";
 import { authorizeRoute, findRouteRule, isApiPath, LOGIN_PATH } from "@/lib/authz/route-rules";
 import { getSession } from "@/server/auth/session";
 
@@ -28,7 +29,10 @@ export async function proxy(request: NextRequest) {
 
   if (decision.type === "unauthenticated") {
     if (isApiPath(pathname)) {
-      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+      return NextResponse.json(
+        new ApiError(401, API_ERROR_CODES.UNAUTHENTICATED, "Não autenticado").toBody(),
+        { status: 401 },
+      );
     }
     const loginUrl = new URL(LOGIN_PATH, request.url);
     loginUrl.searchParams.set("callbackUrl", `${pathname}${search}`);
@@ -36,7 +40,10 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isApiPath(pathname)) {
-    return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
+    return NextResponse.json(
+      new ApiError(403, API_ERROR_CODES.FORBIDDEN, "Acesso negado").toBody(),
+      { status: 403 },
+    );
   }
   return new NextResponse("403 — Acesso negado", {
     status: 403,

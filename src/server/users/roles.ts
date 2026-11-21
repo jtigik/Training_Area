@@ -1,15 +1,15 @@
 import "server-only";
 
+import { ApiError } from "@/lib/api-error";
+
 import { Prisma } from "@/generated/prisma/client";
 import type { TenantRole } from "@/lib/roles";
 import type { TenantContext } from "@/server/auth/tenant";
 
-export class RoleChangeError extends Error {
-  constructor(
-    readonly code: "NOT_FOUND" | "LAST_ADMIN",
-    message: string,
-  ) {
-    super(message);
+export class RoleChangeError extends ApiError {
+  declare readonly code: "NOT_FOUND" | "LAST_ADMIN";
+  constructor(code: "NOT_FOUND" | "LAST_ADMIN", message: string) {
+    super(code === "NOT_FOUND" ? 404 : 409, code, message);
     this.name = "RoleChangeError";
   }
 }
