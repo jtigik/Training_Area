@@ -4,6 +4,8 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { hashPassword } from "better-auth/crypto";
 
 import { PrismaClient, type Prisma, type Role } from "../src/generated/prisma/client";
+import { levelPoolWhere } from "../src/lib/pool";
+import { snapshotFromExercise } from "../src/lib/set-exercises";
 
 /**
  * Seed de DESENVOLVIMENTO (idempotente):
@@ -294,7 +296,30 @@ async function main() {
       quantity: 3,
     },
   });
-  console.log("  trilha demo: 1 conjunto, nível Fundamental, cota padrão 3");
+  // Conjunto publicado sorteia só de SetExercise: congela o pool (mesma regra de publishSet).
+  const snapshots = await prisma.setExercise.count({ where: { setId: "demo-set-trilha" } });
+  if (snapshots === 0) {
+    const pool = await prisma.exercise.findMany({
+      where: {
+        OR: [{ tenantId: DEMO_TENANT.id }, { tenantId: null }],
+        ...levelPoolWhere("FUNDAMENTAL", ["VERY_EASY", "EASY", "MEDIUM"]),
+      },
+      orderBy: [{ difficulty: "asc" }, { title: "asc" }, { id: "asc" }],
+    });
+    await prisma.setExercise.createMany({
+      data: pool.map((e, position) => ({
+        tenantId: DEMO_TENANT.id,
+        setId: "demo-set-trilha",
+        levelId: "demo-level-fundamental",
+        sourceExerciseId: e.id,
+        position,
+        level: e.level,
+        difficulty: e.difficulty,
+        snapshot: snapshotFromExercise(e) as unknown as Prisma.InputJsonValue,
+      })),
+    });
+  }
+  console.log("  trilha demo: 1 conjunto publicado, nível Fundamental, cota padrão 3");
   console.log("Seed concluído.");
 }
 

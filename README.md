@@ -143,6 +143,23 @@ Todas as rotas `/api/*` do app (exceto `/api/auth/*`, que é do Better Auth) res
 - `tenant` é `null` só para SUPER_ADMIN. O resumo fica em cache por 60 s por processo
   (`src/server/auth/tenant-summary.ts`); chame `invalidateTenantSummary(id)` ao renomear.
 
+## Desbloqueio de níveis (por conjunto)
+
+Ordem: **Fundamental → Profissional → Avançado** (`DASHBOARD` é ignorado no MVP).
+Regra pura em `src/lib/level-unlock.ts` (`computeLevelUnlocks`), aplicada em
+`POST /api/aluno/levels/{id}/attempts` (`src/server/levels/start.ts`):
+
+- o primeiro nível existente do conjunto está sempre aberto;
+- o próximo abre quando a **última tentativa concluída** do anterior teve conceito **D ou PD**;
+- ND/ED permitem refazer o mesmo nível (nova `attemptNumber`); D/PD encerram o nível;
+- erros 409: `LEVEL_LOCKED`, `LEVEL_IN_PROGRESS`, `LEVEL_AWAITING_GRADE`, `LEVEL_ALREADY_PASSED`,
+  `LEVEL_NOT_AVAILABLE` (DASHBOARD), `EMPTY_POOL`;
+- ao iniciar, a cota (aluno > turma > padrão do nível; senão 10) define quantos exercícios são
+  sorteados e congelados em `LevelAttemptExercise`. A resposta traz só os campos de aluno
+  (sem `expectedResult`/`gradingRules`).
+
+`GET /api/aluno/sets/{id}/progress` devolve `{ levels: LevelUnlockState[] }` para a trilha.
+
 ## SUPER_ADMIN: só números agregados
 
 Decisão do PO: o SUPER_ADMIN administra a plataforma, mas **nunca** vê registros individuais
