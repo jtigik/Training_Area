@@ -93,7 +93,7 @@ function requireUser(state: MockState): SessionUser {
   return user;
 }
 
-/** Dev/test helper: sign in as a given mock user (e.g. the teacher, to see the 403 state). */
+/** Dev/test helper: sign in as a given mock user (e.g. the teacher, to check the role redirect). */
 export function mockSignInAs(userId: string) {
   save({ ...load(), userId });
   setSessionCookie(`mock.${MOCK_USERS.find((u) => u.id === userId)?.role ?? "ALUNO"}.${userId}`);

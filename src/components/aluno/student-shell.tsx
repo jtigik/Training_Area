@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import Link from "next/link";
+import { useEffect, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { api, ApiError, ROLE_HOME } from "@/lib/api";
 import { ErrorState, LoadingState, Skeleton } from "@/components/common/page-states";
 import { useApiResource } from "@/components/common/use-api-resource";
@@ -19,32 +19,21 @@ function SkipLink() {
   );
 }
 
-export function ForbiddenView({ home }: { home?: string }) {
-  return (
-    <main id="conteudo" className="mx-auto max-w-xl px-4 py-16 text-center">
-      <p className="font-formula text-4xl font-bold text-muted-foreground">403</p>
-      <h1 className="mt-2 text-2xl font-semibold">Acesso negado</h1>
-      <p className="mt-2 text-muted-foreground">
-        Esta área é exclusiva para alunos. Se você acha que isso é um erro, fale com a sua
-        instituição.
-      </p>
-      {home && (
-        <Link href={home} className="mt-6 inline-block text-primary underline">
-          Ir para a minha área
-        </Link>
-      )}
-    </main>
-  );
-}
-
 /**
  * Client-side guard + layout for /aluno/*. Backend 1's proxy (src/proxy.ts on
  * feat/auth-modelo) does the route-level RBAC; this checks the session/role with
- * the API (401 -> /login?callbackUrl=, other roles -> 403 view) and renders the
- * header with the user's institution.
+ * the API (401 -> /login?callbackUrl=; another role -> defensive client redirect to
+ * its own area home, since the proxy already does that) and renders the header
+ * with the user's institution.
  */
 export function StudentShell({ children }: { children: ReactNode }) {
   const me = useApiResource("me", () => api.me());
+  const router = useRouter();
+  const otherRoleHome = me.data && me.data.role !== "ALUNO" ? ROLE_HOME[me.data.role] : null;
+
+  useEffect(() => {
+    if (otherRoleHome) router.replace(otherRoleHome);
+  }, [otherRoleHome, router]);
 
   if (me.error && !(me.error instanceof ApiError && me.error.status === 401)) {
     return (
@@ -57,20 +46,17 @@ export function StudentShell({ children }: { children: ReactNode }) {
       </main>
     );
   }
-  if (!me.data) {
+  if (!me.data || otherRoleHome) {
     return (
       <>
         <div className="border-b bg-card px-4 py-3">
           <Skeleton className="mx-auto h-8 max-w-6xl" />
         </div>
         <main id="conteudo" className="mx-auto max-w-6xl px-4 py-8">
-          <LoadingState label="Carregando…" />
+          <LoadingState label={otherRoleHome ? "Redirecionando…" : "Carregando…"} />
         </main>
       </>
     );
-  }
-  if (me.data.role !== "ALUNO") {
-    return <ForbiddenView home={ROLE_HOME[me.data.role]} />;
   }
   return (
     <SessionProvider user={me.data}>
