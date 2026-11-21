@@ -20,15 +20,24 @@ describe("createAiProvider", () => {
     expect(createAiProvider({ AI_PROVIDER: "disabled" })).toBeNull();
   });
 
-  it("cria mock e openai com padrões", () => {
+  it("cria mock e openai-compatible com padrões", () => {
     expect(createAiProvider({ AI_PROVIDER: "mock" })).toBeInstanceOf(MockAiProvider);
-    const p = createAiProvider({ AI_PROVIDER: "openai", AI_API_KEY: "sk-test" });
+    const p = createAiProvider({
+      AI_PROVIDER: "openai-compatible",
+      AI_API_KEY: "sk-test",
+      AI_BASE_URL: "https://api.openai.com/v1",
+    });
     expect(p).toBeInstanceOf(OpenAiCompatibleProvider);
     expect(p?.model).toBe("gpt-4o-mini");
   });
 
   it("valida configuração", () => {
+    // "openai" and "anthropic" are not MVP providers (Backend 1 AI_PROVIDERS)
     expect(() => createAiProvider({ AI_PROVIDER: "openai" })).toThrow(AiProviderError);
+    expect(() => createAiProvider({ AI_PROVIDER: "anthropic" })).toThrow(/Unknown/);
+    expect(() =>
+      createAiProvider({ AI_PROVIDER: "openai-compatible", AI_BASE_URL: "http://x/v1" }),
+    ).toThrow(/AI_API_KEY/);
     expect(() =>
       createAiProvider({ AI_PROVIDER: "openai-compatible", AI_API_KEY: "k", AI_MODEL: "m" }),
     ).toThrow(/AI_BASE_URL/);

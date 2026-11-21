@@ -14,10 +14,10 @@ import {
 
 const T1 = "tenant-1";
 const T2 = "tenant-2";
-const teacher: Actor = { userId: "prof", role: "TEACHER", tenantId: T1 };
-const alice: Actor = { userId: "alice", role: "STUDENT", tenantId: T1 };
-const bob: Actor = { userId: "bob", role: "STUDENT", tenantId: T1 };
-const otherTeacher: Actor = { userId: "prof2", role: "TEACHER", tenantId: T2 };
+const teacher: Actor = { userId: "prof", role: "PROFESSOR", tenantId: T1 };
+const alice: Actor = { userId: "alice", role: "ALUNO", tenantId: T1 };
+const bob: Actor = { userId: "bob", role: "ALUNO", tenantId: T1 };
+const otherTeacher: Actor = { userId: "prof2", role: "PROFESSOR", tenantId: T2 };
 
 const baseInput = (over: Partial<CreateExerciseInput> = {}): CreateExerciseInput => ({
   setId: "set-1",

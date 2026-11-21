@@ -48,12 +48,35 @@ export interface ExerciseDefinition {
   requiredFunctionsMode?: "all" | "any";
   /** Functions the formula must NOT use. */
   forbiddenFunctions?: string[];
+  /**
+   * Allow volatile functions (RAND/ALEATÓRIO, RANDBETWEEN/ALEATÓRIOENTRE, NOW/AGORA,
+   * TODAY/HOJE, RANDARRAY). Default `false` (PO decision 21/11/2026): answer keys using them
+   * are rejected by `validateExercise` and submissions using them get `VOLATILE_FUNCTION`.
+   */
+  allowVolatileFunctions?: boolean;
   /** Accept a plain constant (no leading '='). Default `false`. */
   allowConstants?: boolean;
-  /** Formula must reference at least one cell/range. Default `!allowConstants`. */
+  /**
+   * Formula must reference at least one cell/range. Default: `!allowConstants` and, when there is a
+   * reference formula, only if that formula itself references cells (so `=TODAY()` keys work).
+   */
   requireCellReference?: boolean;
-  /** Reject formulas containing the expected value as a literal (e.g. `=A1*0+42`). Default `false`. */
+  /**
+   * Reject formulas containing the expected value as a literal (e.g. `=A1*0+42`). Default `!allowConstants` (on).
+   * A literal that also appears in the reference formula is allowed (e.g. key `=A1*2`, expected 2).
+   */
   forbidLiteralExpectedValue?: boolean;
+  /**
+   * Reference formula used for the sensitivity check and hardcode heuristics when `expected` is
+   * a literal value. Ignored when `expected` is `{ formula }` (that formula is the reference).
+   */
+  referenceFormula?: string;
+  /**
+   * Input-sensitivity check (default `true`): numeric/boolean input cells are perturbed in
+   * deterministic variations and the submission must keep matching the reference formula.
+   * Skipped when there is no reference formula or a volatile function is involved.
+   */
+  sensitivityCheck?: boolean;
 }
 
 export type FormulaLocale = "auto" | "en" | "pt-BR";
@@ -88,7 +111,9 @@ export type FeedbackCode =
   | "WRONG_VALUE"
   | "WRONG_TYPE"
   | "MISSING_REQUIRED_FUNCTION"
+  | "INPUT_INSENSITIVE"
   | "FORBIDDEN_FUNCTION"
+  | "VOLATILE_FUNCTION"
   | "UNSUPPORTED_FUNCTION"
   | "HARDCODED_VALUE"
   | "FORMULA_REQUIRED"
@@ -129,9 +154,20 @@ export interface GradingResult {
   referencesCells: boolean;
   /** Formula actually evaluated (English names, ',' separators), or `null` for constants/early exits. */
   normalizedFormula: string | null;
+  /** Input-sensitivity check outcome (see ExerciseDefinition.sensitivityCheck). */
+  sensitivity: SensitivityResult;
   /** Static analysis of the submitted formula (input for AI feedback); `null` for constants/early exits. */
   analysis: FormulaAnalysis | null;
   elapsedMs: number;
+}
+
+export interface SensitivityResult {
+  checked: boolean;
+  variations: number;
+  mismatchedVariations: number;
+  perturbedCells: number;
+  /** Why the check did not run (NO_REFERENCE_FORMULA, VOLATILE_FUNCTION, NO_NUMERIC_INPUTS, DISABLED, NOT_APPLICABLE). */
+  skippedReason: string | null;
 }
 
 export type StudentGradingResult = Omit<GradingResult, "expectedValue" | "normalizedFormula">;

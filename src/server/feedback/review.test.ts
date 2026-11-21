@@ -21,9 +21,9 @@ import {
 } from "./index";
 
 const T = "t1";
-const teacher: Actor = { userId: "prof", role: "TEACHER", tenantId: T };
-const alice: Actor = { userId: "alice", role: "STUDENT", tenantId: T };
-const bob: Actor = { userId: "bob", role: "STUDENT", tenantId: T };
+const teacher: Actor = { userId: "prof", role: "PROFESSOR", tenantId: T };
+const alice: Actor = { userId: "alice", role: "ALUNO", tenantId: T };
+const bob: Actor = { userId: "bob", role: "ALUNO", tenantId: T };
 
 const content: MultiCellExercise = {
   sheet: { A1: 10, A2: 20, A3: 30 },
@@ -95,11 +95,13 @@ beforeEach(() => {
 });
 
 describe("conclusão de nível → rascunho por IA na fila", () => {
-  it("calcula conceito, retry e cria PENDING_REVIEW com análise no prompt", async () => {
+  it("calcula conceito, retry e cria DRAFT/GENERATED com análise no prompt", async () => {
     const r = await service.onLevelCompleted(T, completion());
     // e1, e2 correct; e3 wrong (hardcoded / wrong value), e4 wrong → 2/4 = 50% → ED
     expect(r).toMatchObject({
-      status: "PENDING_REVIEW",
+      status: "DRAFT",
+      generationStatus: "GENERATED",
+      generationError: null,
       concept: "ED",
       conceptPercent: 50,
       retry: { allowed: true },
@@ -127,7 +129,7 @@ describe("conclusão de nível → rascunho por IA na fila", () => {
     ).rejects.toMatchObject({ code: "VALIDATION" });
   });
 
-  it("falha de IA vira GENERATION_FAILED e pode ser regenerada", async () => {
+  it("falha de IA vira generationStatus FAILED e pode ser regenerada", async () => {
     let call = 0;
     service = new FeedbackReviewService({
       reviews,
@@ -140,10 +142,16 @@ describe("conclusão de nível → rascunho por IA na fila", () => {
       newId: () => `r${++seq}`,
     });
     const r = await service.onLevelCompleted(T, completion());
-    expect(r.status).toBe("GENERATION_FAILED");
+    expect(r).toMatchObject({ status: "DRAFT", generationStatus: "FAILED", draft: null });
+    expect(r.generationError).toMatch(/INVALID_OUTPUT/);
     expect(r.generations[0]?.error).toMatch(/INVALID_OUTPUT/);
     const again = await service.regenerate(teacher, T, r.id, "Seja mais breve");
-    expect(again).toMatchObject({ status: "PENDING_REVIEW", version: 2 });
+    expect(again).toMatchObject({
+      status: "DRAFT",
+      generationStatus: "GENERATED",
+      generationError: null,
+      version: 2,
+    });
     expect(again.generations).toHaveLength(2);
     expect(again.generations[1]?.teacherGuidance).toBe("Seja mais breve");
   });
@@ -151,7 +159,7 @@ describe("conclusão de nível → rascunho por IA na fila", () => {
   it("sem IA usa o texto do template (regras) e ainda passa pela revisão", async () => {
     service = new FeedbackReviewService({ reviews, templates, ai: null, newId: () => `r${++seq}` });
     const r = await service.onLevelCompleted(T, completion());
-    expect(r.status).toBe("PENDING_REVIEW");
+    expect(r).toMatchObject({ status: "DRAFT", generationStatus: "GENERATED" });
     expect(r.generations[0]?.source).toBe("RULES");
     expect(r.draft?.message).toContain("conceito ED (Em desenvolvimento)");
     expect(r.draft?.message).toContain("2 de 4");
@@ -160,16 +168,18 @@ describe("conclusão de nível → rascunho por IA na fila", () => {
 
 describe("máquina de estados da revisão", () => {
   it("tabela de transições", () => {
-    expect(canTransition("PENDING_REVIEW", "approve")).toBe(true);
-    expect(canTransition("REJECTED", "approve")).toBe(false);
+    expect(canTransition("DRAFT", "approve")).toBe(true);
+    expect(canTransition("DRAFT", "reject")).toBe(true);
+    expect(canTransition("REJECTED", "approve")).toBe(true);
+    expect(canTransition("REJECTED", "reject")).toBe(false);
     expect(canTransition("APPROVED", "regenerate")).toBe(false);
-    expect(canTransition("GENERATION_FAILED", "editAndApprove")).toBe(true);
+    expect(canTransition("APPROVED", "edit")).toBe(false);
   });
 
   it("aluno só vê feedback aprovado", async () => {
     const r = await service.onLevelCompleted(T, completion());
     expect(await service.getStudentFeedback(alice, T, "alice")).toEqual([]);
-    const ok = await service.approve(teacher, T, r.id, 1);
+    const ok = await service.approve(teacher, T, r.id, {}, 1);
     expect(ok).toMatchObject({ status: "APPROVED", reviewerId: "prof", finalSource: "AI" });
     const seen = await service.getStudentFeedback(alice, T, "alice");
     expect(seen).toHaveLength(1);
@@ -179,18 +189,18 @@ describe("máquina de estados da revisão", () => {
       code: "FORBIDDEN",
     });
     await expect(service.approve(teacher, T, r.id)).rejects.toMatchObject({
-      code: "INVALID_TRANSITION",
+      code: "ALREADY_REVIEWED",
     });
   });
 
   it("editar e aprovar, rejeitar, conflito de versão e limites", async () => {
     const r = await service.onLevelCompleted(T, completion());
     await expect(service.approve(alice, T, r.id)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(service.reject(teacher, T, r.id, "  ")).rejects.toMatchObject({
-      code: "VALIDATION",
-    });
     const rej = await service.reject(teacher, T, r.id, "Tom inadequado");
-    expect(rej.status).toBe("REJECTED");
+    expect(rej).toMatchObject({ status: "REJECTED", rejectionReason: "Tom inadequado" });
+    await expect(service.reject(teacher, T, r.id)).rejects.toMatchObject({
+      code: "ALREADY_REVIEWED",
+    });
     expect((await service.listQueue(teacher, T)).map((x) => x.id)).toEqual([r.id]);
     await expect(
       service.editAndApprove(teacher, T, r.id, { message: "curto" }),
@@ -203,14 +213,77 @@ describe("máquina de estados da revisão", () => {
       strengths: ["Usou SOMA"],
     });
     expect(ed).toMatchObject({
-      status: "EDITED_APPROVED",
-      finalSource: "TEACHER",
+      status: "APPROVED",
+      finalSource: "PROFESSOR",
       final: { strengths: ["Usou SOMA"], improvements: [] },
     });
     expect(await service.listQueue(teacher, T)).toEqual([]);
     expect((await service.getStudentFeedback(alice, T, "alice"))[0]?.content.message).toBe(
       "Texto revisado pelo professor.",
     );
+  });
+
+  it("motivo de rejeição é opcional", async () => {
+    const r = await service.onLevelCompleted(T, completion());
+    const rej = await service.reject(teacher, T, r.id);
+    expect(rej).toMatchObject({ status: "REJECTED", rejectionReason: null });
+  });
+
+  it("geração FAILED: aprova com finalText do professor, nunca sem texto", async () => {
+    service = new FeedbackReviewService({
+      reviews,
+      templates,
+      ai: new MockAiProvider(() => "não é json"),
+      newId: () => `r${++seq}`,
+    });
+    const r = await service.onLevelCompleted(T, completion());
+    expect(r.generationStatus).toBe("FAILED");
+    await expect(service.approve(teacher, T, r.id)).rejects.toMatchObject({
+      code: "GENERATION_NOT_READY",
+    });
+    await expect(service.approve(teacher, T, r.id, { finalText: "   " })).rejects.toMatchObject({
+      code: "GENERATION_NOT_READY",
+    });
+    const ok = await service.approve(teacher, T, r.id, {
+      finalText: "  Bom trabalho com SOMA; revise referências.  ",
+    });
+    expect(ok).toMatchObject({
+      status: "APPROVED",
+      generationStatus: "FAILED",
+      finalText: "Bom trabalho com SOMA; revise referências.",
+      finalSource: "PROFESSOR",
+      final: { message: "Bom trabalho com SOMA; revise referências.", strengths: [] },
+    });
+    const seen = await service.getStudentFeedback(alice, T, "alice");
+    expect(seen[0]?.content.message).toBe("Bom trabalho com SOMA; revise referências.");
+  });
+
+  it("PATCH finalText salva sem aprovar e é usado no approve", async () => {
+    service = new FeedbackReviewService({
+      reviews,
+      templates,
+      ai: new MockAiProvider(() => "não é json"),
+      newId: () => `r${++seq}`,
+    });
+    const r = await service.onLevelCompleted(T, completion());
+    const edited = await service.updateFinalText(teacher, T, r.id, "Texto manual do professor.");
+    expect(edited).toMatchObject({ status: "DRAFT", finalText: "Texto manual do professor." });
+    expect(await service.getStudentFeedback(alice, T, "alice")).toEqual([]);
+    const ok = await service.approve(teacher, T, r.id);
+    expect(ok.final?.message).toBe("Texto manual do professor.");
+    await expect(service.updateFinalText(teacher, T, r.id, "x")).rejects.toMatchObject({
+      code: "ALREADY_REVIEWED",
+    });
+  });
+
+  it("approve com finalText em rascunho GENERATED usa o texto do professor", async () => {
+    const r = await service.onLevelCompleted(T, completion());
+    const ok = await service.approve(teacher, T, r.id, { finalText: "Ajustei o texto da IA." });
+    expect(ok).toMatchObject({
+      finalSource: "PROFESSOR",
+      final: { message: "Ajustei o texto da IA." },
+    });
+    expect(ok.final?.strengths).toEqual(r.draft?.strengths);
   });
 
   it("limita regenerações e isola tenants", async () => {

@@ -17,6 +17,98 @@ export const HYPERFORMULA_FUNCTIONS: ReadonlySet<string> = new Set(
   HyperFormula.getRegisteredFunctionNames("enGB").map((n) => n.toUpperCase()),
 );
 
+/**
+ * Brazilian Excel names that HyperFormula's ptPT dictionary lacks or spells the Portugal way.
+ * Only entries whose canonical function exists in HyperFormula are registered.
+ */
+export const PT_BR_ALIASES: Readonly<Record<string, string>> = {
+  SES: "IFS",
+  SENÃODISP: "IFNA",
+  PARÂMETRO: "SWITCH",
+  MÁXIMOSES: "MAXIFS",
+  MÍNIMOSES: "MINIFS",
+  MÉDIASES: "AVERAGEIFS",
+  FILTRO: "FILTER",
+  CLASSIFICAR: "SORT",
+  CLASSIFICARPOR: "SORTBY",
+  ÚNICO: "UNIQUE",
+  SEQUÊNCIA: "SEQUENCE",
+  MATRIZALEATÓRIA: "RANDARRAY",
+  CORRESPX: "XMATCH",
+  ORDEM: "RANK",
+  "ORDEM.EQ": "RANK.EQ",
+  DATADIF: "DATEDIF",
+  DIATRABALHO: "WORKDAY",
+  DESVPAD: "STDEV",
+  ESCOLHER: "CHOOSE",
+  CONCAT: "CONCAT",
+  "TEXTO.ANTES": "TEXTBEFORE",
+  "TEXTO.DEPOIS": "TEXTAFTER",
+  HIPERLINK: "HYPERLINK",
+  ARRUMAR: "TRIM",
+  "CONT.SES": "COUNTIFS",
+  SOMASES: "SUMIFS",
+  MÉDIASE: "AVERAGEIF",
+  PROCX: "XLOOKUP",
+  SEERRO: "IFERROR",
+  ALEATÓRIOENTRE: "RANDBETWEEN",
+  ALEATÓRIO: "RAND",
+  AGORA: "NOW",
+  HOJE: "TODAY",
+  DIATRABALHOTOTAL: "NETWORKDAYS",
+  FIMMÊS: "EOMONTH",
+  DATAM: "EDATE",
+  "NÚM.CARACT": "LEN",
+  "EXT.TEXTO": "MID",
+  ESQUERDA: "LEFT",
+  DIREITA: "RIGHT",
+  MAIÚSCULA: "UPPER",
+  MINÚSCULA: "LOWER",
+  "PRI.MAIÚSCULA": "PROPER",
+  LOCALIZAR: "SEARCH",
+  PROCURAR: "FIND",
+  SUBSTITUIR: "SUBSTITUTE",
+  CONCATENAR: "CONCATENATE",
+  TEXTO: "TEXT",
+  VALOR: "VALUE",
+  TRUNCAR: "TRUNC",
+  "ARREDONDAR.PARA.CIMA": "ROUNDUP",
+  "ARREDONDAR.PARA.BAIXO": "ROUNDDOWN",
+  ARRED: "ROUND",
+  SOMARPRODUTO: "SUMPRODUCT",
+  CORRESP: "MATCH",
+  ÍNDICE: "INDEX",
+  PROCH: "HLOOKUP",
+  PROCV: "VLOOKUP",
+  "CONT.VALORES": "COUNTA",
+  "CONTAR.VAZIO": "COUNTBLANK",
+  "CONT.NÚM": "COUNT",
+  MÉDIA: "AVERAGE",
+  MÁXIMO: "MAX",
+  MÍNIMO: "MIN",
+  MED: "MEDIAN",
+  ÉERRO: "ISERROR",
+  ÉERROS: "ISERR",
+  ÉTEXTO: "ISTEXT",
+  ÉNÚM: "ISNUMBER",
+  "ÉCÉL.VAZIA": "ISBLANK",
+  NÃO: "NOT",
+  E: "AND",
+  OU: "OR",
+  "DIA.DA.SEMANA": "WEEKDAY",
+  NÚMSEMANA: "WEEKNUM",
+  ANO: "YEAR",
+  MÊS: "MONTH",
+  DIA: "DAY",
+  DATA: "DATE",
+  INT: "INT",
+  RESTO: "MOD",
+  POTÊNCIA: "POWER",
+  RAIZ: "SQRT",
+  TRANSPOR: "TRANSPOSE",
+  DESLOC: "OFFSET",
+};
+
 /** localized upper-case name -> canonical English name */
 const PT_TO_CANONICAL = new Map<string, string>();
 /** accent-stripped localized name -> canonical English name */
@@ -42,6 +134,13 @@ const CANONICAL_TO_PT = new Map<string, string>();
     PT_NOACCENT_TO_CANONICAL.set(plain, can);
   }
   for (const key of ambiguous) PT_NOACCENT_TO_CANONICAL.delete(key);
+  for (const [alias, canonical] of Object.entries(PT_BR_ALIASES)) {
+    if (!HYPERFORMULA_FUNCTIONS.has(canonical) || HYPERFORMULA_FUNCTIONS.has(alias)) continue;
+    PT_TO_CANONICAL.set(alias, canonical);
+    const plain = stripAccents(alias);
+    if (!HYPERFORMULA_FUNCTIONS.has(plain)) PT_NOACCENT_TO_CANONICAL.set(plain, canonical);
+    if (!CANONICAL_TO_PT.get(canonical)) CANONICAL_TO_PT.set(canonical, alias);
+  }
 })();
 
 /**

@@ -4,12 +4,13 @@
  * Fonte canônica: /workspace/training_area/qa/excel_formulas/
  * (cópia em ./__fixtures__/qa-dataset).
  *
- * Os casos com oráculo já decidido pelo PO e motor divergente ficam em
- * `it.fails` (ENG-001 a ENG-003). Quando o motor for corrigido, esses testes
- * passam a falhar por "passed but expected to fail" — aí remova o `.fails`.
+ * ENG-001 a ENG-003 (F-033, F-044, F-049, F-068) foram corrigidos e voltaram a ser `it` normal.
  *
- * F-125 (Q-F9) e F-148 (Q-F5) documentam o comportamento atual e não falham
- * a suíte: ainda são perguntas de produto, não defeitos.
+ * Divergências POR DESIGN (decisões do PO de 21/11/2026, posteriores ao oráculo):
+ * - teste de sensibilidade: coincidências de valor (F-050, F-118, F-120, F-122) → INPUT_INSENSITIVE;
+ * - funções voláteis proibidas por padrão: o oráculo já foi atualizado (F-145..F-148, F-154..F-157
+ *   → VOLATILE_FUNCTION) e os gabaritos EX-TODAY/EX-RAND são inválidos;
+ * - useArrayArithmetic ligado: F-125 (=SUM(A1:A3*1)) agora é CORRECT, como o oráculo espera.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -20,12 +21,16 @@ import { gradeSubmission, validateExercise, type ExerciseDefinition } from "./in
 
 const DATASET_DIR = process.env.DATASET_DIR ?? path.join(__dirname, "__fixtures__/qa-dataset");
 
-const OPEN_PRODUCT_DIVERGENCES: Record<string, string> = {
-  "F-125": "Q-F9",
-  "F-148": "Q-F5",
+/** Cases whose engine result differs from the oracle on purpose: id → [decision, feedbackCode]. */
+const BY_DESIGN: Record<string, [string, string]> = {
+  "F-050": ["sensibilidade", "INPUT_INSENSITIVE"],
+  "F-118": ["sensibilidade", "INPUT_INSENSITIVE"],
+  "F-120": ["sensibilidade", "INPUT_INSENSITIVE"],
+  "F-122": ["sensibilidade", "INPUT_INSENSITIVE"],
 };
 
-const KNOWN_DEFECTS: Record<string, string> = {
+/** Former defects, fixed on feat/motor-exercicios. */
+const FIXED_DEFECTS: Record<string, string> = {
   "F-033": "ENG-001",
   "F-044": "ENG-001",
   "F-049": "ENG-002",
@@ -65,16 +70,10 @@ function verdictOf(r: { correct: boolean }) {
   return r.correct ? "correct" : "incorrect";
 }
 
-function matchesOracle(c: FormulaCase) {
-  const r = grade(c);
-  const codeOk = !c.expected_feedback_code || c.expected_feedback_code === r.feedbackCode;
-  return verdictOf(r) === c.expected_verdict && codeOk;
-}
-
-const expectedInvalidContexts = new Set(["EX-RAND", "EX-ERRGAB"]);
-const matching = formulas.filter((c) => !KNOWN_DEFECTS[c.id] && !OPEN_PRODUCT_DIVERGENCES[c.id]);
-const defects = formulas.filter((c) => KNOWN_DEFECTS[c.id]);
-const openQuestions = formulas.filter((c) => OPEN_PRODUCT_DIVERGENCES[c.id]);
+const expectedInvalidContexts = new Set(["EX-RAND", "EX-ERRGAB", "EX-TODAY"]);
+const matching = formulas.filter((c) => !BY_DESIGN[c.id] && !FIXED_DEFECTS[c.id]);
+const fixed = formulas.filter((c) => FIXED_DEFECTS[c.id]);
+const byDesign = formulas.filter((c) => BY_DESIGN[c.id]);
 
 describe("dataset QA — contextos", () => {
   it.each(contexts.map((c) => [c.id, c]))("%s é validado de acordo com o oráculo", (_id, c) => {
@@ -100,33 +99,29 @@ describe("dataset QA — casos alinhados ao oráculo", () => {
   );
 });
 
-describe("dataset QA — defeitos conhecidos (oráculo do PO; o motor ainda falha)", () => {
-  it.fails.each(defects.map((c) => [c.id, KNOWN_DEFECTS[c.id], c] as const))(
-    "%s (%s) deveria seguir o oráculo",
+describe("dataset QA — defeitos corrigidos (ENG-001 a ENG-003)", () => {
+  it.each(fixed.map((c) => [c.id, FIXED_DEFECTS[c.id], c] as const))(
+    "%s (%s) segue o oráculo",
     (_id, _bug, c) => {
-      expect(matchesOracle(c)).toBe(true);
+      const r = grade(c);
+      expect(verdictOf(r)).toBe(c.expected_verdict);
+      if (c.expected_feedback_code) expect(r.feedbackCode).toBe(c.expected_feedback_code);
     },
   );
 });
 
-describe("dataset QA — perguntas de produto pendentes (não são defeito)", () => {
-  it("F-125 (Q-F9) avalia =SUM(A1:A3*1) como FORMULA_ERROR / #VALUE! com useArrayArithmetic=false", () => {
-    const c = openQuestions.find((x) => x.id === "F-125");
-    expect(c).toBeDefined();
-    const r = grade(c!);
-    expect(r.correct).toBe(false);
-    expect(r.feedbackCode).toBe("FORMULA_ERROR");
-    expect(r.actualValue).toBe("#VALUE!");
-    // Oráculo do QA ainda espera CORRECT até o PO decidir Q-F9.
-    expect(c!.expected_verdict).toBe("correct");
-  });
+describe("dataset QA — divergências por design (decisões do PO)", () => {
+  it.each(byDesign.map((c) => [c.id, BY_DESIGN[c.id]![0], c] as const))(
+    "%s (%s) é incorreto com o código da decisão",
+    (id, _why, c) => {
+      const r = grade(c);
+      expect(r.correct).toBe(false);
+      expect(r.feedbackCode).toBe(BY_DESIGN[id]![1]);
+    },
+  );
 
-  it("F-148 (Q-F5) avalia =RAND() como WRONG_VALUE (dois sorteios não comparáveis por valor)", () => {
-    const c = openQuestions.find((x) => x.id === "F-148");
-    expect(c).toBeDefined();
-    const r = grade(c!);
-    expect(r.correct).toBe(false);
-    expect(r.feedbackCode).toBe("WRONG_VALUE");
-    expect(c!.expected_verdict).toBe("correct");
+  it("F-125 (Q-F9 decidida: useArrayArithmetic) é CORRECT", () => {
+    const c = formulas.find((x) => x.id === "F-125")!;
+    expect(grade(c).feedbackCode).toBe("CORRECT");
   });
 });

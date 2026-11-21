@@ -3,7 +3,13 @@
  * Pure TypeScript + HyperFormula; no DB, framework or Node-only APIs, so it can be
  * used by Next.js route handlers / server actions and by the browser grid (TA-021/TA-022).
  */
-export { gradeSubmission, evaluateFormula, validateExercise, toStudentResult } from "./grade";
+export {
+  gradeSubmission,
+  evaluateFormula,
+  validateExercise,
+  toStudentResult,
+  FORBIDDEN_VOLATILE_FUNCTIONS,
+} from "./grade";
 export { normalizeFormula, tokenize } from "./tokenizer";
 export type { NormalizedFormula, Token, TokenKind } from "./tokenizer";
 export {
@@ -29,6 +35,11 @@ export type {
 export {
   columnName,
   fromSchemaExercise,
+  toSchemaExercise,
+  toApiStudentSheet,
+  apiCellToEngine,
+  engineCellToApi,
+  isFormulaCell,
   gradeMultiCellSubmission,
   resolveTargetExpectations,
   toStudentSheet,
@@ -41,6 +52,9 @@ export type {
   MultiCellGradingResult,
   SchemaExpectedCell,
   SchemaInitialSheet,
+  SchemaGradingRules,
+  ApiCellValue,
+  ApiScalar,
   MultiCellValidationResult,
   TargetValidationError,
 } from "./multi";

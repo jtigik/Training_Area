@@ -9,16 +9,16 @@
 export type TenantId = string;
 export type UserId = string;
 
-export const MVP_LEVELS = ["FUNDAMENTAL", "PROFESSIONAL", "ADVANCED"] as const;
-export type KnowledgeLevel = (typeof MVP_LEVELS)[number];
+import { DIFFICULTIES, MVP_LEVELS, type Difficulty, type MvpLevel } from "@/lib/domain";
 
-export const DIFFICULTIES = ["VERY_EASY", "EASY", "MEDIUM", "HARD", "VERY_HARD"] as const;
-export type Difficulty = (typeof DIFFICULTIES)[number];
+// Enums come from Backend 1's src/lib/domain.ts (mirror of prisma/schema.prisma).
+export { DIFFICULTIES, PUBLICATION_STATUSES, MVP_LEVELS } from "@/lib/domain";
+export type { Difficulty, PublicationStatus, GradeConcept } from "@/lib/domain";
+/** Levels the engine accepts (MVP: DASHBOARD is v1.1). */
+export type KnowledgeLevel = MvpLevel;
 
-export const PUBLICATION_STATUSES = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
-export type PublicationStatus = (typeof PUBLICATION_STATUSES)[number];
-
-export type Role = "STUDENT" | "TEACHER" | "ADMIN";
+/** Roles from prisma `Role`. Staff = PROFESSOR / INSTITUTION_ADMIN. */
+export type Role = "ALUNO" | "PROFESSOR" | "INSTITUTION_ADMIN" | "SUPER_ADMIN";
 
 export interface Actor {
   userId: UserId;
@@ -49,10 +49,30 @@ export function isDifficulty(value: unknown): value is Difficulty {
 }
 
 /** Error raised by services for expected failures (maps to 4xx in route handlers). */
+export type DomainErrorCode =
+  | "NOT_FOUND"
+  | "FORBIDDEN"
+  | "VALIDATION"
+  | "CONFLICT"
+  | "INVALID_TRANSITION"
+  | "NOT_ALLOWED"
+  // teacher feedback review (contract with Frontend 2)
+  | "ALREADY_REVIEWED"
+  | "GENERATION_NOT_READY"
+  // student level/run rules (contract with Frontend 1)
+  | "LEVEL_LOCKED"
+  | "LEVEL_NOT_REDOABLE"
+  | "LEVEL_NOT_COMPLETED"
+  | "ALREADY_SUBMITTED"
+  | "EXERCISE_NOT_IN_RUN"
+  | "EMPTY_SUBMISSION"
+  | "LIMIT_EXCEEDED"
+  // teacher import
+  | "IMPORT_INVALID";
+
 export class DomainError extends Error {
   constructor(
-    readonly code:
-      "NOT_FOUND" | "FORBIDDEN" | "VALIDATION" | "CONFLICT" | "INVALID_TRANSITION" | "NOT_ALLOWED",
+    readonly code: DomainErrorCode,
     message: string,
     readonly details?: unknown,
   ) {

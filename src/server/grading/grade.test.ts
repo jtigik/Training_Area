@@ -90,6 +90,7 @@ describe("funções obrigatórias e proibidas", () => {
       targetCell: "B1",
       expected: { value: "SUM(1)" },
       requiredFunctions: ["SUM"],
+      forbidLiteralExpectedValue: false,
     };
     const r = gradeSubmission(strEx, '=IF(A1=1,"SUM(1)","x")');
     expect(r.feedbackCode).toBe("MISSING_REQUIRED_FUNCTION");
@@ -173,11 +174,25 @@ describe("valores fixos (hardcoded)", () => {
     expect(gradeSubmission(sumExercise, "=10+20+30").feedbackCode).toBe("HARDCODED_VALUE");
   });
 
-  it("forbidLiteralExpectedValue pega truques como =A1*0+60", () => {
-    expect(gradeSubmission(sumExercise, "=A1*0+60").correct).toBe(true);
-    const strict = { ...sumExercise, forbidLiteralExpectedValue: true };
-    expect(gradeSubmission(strict, "=A1*0+60").feedbackCode).toBe("HARDCODED_VALUE");
-    expect(gradeSubmission(strict, "=SUM(A1:A3)").correct).toBe(true);
+  it("forbidLiteralExpectedValue (padrão ligado) pega truques como =A1*0+60", () => {
+    expect(gradeSubmission(sumExercise, "=A1*0+60").feedbackCode).toBe("HARDCODED_VALUE");
+    expect(gradeSubmission(sumExercise, "=SUM(A1:A3)").correct).toBe(true);
+    const lenient = { ...sumExercise, forbidLiteralExpectedValue: false };
+    // Without a reference formula there is no sensitivity check: value-only keys accept it.
+    expect(gradeSubmission(lenient, "=A1*0+60").correct).toBe(true);
+    expect(gradeSubmission(lenient, "=A1*0+60").sensitivity.skippedReason).toBe(
+      "NO_REFERENCE_FORMULA",
+    );
+  });
+
+  it("literal presente na fórmula de referência não conta como valor fixo", () => {
+    const ex: ExerciseDefinition = {
+      sheet: [[1]],
+      targetCell: "B1",
+      expected: { formula: "=A1*2" },
+    };
+    expect(gradeSubmission(ex, "=A1*2").correct).toBe(true);
+    expect(gradeSubmission(ex, "=2*A1").correct).toBe(true);
   });
 
   it("aceita constante quando o exercício permite", () => {

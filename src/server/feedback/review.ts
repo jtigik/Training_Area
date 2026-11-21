@@ -35,44 +35,42 @@ import { resolveTemplate, type FeedbackTemplateRecord, type TemplateSnapshot } f
 // State machine
 // ---------------------------------------------------------------------------
 
-export const REVIEW_STATUSES = [
-  "PENDING_REVIEW",
-  "GENERATION_FAILED",
-  "REJECTED",
-  "APPROVED",
-  "EDITED_APPROVED",
-] as const;
+/** Review status = Backend 1's `FeedbackStatus` (DRAFT | APPROVED | REJECTED). */
+export const REVIEW_STATUSES = ["DRAFT", "REJECTED", "APPROVED"] as const;
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
-export type ReviewAction = "approve" | "editAndApprove" | "reject" | "regenerate";
+/** AI generation status, separate from the review status (agreed with Backend 1 / FE2). */
+export const GENERATION_STATUSES = ["PENDING", "GENERATED", "FAILED"] as const;
+export type GenerationStatus = (typeof GENERATION_STATUSES)[number];
+export type ReviewAction = "approve" | "edit" | "reject" | "regenerate";
 
 /**
- *   (generation ok) ─► PENDING_REVIEW ──approve──────────► APPROVED          (terminal)
- *   (generation err)─► GENERATION_FAILED      ──editAndApprove─► EDITED_APPROVED (terminal)
- *   PENDING_REVIEW ──reject──► REJECTED
- *   PENDING_REVIEW | REJECTED | GENERATION_FAILED ──regenerate──► PENDING_REVIEW | GENERATION_FAILED
- *   REJECTED | GENERATION_FAILED ──editAndApprove──► EDITED_APPROVED
- * Students only ever see APPROVED / EDITED_APPROVED.
+ *   DRAFT ──approve──► APPROVED (terminal)       DRAFT ──reject──► REJECTED
+ *   REJECTED ──approve──► APPROVED               DRAFT | REJECTED ──regenerate──► DRAFT
+ *   DRAFT | REJECTED ──edit (PATCH finalText)──► same status
+ * Approving needs either a GENERATED draft or a non-empty teacher `finalText` — so a review
+ * whose AI generation FAILED can still be approved with a manual write-up.
+ * Any action on APPROVED (or reject on REJECTED) → ALREADY_REVIEWED (409).
+ * Students only ever see APPROVED.
  */
 const TRANSITIONS: Record<ReviewStatus, readonly ReviewAction[]> = {
-  PENDING_REVIEW: ["approve", "editAndApprove", "reject", "regenerate"],
-  GENERATION_FAILED: ["editAndApprove", "regenerate"],
-  REJECTED: ["editAndApprove", "regenerate"],
+  DRAFT: ["approve", "edit", "reject", "regenerate"],
+  REJECTED: ["approve", "edit", "regenerate"],
   APPROVED: [],
-  EDITED_APPROVED: [],
 };
 
 export function canTransition(status: ReviewStatus, action: ReviewAction): boolean {
   return TRANSITIONS[status].includes(action);
 }
 
-export const VISIBLE_TO_STUDENT: readonly ReviewStatus[] = ["APPROVED", "EDITED_APPROVED"];
+export const VISIBLE_TO_STUDENT: readonly ReviewStatus[] = ["APPROVED"];
 export const MAX_GENERATIONS = 5;
+export const MAX_FINAL_TEXT = 4000;
 
 // ---------------------------------------------------------------------------
 // Records and repository port
 // ---------------------------------------------------------------------------
 
-export type FeedbackSource = "AI" | "RULES" | "TEACHER";
+export type FeedbackSource = "AI" | "RULES" | "PROFESSOR";
 
 export interface DraftGeneration {
   generation: number;
@@ -102,8 +100,13 @@ export interface FeedbackReviewRecord {
   /** Answer keys of the level's exercises, server-side only, used for leak checks. */
   answerKeys: string[];
   status: ReviewStatus;
+  generationStatus: GenerationStatus;
+  /** Last generation error (null unless generationStatus = FAILED). */
+  generationError: string | null;
   /** Latest draft (null when generation failed). */
   draft: FeedbackContent | null;
+  /** Teacher's text (PATCH/approve). When set it replaces the draft message for the student. */
+  finalText: string | null;
   generations: DraftGeneration[];
   /** Content visible to the student once approved (immutable afterwards). */
   final: FeedbackContent | null;
@@ -188,9 +191,17 @@ export interface FeedbackServiceDeps {
   newId?: IdGenerator;
 }
 
+function normalizeFinalText(text: string | null | undefined): string | null {
+  const t = (text ?? "").trim();
+  if (!t) return null;
+  if (t.length > MAX_FINAL_TEXT)
+    throw new DomainError("VALIDATION", `finalText exceeds ${MAX_FINAL_TEXT} characters`);
+  return t;
+}
+
 function assertStaff(actor: Actor, tenantId: TenantId): void {
   if (actor.tenantId !== tenantId) throw new DomainError("FORBIDDEN", "Cross-tenant access denied");
-  if (actor.role !== "TEACHER" && actor.role !== "ADMIN") {
+  if (actor.role !== "PROFESSOR" && actor.role !== "INSTITUTION_ADMIN") {
     throw new DomainError("FORBIDDEN", "Teacher or admin role required");
   }
 }
@@ -254,8 +265,11 @@ export class FeedbackReviewService {
       stats,
       template,
       answerKeys,
-      status: "GENERATION_FAILED",
+      status: "DRAFT",
+      generationStatus: "PENDING",
+      generationError: null,
       draft: null,
+      finalText: null,
       generations: [],
       final: null,
       finalSource: null,
@@ -344,7 +358,9 @@ export class FeedbackReviewService {
   private applyGeneration(r: FeedbackReviewRecord, g: DraftGeneration): FeedbackReviewRecord {
     return {
       ...r,
-      status: g.content ? "PENDING_REVIEW" : "GENERATION_FAILED",
+      status: "DRAFT",
+      generationStatus: g.content ? "GENERATED" : "FAILED",
+      generationError: g.content ? null : (g.error ?? "UNKNOWN_ERROR"),
       draft: g.content,
       generations: [...r.generations, g],
       rejectionReason: g.content ? null : r.rejectionReason,
@@ -366,10 +382,7 @@ export class FeedbackReviewService {
       throw new DomainError("CONFLICT", "Review was changed by someone else; reload it");
     }
     if (!canTransition(r.status, action)) {
-      throw new DomainError(
-        "INVALID_TRANSITION",
-        `Cannot ${action} a review in status ${r.status}`,
-      );
+      throw new DomainError("ALREADY_REVIEWED", `Cannot ${action} a review in status ${r.status}`);
     }
   }
 
@@ -387,7 +400,7 @@ export class FeedbackReviewService {
     assertStaff(actor, tenantId);
     const rows = await this.deps.reviews.list(tenantId, {
       ...filter,
-      status: filter.status ?? ["PENDING_REVIEW", "GENERATION_FAILED", "REJECTED"],
+      status: filter.status ?? ["DRAFT", "REJECTED"],
     });
     return rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }
@@ -397,21 +410,69 @@ export class FeedbackReviewService {
     return this.load(tenantId, id);
   }
 
-  async approve(actor: Actor, tenantId: TenantId, id: string, expectedVersion?: number) {
+  /**
+   * DRAFT | REJECTED → APPROVED. With a non-empty `finalText` the teacher's text is what the
+   * student sees (works even when generationStatus = FAILED); without it the GENERATED draft is
+   * approved as is (or a finalText saved earlier via `updateFinalText`).
+   */
+  async approve(
+    actor: Actor,
+    tenantId: TenantId,
+    id: string,
+    input: { finalText?: string | null } = {},
+    expectedVersion?: number,
+  ) {
     assertStaff(actor, tenantId);
     const r = await this.load(tenantId, id);
     this.assertAction(r, "approve", expectedVersion);
-    const source = r.generations[r.generations.length - 1]?.source ?? "AI";
+    const text = normalizeFinalText(input.finalText) ?? r.finalText;
+    let final: FeedbackContent;
+    let source: FeedbackSource;
+    if (text) {
+      final = {
+        message: text,
+        strengths: r.draft?.strengths ?? [],
+        improvements: r.draft?.improvements ?? [],
+        nextSteps: r.draft?.nextSteps ?? [],
+      };
+      source = text === r.draft?.message ? (this.lastSource(r) ?? "PROFESSOR") : "PROFESSOR";
+    } else {
+      if (r.generationStatus !== "GENERATED" || !r.draft) {
+        throw new DomainError(
+          "GENERATION_NOT_READY",
+          "AI feedback was not generated; write the feedback text (finalText) to approve",
+          { generationStatus: r.generationStatus },
+        );
+      }
+      final = r.draft;
+      source = this.lastSource(r) ?? "AI";
+    }
     return this.save(tenantId, r, {
       ...r,
       status: "APPROVED",
-      final: r.draft,
+      finalText: text ?? null,
+      final,
       finalSource: source,
       reviewerId: actor.userId,
       reviewedAt: this.clock.now(),
     });
   }
 
+  /** PATCH :id {finalText}: saves the teacher's text without approving. */
+  async updateFinalText(
+    actor: Actor,
+    tenantId: TenantId,
+    id: string,
+    finalText: string | null,
+    expectedVersion?: number,
+  ) {
+    assertStaff(actor, tenantId);
+    const r = await this.load(tenantId, id);
+    this.assertAction(r, "edit", expectedVersion);
+    return this.save(tenantId, r, { ...r, finalText: normalizeFinalText(finalText) });
+  }
+
+  /** Structured edit-and-approve (message + lists), validated by the content schema. */
   async editAndApprove(
     actor: Actor,
     tenantId: TenantId,
@@ -421,36 +482,40 @@ export class FeedbackReviewService {
   ) {
     assertStaff(actor, tenantId);
     const r = await this.load(tenantId, id);
-    this.assertAction(r, "editAndApprove", expectedVersion);
+    this.assertAction(r, "approve", expectedVersion);
     const parsed = feedbackContentSchema.safeParse(content);
     if (!parsed.success)
       throw new DomainError("VALIDATION", "Invalid feedback content", parsed.error.issues);
     return this.save(tenantId, r, {
       ...r,
-      status: "EDITED_APPROVED",
+      status: "APPROVED",
+      finalText: parsed.data.message,
       final: parsed.data,
-      finalSource: "TEACHER",
+      finalSource: "PROFESSOR",
       reviewerId: actor.userId,
       reviewedAt: this.clock.now(),
     });
+  }
+
+  private lastSource(r: FeedbackReviewRecord): FeedbackSource | null {
+    return r.generations[r.generations.length - 1]?.source ?? null;
   }
 
   async reject(
     actor: Actor,
     tenantId: TenantId,
     id: string,
-    reason: string,
+    reason?: string | null,
     expectedVersion?: number,
   ) {
     assertStaff(actor, tenantId);
     const r = await this.load(tenantId, id);
     this.assertAction(r, "reject", expectedVersion);
     const trimmed = (reason ?? "").trim();
-    if (!trimmed) throw new DomainError("VALIDATION", "A rejection reason is required");
     return this.save(tenantId, r, {
       ...r,
       status: "REJECTED",
-      rejectionReason: trimmed.slice(0, 1000),
+      rejectionReason: trimmed ? trimmed.slice(0, 1000) : null,
       reviewerId: actor.userId,
       reviewedAt: this.clock.now(),
     });
@@ -469,7 +534,7 @@ export class FeedbackReviewService {
     if (r.generations.length >= MAX_GENERATIONS) {
       throw new DomainError(
         "NOT_ALLOWED",
-        `Generation limit (${MAX_GENERATIONS}) reached; edit and approve instead`,
+        `Generation limit (${MAX_GENERATIONS}) reached; write the text and approve instead`,
       );
     }
     const g = await this.generate(r, guidance?.trim().slice(0, 1000) || null);
@@ -485,7 +550,7 @@ export class FeedbackReviewService {
   ): Promise<StudentFeedbackView[]> {
     if (actor.tenantId !== tenantId)
       throw new DomainError("FORBIDDEN", "Cross-tenant access denied");
-    if (actor.role === "STUDENT" && actor.userId !== studentId) {
+    if (actor.role === "ALUNO" && actor.userId !== studentId) {
       throw new DomainError("FORBIDDEN", "Students can only read their own feedback");
     }
     const rows = await this.deps.reviews.list(tenantId, {

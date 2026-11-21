@@ -39,7 +39,8 @@ export function hyperFormulaConfig(limits: GradingLimits): Partial<ConfigParams>
     timeFormats: ["hh:mm", "hh:mm:ss.sss"],
     currencySymbol: ["R$", "$"],
     nullDate: { year: 1899, month: 12, day: 30 },
-    useArrayArithmetic: false,
+    // Excel 365 semantics: range arithmetic such as =SUM(A1:A3*1) works without CSE/ARRAYFORMULA.
+    useArrayArithmetic: true,
     useColumnIndex: false,
   };
 }
