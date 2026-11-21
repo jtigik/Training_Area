@@ -10,6 +10,7 @@ const DEFAULT_PROVIDERS = (Object.keys(AUTH_PROVIDER_LABELS) as AuthProvider[]).
   id,
   label: AUTH_PROVIDER_LABELS[id],
 }));
+import { authErrorMessage, DEFAULT_AUTH_ERROR_MESSAGE } from "@/lib/auth/auth-errors";
 import { callbackTarget, postLoginPath } from "@/lib/auth/redirect";
 
 function GoogleIcon() {
@@ -73,7 +74,10 @@ export function LoginPanel({
   );
   const expired = params.get("motivo") === "sessao-expirada";
   const [pending, setPending] = useState<AuthProvider | null>(null);
-  const [failed, setFailed] = useState(params.has("erro") || params.has("error"));
+  // OAuth callback error (?error=CODE from Better Auth; ?erro= legacy alias).
+  const callbackError = authErrorMessage(params.get("error") ?? params.get("erro"));
+  const [failed, setFailed] = useState(callbackError !== null);
+  const [errorMessage, setErrorMessage] = useState(callbackError ?? DEFAULT_AUTH_ERROR_MESSAGE);
   const alertRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -128,6 +132,7 @@ export function LoginPanel({
       router.replace(postLoginPath(res.user.role, voltar));
     } catch {
       setPending(null);
+      setErrorMessage(DEFAULT_AUTH_ERROR_MESSAGE);
       setFailed(true);
     }
   }
@@ -156,8 +161,7 @@ export function LoginPanel({
           className="rounded-md border border-error/40 bg-error-subtle p-3 text-sm text-error-subtle-foreground outline-none"
         >
           <span aria-hidden="true">⚠ </span>
-          <strong>Não foi possível entrar.</strong> Tente de novo ou use a conta indicada pela sua
-          instituição.
+          {errorMessage}
         </div>
       )}
 

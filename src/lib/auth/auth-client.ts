@@ -12,7 +12,14 @@ export const authClient = createAuthClient({
   baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || undefined,
 });
 
-/** POST /api/auth/sign-in/social { provider, callbackURL } -> { url, redirect }. */
-export function signInWithProvider(provider: AuthProvider, callbackURL = "/") {
-  return authClient.signIn.social({ provider, callbackURL });
+/**
+ * POST /api/auth/sign-in/social { provider, callbackURL, errorCallbackURL } -> { url, redirect }.
+ * OAuth errors come back to errorCallbackURL as ?error=<CODE> (see auth-errors.ts).
+ */
+export function signInWithProvider(
+  provider: AuthProvider,
+  callbackURL = "/",
+  errorCallbackURL = "/login",
+) {
+  return authClient.signIn.social({ provider, callbackURL, errorCallbackURL });
 }

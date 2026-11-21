@@ -14,7 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/components/common/page-states";
-import { api, CONCEPT_LABELS, LEVEL_LABELS, type Concept, type KnowledgeLevel } from "@/lib/api";
+import { api, LEVEL_LABELS, type Concept, type KnowledgeLevel } from "@/lib/api";
 
 /** "Refazer nível" — unlimited, only rendered by callers while the BEST concept is ND or ED. */
 export function RetakeLevelButton({
@@ -58,9 +58,9 @@ export function RetakeLevelButton({
         <DialogHeader>
           <DialogTitle>Refazer o nível {LEVEL_LABELS[level]}?</DialogTitle>
           <DialogDescription>
-            Seu melhor conceito é {concept} ({CONCEPT_LABELS[concept]}). Ao refazer, você recebe uma
-            nova rodada de exercícios e um novo conceito será calculado quando concluir. Vale sempre
-            o melhor conceito entre as tentativas, e o próximo nível é liberado com D ou PD.
+            Seu melhor conceito é {concept}. Ao refazer, você recebe uma nova rodada de exercícios e
+            um novo conceito será calculado quando concluir. Vale sempre o melhor conceito entre as
+            tentativas, e o próximo nível é liberado com D ou PD.
           </DialogDescription>
         </DialogHeader>
         {error && (

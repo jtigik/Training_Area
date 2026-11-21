@@ -1,5 +1,4 @@
 import {
-  CONCEPT_LABELS,
   DIFFICULTY_LABELS,
   DIFFICULTY_RANK,
   EXERCISE_STATUS_LABELS,
@@ -91,17 +90,12 @@ const CONCEPT_STYLE: Record<Concept, string> = {
 
 export function ConceptBadge({ concept }: { concept: Concept }) {
   return (
-    <span className={cn(pill, CONCEPT_STYLE[concept])} title={CONCEPT_LABELS[concept]}>
+    <span className={cn(pill, CONCEPT_STYLE[concept])}>
       <span className="sr-only">Conceito: </span>
       {/* QA contract: data-testid="concept-badge" with text exactly ND/ED/D/PD. */}
-      <abbr
-        data-testid="concept-badge"
-        title={CONCEPT_LABELS[concept]}
-        className="font-bold no-underline"
-      >
+      <span data-testid="concept-badge" className="font-bold">
         {concept}
-      </abbr>
-      <span className="hidden sm:inline">· {CONCEPT_LABELS[concept]}</span>
+      </span>
     </span>
   );
 }

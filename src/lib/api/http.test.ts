@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { httpApi } from "./http";
+import { validationIssues } from "./types";
 
 function mockFetch(body: unknown, status = 200) {
   const fn = vi.fn().mockResolvedValue(
@@ -32,6 +33,29 @@ describe("httpApi", () => {
     });
     const trail = await httpApi.getTrail();
     expect(trail.levels.map((l) => l.level)).toEqual(["FUNDAMENTAL"]);
+  });
+
+  it("keeps error.details and exposes VALIDATION_ERROR issues", async () => {
+    mockFetch(
+      {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Dados inválidos",
+          details: [{ path: "submission", message: "Obrigatório", code: "too_small" }, 42],
+        },
+      },
+      422,
+    );
+    const err = await httpApi.submitAttempt("ex", { submission: "" }).catch((e: unknown) => e);
+    expect(err).toMatchObject({
+      status: 422,
+      code: "VALIDATION_ERROR",
+      message: "Dados inválidos",
+    });
+    expect(validationIssues(err)).toEqual([
+      { path: "submission", message: "Obrigatório", code: "too_small" },
+    ]);
+    expect(validationIssues(new Error("x"))).toEqual([]);
   });
 
   it("treats Dashboard exercises as not found", async () => {

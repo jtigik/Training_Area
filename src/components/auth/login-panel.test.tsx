@@ -73,4 +73,27 @@ describe("LoginPanel", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Entrar com Microsoft" }));
     expect(replace).toHaveBeenCalledWith("/aluno");
   });
+
+  it("shows the dedicated message for ?error=ACCOUNT_NOT_REGISTERED in an alert", async () => {
+    search = "error=ACCOUNT_NOT_REGISTERED&error_description=whatever";
+    render(<LoginPanel startLogin={vi.fn()} />);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Sua conta não está cadastrada nesta instituição. Fale com seu professor ou administrador.",
+    );
+    expect(alert).not.toHaveTextContent("whatever");
+    expect(alert).toHaveFocus();
+  });
+
+  it("maps Better Auth codes and falls back to a generic message", async () => {
+    search = "error=access_denied";
+    const { unmount } = render(<LoginPanel startLogin={vi.fn()} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Login cancelado/);
+    unmount();
+    search = "error=SOMETHING_NEW";
+    render(<LoginPanel startLogin={vi.fn()} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Não foi possível entrar. Tente novamente.",
+    );
+  });
 });

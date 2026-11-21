@@ -86,12 +86,7 @@ export const LEVEL_STATUS_LABELS: Record<LevelStatus, string> = {
  */
 export type Concept = "ND" | "ED" | "D" | "PD";
 
-export const CONCEPT_LABELS: Record<Concept, string> = {
-  ND: "Não desenvolvido",
-  ED: "Em desenvolvimento",
-  D: "Desenvolvido",
-  PD: "Plenamente desenvolvido",
-};
+// The UI shows only the abbreviations ND/ED/D/PD (PO: no expanded labels in the MVP).
 
 /** "Refazer nível" is offered (unlimited) while the BEST concept is ND or ED. */
 export function canRetake(concept: Concept | null | undefined): boolean {
@@ -360,20 +355,42 @@ export interface LevelFeedback {
 }
 
 // ---------- Errors ----------
-export interface ApiErrorBody {
-  error: { code: string; message: string; details?: unknown };
+/** One field problem in a VALIDATION_ERROR (Backend 1's src/lib/api-error.ts). */
+export interface ValidationIssue {
+  path: string;
+  message: string;
+  code?: string;
 }
 
-export class ApiError extends Error {
+/** Single error format of every API: { error: { code, message, details? } }. */
+export interface ApiErrorBody<D = unknown> {
+  error: { code: string; message: string; details?: D };
+}
+
+export class ApiError<D = unknown> extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
-    readonly details?: unknown,
+    readonly details?: D,
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/** Field issues of a VALIDATION_ERROR (empty for any other error). */
+export function validationIssues(e: unknown): ValidationIssue[] {
+  if (!(e instanceof ApiError) || e.code !== "VALIDATION_ERROR" || !Array.isArray(e.details)) {
+    return [];
+  }
+  return e.details.filter(
+    (d): d is ValidationIssue =>
+      typeof d === "object" &&
+      d !== null &&
+      typeof (d as ValidationIssue).path === "string" &&
+      typeof (d as ValidationIssue).message === "string",
+  );
 }
 
 export function isUnauthenticated(e: unknown): boolean {

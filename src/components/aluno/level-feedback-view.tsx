@@ -15,14 +15,7 @@ import {
 } from "@/components/ui/table";
 import { ErrorState, LoadingState } from "@/components/common/page-states";
 import { useApiResource } from "@/components/common/use-api-resource";
-import {
-  api,
-  canRetake,
-  CONCEPT_LABELS,
-  LEVEL_LABELS,
-  type KnowledgeLevel,
-  type LevelFeedback,
-} from "@/lib/api";
+import { api, canRetake, LEVEL_LABELS, type KnowledgeLevel, type LevelFeedback } from "@/lib/api";
 import { ConceptBadge, DifficultyBadge, LevelBadge, ResultBadge } from "./badges";
 import { Breadcrumbs } from "./breadcrumbs";
 import { formatDateTime } from "./format";
@@ -107,7 +100,6 @@ export function LevelFeedbackContent({
             <dd className="mt-1">
               <ConceptBadge concept={feedback.concept} />
             </dd>
-            <dd className="text-sm text-muted-foreground">{CONCEPT_LABELS[feedback.concept]}</dd>
             {feedback.run > 1 && (
               <dd className="mt-1 text-xs text-muted-foreground">
                 Tentativa {feedback.run} · melhor conceito: <strong>{feedback.bestConcept}</strong>
@@ -172,8 +164,7 @@ export function LevelFeedbackContent({
               Seu feedback
             </h2>
             <p className="text-sm text-muted-foreground">
-              {percent}% de acerto · conceito {feedback.concept} ({CONCEPT_LABELS[feedback.concept]}
-              )
+              {percent}% de acerto · conceito {feedback.concept}
             </p>
             <div className="space-y-3 leading-relaxed">
               {message.paragraphs.map((p) => (

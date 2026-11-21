@@ -54,7 +54,7 @@ export const httpApi: StudentApi = {
   async startLogin(provider, callbackURL) {
     // Lazy import: the Better Auth client is only needed when actually signing in.
     const { signInWithProvider } = await import("@/lib/auth/auth-client");
-    const { data, error } = await signInWithProvider(provider, callbackURL);
+    const { data, error } = await signInWithProvider(provider, callbackURL, "/login");
     if (error || !data) {
       throw new ApiError(
         error?.status ?? 500,
