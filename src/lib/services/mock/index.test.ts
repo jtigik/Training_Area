@@ -202,7 +202,7 @@ describe("mock: feedback", () => {
     const s = createMockServices();
     const def = await s.feedback.get("set-1");
     expect(def.setId).toBeNull();
-    expect(def.bands).toHaveLength(4);
+    expect(def.bands).toHaveLength(3);
     await expect(
       s.feedback.save({
         setId: "set-1",

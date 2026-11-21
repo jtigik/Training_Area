@@ -48,6 +48,7 @@ function user(
   return { id, institutionId, name, email, role, active, createdAt: T0, updatedAt: T0 };
 }
 
+/** Três faixas padrão (0–49 / 50–79 / 80–100); o professor ajusta em /professor/feedback. */
 export const DEFAULT_BANDS: FeedbackTemplate["bands"] = [
   {
     id: "fb-def-1",
@@ -60,23 +61,16 @@ export const DEFAULT_BANDS: FeedbackTemplate["bands"] = [
   {
     id: "fb-def-2",
     minPercent: 50,
-    maxPercent: 69,
+    maxPercent: 79,
     label: "Em desenvolvimento",
     template:
       "{{nome}}, bom começo: {{acertos}} de {{total}} ({{percentual}}) no nível {{nivel}}. Pratique intervalos e referências.",
   },
   {
     id: "fb-def-3",
-    minPercent: 70,
-    maxPercent: 89,
-    label: "Demonstrou",
-    template: "Bom trabalho, {{nome}}! {{percentual}} de acerto no nível {{nivel}}.",
-  },
-  {
-    id: "fb-def-4",
-    minPercent: 90,
+    minPercent: 80,
     maxPercent: 100,
-    label: "Plenamente demonstrou",
+    label: "Demonstrou",
     template: "Excelente, {{nome}}! Você dominou o nível {{nivel}} com {{percentual}} de acerto.",
   },
 ];
