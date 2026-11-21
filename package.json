@@ -24,7 +24,10 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:db": "RUN_DB_TESTS=1 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run integration",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@hookform/resolvers": "^7.0.8",
@@ -33,6 +36,7 @@
     "better-auth": "^1.7.27",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
+    "exceljs": "^4.4.0",
     "hyperformula": "^3.5.0",
     "lucide-react": "^1.77.0",
     "next": "16.4.6",
@@ -83,5 +87,11 @@
   "engines": {
     "node": ">=24 <25",
     "npm": ">=10"
+  },
+  "license": "GPL-3.0-only",
+  "overrides": {
+    "@prisma/config": {
+      "effect": "^3.22.1"
+    }
   }
 }
