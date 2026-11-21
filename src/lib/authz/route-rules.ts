@@ -102,3 +102,23 @@ export function safeCallbackPath(value: string | null | undefined): string | nul
   }
   return value;
 }
+
+/** Slugs de nível navegáveis no MVP (DASHBOARD fica para a v1.1). */
+export const MVP_LEVEL_SLUGS = ["fundamental", "profissional", "avancado"] as const;
+
+/**
+ * true para /aluno/niveis/:nivel[/...] quando :nivel não é um nível do MVP.
+ * A proxy responde 404 real (o notFound() no layout chega tarde com Cache
+ * Components e o status sai 200).
+ */
+export function isNonMvpLevelPath(pathname: string): boolean {
+  const match = /^\/aluno\/niveis\/([^/]+)(?:\/|$)/.exec(pathname);
+  if (!match) return false;
+  let slug: string;
+  try {
+    slug = decodeURIComponent(match[1]).toLowerCase();
+  } catch {
+    return true;
+  }
+  return !(MVP_LEVEL_SLUGS as readonly string[]).includes(slug);
+}

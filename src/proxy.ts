@@ -1,7 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { API_ERROR_CODES, ApiError } from "@/lib/api-error";
-import { authorizeRoute, findRouteRule, isApiPath, LOGIN_PATH } from "@/lib/authz/route-rules";
+import {
+  authorizeRoute,
+  findRouteRule,
+  isApiPath,
+  isNonMvpLevelPath,
+  LOGIN_PATH,
+} from "@/lib/authz/route-rules";
 import { getSession } from "@/server/auth/session";
 
 /**
@@ -25,7 +31,13 @@ export async function proxy(request: NextRequest) {
   const session = await getSession(request.headers);
   const decision = authorizeRoute(pathname, session?.user ?? null);
 
-  if (decision.type === "allow") return NextResponse.next();
+  if (decision.type === "allow") {
+    // Níveis fora do MVP: 404 real (só depois de autorizar, para não vazar rotas).
+    if (isNonMvpLevelPath(pathname)) {
+      return NextResponse.rewrite(new URL("/404", request.url), { status: 404 });
+    }
+    return NextResponse.next();
+  }
 
   if (decision.type === "unauthenticated") {
     if (isApiPath(pathname)) {

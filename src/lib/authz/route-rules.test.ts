@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   authorizeRoute,
   findRouteRule,
+  isNonMvpLevelPath,
   matchesPrefix,
   PROTECTED_PREFIXES,
   safeCallbackPath,
@@ -108,5 +109,22 @@ describe("safeCallbackPath", () => {
     expect(safeCallbackPath("/\\evil.com")).toBeNull();
     expect(safeCallbackPath("https://evil.com")).toBeNull();
     expect(safeCallbackPath(null)).toBeNull();
+  });
+});
+
+describe("isNonMvpLevelPath", () => {
+  it.each([
+    ["/aluno/niveis/dashboard", true],
+    ["/aluno/niveis/dashboard/exercicios/1", true],
+    ["/aluno/niveis/xyz", true],
+    ["/aluno/niveis/fundamental", false],
+    ["/aluno/niveis/profissional/exercicios/2", false],
+    ["/aluno/niveis/avancado/", false],
+    ["/aluno/niveis/Fundamental", false],
+    ["/aluno", false],
+    ["/aluno/niveis", false],
+    ["/professor/niveis/dashboard", false],
+  ])("%s → %s", (path, expected) => {
+    expect(isNonMvpLevelPath(path)).toBe(expected);
   });
 });
