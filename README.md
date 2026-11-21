@@ -136,7 +136,7 @@ O seed também cria 5 exercícios e 1 seção de conteúdo **globais** e a "Tril
 `prisma/schema.prisma` (comentado). Resumo:
 
 - **Tenant** (instituição). Toda entidade de domínio tem `tenantId`, indexado, e unicidades escopadas por tenant.
-- **User / Session / Account / Verification**: tabelas do Better Auth. `users.tenant_id` é nulo só para SUPER_ADMIN (CHECK). **Invitation**: convite com papel.
+- **User / Session / Account / Verification**: tabelas do Better Auth. `users.tenant_id` é nulo só para SUPER_ADMIN (CHECK). **Invitation**: convite com papel. **E-mail é único na plataforma** (uma pessoa, uma instituição): `users.email` UNIQUE e minúsculo, no máximo um convite pendente por e-mail em todas as instituições; `POST /api/admin/invitations` recusa (409) e-mail com conta ou com convite pendente em outra instituição.
 - **Classroom / ClassroomMember**: turmas.
 - **Níveis (`KnowledgeLevel`)**: `FUNDAMENTAL`, `PROFESSIONAL`, `ADVANCED` e `DASHBOARD` (reservado para v1.1). No MVP a validação (`src/lib/validation/content.ts`) recusa DASHBOARD e a UI deve usar `SELECTABLE_LEVEL_OPTIONS` (`src/lib/domain.ts`).
 - **ContentSection / Exercise**: `tenantId` nulo + `isGlobal = true` = **global** (banco inicial da plataforma): toda instituição lê, só o SUPER_ADMIN escreve. Com tenant = exclusivo da instituição.

@@ -131,7 +131,7 @@ model User {
   id            String   @id @default(cuid())
   /// Nulo apenas para SUPER_ADMIN (CHECK no banco).
   tenantId      String?  @map("tenant_id")
-  /// Único na plataforma: uma pessoa pertence a uma instituição (premissa).
+  /// Único na PLATAFORMA (MVP): uma pessoa, uma instituição. Sempre minúsculo (CHECK).
   email         String   @unique
   name          String
   emailVerified Boolean  @default(false) @map("email_verified")
@@ -230,9 +230,10 @@ model Invitation {
   tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invitedBy User?  @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
 
-  /// Um convite pendente por e-mail na instituição.
-  @@unique([tenantId, email], where: { acceptedAt: null })
-  @@index([email])
+  /// E-mail é único na plataforma (MVP): no máximo UM convite pendente por
+  /// e-mail em todas as instituições.
+  @@unique([email], map: "invitations_pending_email_key", where: { acceptedAt: null })
+  @@index([tenantId, email])
   @@map("invitations")
 }
 
