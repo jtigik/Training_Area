@@ -1,9 +1,10 @@
-import { MAX_COLS, MAX_ROWS, parseAddress, validateAnswers } from "../domain/grid";
+import { isEmptyCell, MAX_COLS, MAX_ROWS, parseAddress, validateAnswers } from "../domain/grid";
 import { DIFFICULTY_LABELS, LEVEL_LABELS } from "../domain/labels";
 import {
   MVP_LEVELS,
   type AnswerCell,
   type CellAddress,
+  type CellScalar,
   type Difficulty,
   type MvpLevel,
   type SpreadsheetGrid,
@@ -12,8 +13,8 @@ import {
 /** Célula lida do arquivo, independente da biblioteca de leitura. */
 export interface RawCell {
   address: CellAddress;
-  /** Valor exibido (número, texto, booleano ou resultado em cache da fórmula). */
-  value: string;
+  /** Valor tipado (número, texto, booleano) ou o resultado em cache da fórmula. */
+  value: CellScalar;
   /** Fórmula sem o "=" inicial, quando houver. */
   formula?: string;
 }
@@ -77,12 +78,15 @@ export function sheetToExercise(name: string, cells: RawCell[]): ImportedSheet {
       continue;
     }
     const formula = cell.formula?.trim();
-    const value = cell.value.trim();
-    if (!formula && value === "") continue;
+    const value = cell.value;
+    if (!formula && isEmptyCell(value)) continue;
     grid.rows = Math.max(grid.rows, pos.row + 1);
     grid.cols = Math.max(grid.cols, pos.col + 1);
     if (formula) {
-      answers[cell.address] = { kind: "FORMULA", expected: `=${formula.replace(/^=/, "")}` };
+      answers[cell.address] = {
+        kind: "FORMULA",
+        expected: { f: `=${formula.replace(/^=/, "")}` },
+      };
     } else {
       grid.cells[cell.address] = { value, locked: true };
     }
@@ -138,13 +142,20 @@ export function parseDifficulty(label: string): Difficulty | undefined {
   return entry?.[0] as Difficulty | undefined;
 }
 
+export interface GabaritoRow {
+  cell: string;
+  /** Resposta tipada; fórmula real ou texto iniciado por "=" vira "=..." (string). */
+  answer: CellScalar;
+  tolerance?: number;
+}
+
 export interface TemplateSheets {
   /** Pares chave/valor da aba "Dados" (coluna A = chave, B = valor). */
   dados: [string, string][];
   /** Células da aba "Planilha". */
   planilha: RawCell[];
-  /** Linhas da aba "Gabarito" (Célula | Resposta), sem o cabeçalho. */
-  gabarito: [string, string][];
+  /** Linhas da aba "Gabarito" (Célula | Resposta [| Tolerância]), sem o cabeçalho. */
+  gabarito: GabaritoRow[];
 }
 
 /**
@@ -208,22 +219,32 @@ export function templateToExercise(t: TemplateSheets): ImportedSheet {
     meta.title ?? "Exercício importado",
     t.planilha.map((c) => ({ address: c.address, value: c.value })),
   );
+  // No modelo, fórmulas da aba Planilha fazem parte da grade inicial (não do gabarito).
+  for (const c of t.planilha) {
+    const pos = parseAddress(c.address);
+    if (!c.formula || !pos || pos.row >= MAX_ROWS || pos.col >= MAX_COLS) continue;
+    base.grid.cells[c.address] = {
+      value: { f: `=${c.formula.replace(/^=/, "")}`, ...(c.value !== null ? { v: c.value } : {}) },
+      locked: true,
+    };
+    base.grid.rows = Math.max(base.grid.rows, Math.min(MAX_ROWS, pos.row + 2));
+    base.grid.cols = Math.max(base.grid.cols, Math.min(MAX_COLS, pos.col + 2));
+  }
   base.warnings
     .filter((w) => !w.startsWith("Nenhuma fórmula"))
     .forEach((w) => issue("Planilha", null, null, "GRID_LIMIT", w));
   const answers: Record<CellAddress, AnswerCell> = {};
   let rows = base.grid.rows;
   let cols = base.grid.cols;
-  t.gabarito.forEach(([ref, resposta], i) => {
+  t.gabarito.forEach(({ cell: ref, answer, tolerance }, i) => {
     const row = i + 2; // linha 1 = cabeçalho
     const pos = parseAddress(ref.trim());
-    const expected = resposta.trim();
-    if (!ref.trim() && !expected) return;
+    if (!ref.trim() && isEmptyCell(answer)) return;
     if (!pos) {
       issue("Gabarito", row, "A", "INVALID_CELL", `Referência de célula inválida: "${ref}".`);
       return;
     }
-    if (!expected) {
+    if (isEmptyCell(answer)) {
       issue(
         "Gabarito",
         row,
@@ -233,9 +254,11 @@ export function templateToExercise(t: TemplateSheets): ImportedSheet {
       );
       return;
     }
-    answers[ref.trim().toUpperCase()] = expected.startsWith("=")
-      ? { kind: "FORMULA", expected }
-      : { kind: "VALUE", expected, tolerance: 0 };
+    // Na coluna Resposta, texto iniciado por "=" (ou fórmula real) é a fórmula esperada.
+    answers[ref.trim().toUpperCase()] =
+      typeof answer === "string" && answer.trim().startsWith("=")
+        ? { kind: "FORMULA", expected: { f: answer.trim() } }
+        : { kind: "VALUE", expected: answer, tolerance: tolerance ?? 0 };
     rows = Math.max(rows, Math.min(MAX_ROWS, pos.row + 2));
     cols = Math.max(cols, Math.min(MAX_COLS, pos.col + 2));
   });
@@ -362,11 +385,11 @@ export function looksLikeXlsx(buffer: ArrayBuffer): boolean {
 
 type ExcelValue = unknown;
 
-/** Converte o valor de uma célula do exceljs em texto exibível. */
-export function cellText(value: ExcelValue): { value: string; formula?: string } {
-  if (value === null || value === undefined) return { value: "" };
-  if (typeof value === "number" || typeof value === "boolean") return { value: String(value) };
-  if (typeof value === "string") return { value };
+/** Converte o valor de uma célula do exceljs em valor tipado (+ fórmula, se houver). */
+export function cellContent(value: ExcelValue): { value: CellScalar; formula?: string } {
+  if (value === null || value === undefined) return { value: null };
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
+    return { value };
   if (value instanceof Date) return { value: value.toISOString().slice(0, 10) };
   if (typeof value === "object") {
     const v = value as Record<string, unknown>;
@@ -374,9 +397,9 @@ export function cellText(value: ExcelValue): { value: string; formula?: string }
       const result = v.result;
       return {
         value:
-          result === undefined || result === null || typeof result === "object"
-            ? ""
-            : String(result),
+          typeof result === "number" || typeof result === "boolean" || typeof result === "string"
+            ? result
+            : null,
         formula: (v.formula as string | undefined) ?? (v.sharedFormula as string),
       };
     }
@@ -386,6 +409,18 @@ export function cellText(value: ExcelValue): { value: string; formula?: string }
     if (v.error) return { value: String(v.error) };
   }
   return { value: String(value) };
+}
+
+/** Texto exibível de uma célula (usado nas abas Dados e no cabeçalho). */
+export function cellText(value: ExcelValue): string {
+  const c = cellContent(value);
+  return c.value === null ? "" : String(c.value);
+}
+
+/** Nomes das abas do i-ésimo exercício do modelo: "Dados", "Dados (2)", ... */
+export function templateSheetNames(n: number) {
+  const suffix = n === 1 ? "" : ` (${n})`;
+  return { dados: `Dados${suffix}`, planilha: `Planilha${suffix}`, gabarito: `Gabarito${suffix}` };
 }
 
 /** Lê um .xlsx no navegador (exceljs carregado sob demanda). */
@@ -407,7 +442,7 @@ export async function parseXlsx(fileName: string, buffer: ArrayBuffer): Promise<
       const cells: RawCell[] = [];
       ws?.eachRow({ includeEmpty: false }, (row) =>
         row.eachCell({ includeEmpty: false }, (cell) => {
-          cells.push({ address: cell.address, ...cellText(cell.value) });
+          cells.push({ address: cell.address, ...cellContent(cell.value) });
         }),
       );
       return cells;
@@ -416,32 +451,60 @@ export async function parseXlsx(fileName: string, buffer: ArrayBuffer): Promise<
       const ws = workbook.getWorksheet(name);
       const out: [string, string][] = [];
       ws?.eachRow({ includeEmpty: false }, (row) => {
-        const a = cellText(row.getCell(1).value);
-        const b = cellText(row.getCell(2).value);
-        out.push([a.value, b.formula ? `=${b.formula}` : b.value]);
+        out.push([cellText(row.getCell(1).value), cellText(row.getCell(2).value)]);
+      });
+      return out;
+    };
+    const gabarito = (name: string): GabaritoRow[] => {
+      const ws = workbook.getWorksheet(name);
+      if (!ws) return [];
+      const header = ws.getRow(1);
+      let tolCol = 0;
+      header.eachCell((c, col) => {
+        if (norm(cellText(c.value)) === "tolerancia") tolCol = col;
+      });
+      const out: GabaritoRow[] = [];
+      ws.eachRow({ includeEmpty: true }, (row, n) => {
+        if (n === 1) return;
+        const ref = cellText(row.getCell(1).value);
+        const b = cellContent(row.getCell(2).value);
+        const tol = tolCol ? cellContent(row.getCell(tolCol).value).value : null;
+        out.push({
+          cell: ref,
+          answer: b.formula ? `=${b.formula.replace(/^=/, "")}` : b.value,
+          ...(typeof tol === "number" ? { tolerance: tol } : {}),
+        });
       });
       return out;
     };
     if (workbook.getWorksheet("Dados") && workbook.getWorksheet("Gabarito")) {
-      const gabarito = pairs("Gabarito").filter(([cell]) => norm(cell) !== "celula");
-      return {
-        fileName,
-        sheets: [
-          templateToExercise({ dados: pairs("Dados"), planilha: readCells("Planilha"), gabarito }),
-        ],
-        template: true,
-        error: null,
-      };
+      const sheets: ImportedSheet[] = [];
+      for (let n = 1; workbook.getWorksheet(templateSheetNames(n).dados); n++) {
+        const names = templateSheetNames(n);
+        const parsed = templateToExercise({
+          dados: pairs(names.dados),
+          planilha: readCells(names.planilha),
+          gabarito: gabarito(names.gabarito),
+        });
+        // Erros apontam para a aba real do exercício (ex.: "Gabarito (2)").
+        parsed.issues = parsed.issues.map((i) => ({
+          ...i,
+          sheet:
+            i.sheet === "Dados"
+              ? names.dados
+              : i.sheet === "Planilha"
+                ? names.planilha
+                : i.sheet === "Gabarito"
+                  ? names.gabarito
+                  : i.sheet,
+        }));
+        sheets.push(parsed);
+      }
+      return { fileName, sheets, template: true, error: null };
     }
     const sheets: ImportedSheet[] = [];
     workbook.eachSheet((ws) => {
-      const cells: RawCell[] = [];
-      ws.eachRow({ includeEmpty: false }, (row) => {
-        row.eachCell({ includeEmpty: false }, (cell) => {
-          cells.push({ address: cell.address, ...cellText(cell.value) });
-        });
-      });
-      sheets.push(sheetToExercise(ws.name, cells));
+      sheets.push(sheetToExercise(ws.name, readCells(ws.name)));
     });
     if (sheets.length === 0)
       return { fileName, sheets, template: false, error: "A planilha não tem abas." };

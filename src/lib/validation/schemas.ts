@@ -200,3 +200,38 @@ export function validateXlsxFile(file: Pick<File, "name" | "size" | "type">): st
   if (file.size > XLSX_MAX_BYTES) return "O arquivo passa de 2 MB. Divida em arquivos menores.";
   return null;
 }
+
+/* ------------------------- Células da planilha ------------------------- */
+
+const cellScalarSchema = z.union([z.number(), z.string(), z.boolean(), z.null()]);
+
+/**
+ * Conteúdo de célula combinado com BE1/BE2: number | string | boolean | null |
+ * { f: "=...", v? }. String iniciada por "=" é texto literal; fórmula só em `{ f }`.
+ */
+export const cellValueSchema = z.union([
+  cellScalarSchema,
+  z.object({
+    f: z.string().regex(/^=.+/, 'A fórmula deve começar com "=".'),
+    v: cellScalarSchema.optional(),
+  }),
+]);
+
+const addressSchema = z.string().regex(/^[A-Z][1-9][0-9]*$/, "Endereço de célula inválido.");
+
+export const spreadsheetGridSchema = z.object({
+  rows: z.number().int().min(1).max(50),
+  cols: z.number().int().min(1).max(26),
+  cells: z.record(addressSchema, z.object({ value: cellValueSchema, locked: z.boolean() })),
+});
+
+export const answerCellSchema = z
+  .object({
+    kind: z.enum(["VALUE", "FORMULA"]),
+    expected: cellValueSchema,
+    tolerance: z.number().min(0).optional(),
+  })
+  .refine(
+    (a) => (a.kind === "FORMULA") === (typeof a.expected === "object" && a.expected !== null),
+    { message: "Gabarito de fórmula usa { f }; de valor, um literal.", path: ["expected"] },
+  );

@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { displayValue, evaluateFormula, sameValue } from "./formula";
+import type { CellValue } from "./types";
 
-const cells: Record<string, string> = { A1: "10", A2: "20", A3: "30", B1: "=A1*2", C1: "texto" };
+const cells: Record<string, CellValue> = {
+  A1: 10,
+  A2: 20,
+  A3: 30,
+  B1: { f: "=A1*2" },
+  C1: "texto",
+  D1: "10",
+  D2: 10,
+  D3: "=texto",
+  E1: true,
+};
 const lookup = (a: string) => cells[a];
 
 describe("evaluateFormula", () => {
@@ -22,18 +33,40 @@ describe("evaluateFormula", () => {
     expect(evaluateFormula('=SE(A1>5;"ok";"não")', lookup)).toBe("ok");
   });
 
+  it('TC-036-02: o texto "10" não entra na SOMA; "=texto" literal é texto', () => {
+    expect(evaluateFormula("=SOMA(D1:D2)", lookup)).toBe(10);
+    expect(evaluateFormula("=CONT.NÚM(D1:D2)", lookup)).toBe(1);
+    expect(evaluateFormula("=D3", lookup)).toBe("=texto");
+    expect(evaluateFormula("=E1", lookup)).toBe(true);
+  });
+
   it("erros viram códigos do Excel", () => {
-    expect(displayValue("=A1/0", lookup)).toBe("#DIV/0!");
-    expect(displayValue("=FOO(A1)", lookup)).toBe("#NOME?");
-    expect(displayValue("=C1*2", lookup)).toBe("#VALOR!");
+    expect(displayValue({ f: "=A1/0" }, lookup)).toBe("#DIV/0!");
+    expect(displayValue({ f: "=FOO(A1)" }, lookup)).toBe("#NOME?");
+    expect(displayValue({ f: "=C1*2" }, lookup)).toBe("#VALOR!");
+  });
+});
+
+describe("displayValue", () => {
+  it("mostra literais tipados", () => {
+    expect(displayValue(10, lookup)).toBe("10");
+    expect(displayValue("=texto", lookup)).toBe("=texto");
+    expect(displayValue(true, lookup)).toBe("VERDADEIRO");
+    expect(displayValue(null, lookup)).toBe("");
   });
 });
 
 describe("sameValue", () => {
-  it("compara pelo resultado, não pelo texto", () => {
-    expect(sameValue("=SUM(A1:A3)", "=SOMA(A1:A3)", lookup)).toBe(true);
-    expect(sameValue("60", "=SOMA(A1:A3)", lookup)).toBe(true);
-    expect(sameValue("=SOMA(A1:A2)", "=SOMA(A1:A3)", lookup)).toBe(false);
-    expect(sameValue("59.5", "60", lookup, 0.5)).toBe(true);
+  it("compara pelo valor calculado", () => {
+    expect(sameValue({ f: "=SUM(A1:A3)" }, { f: "=SOMA(A1:A3)" }, lookup)).toBe(true);
+    expect(sameValue(60, { f: "=SOMA(A1:A3)" }, lookup)).toBe(true);
+    expect(sameValue({ f: "=SOMA(A1:A2)" }, { f: "=SOMA(A1:A3)" }, lookup)).toBe(false);
+    expect(sameValue(59.5, 60, lookup, 0.5)).toBe(true);
+  });
+
+  it('10 é diferente de "10"', () => {
+    expect(sameValue(10, "10", lookup)).toBe(false);
+    expect(sameValue("10", "10", lookup)).toBe(true);
+    expect(sameValue(true, "TRUE", lookup)).toBe(false);
   });
 });

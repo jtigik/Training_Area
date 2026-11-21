@@ -1,23 +1,64 @@
 "use client";
 
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useId, useRef, useState, type ComponentProps, type KeyboardEvent } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckboxField } from "@/components/common/checkbox-field";
 import {
   columnLabel,
+  formatCellInput,
   inferAnswer,
   MAX_COLS,
   MAX_ROWS,
   moveFocus,
   parseAddress,
+  parseCellInput,
   toAddress,
   type Direction,
 } from "@/lib/domain/grid";
 import { displayValue } from "@/lib/domain/formula";
-import type { AnswerCell, CellAddress, SpreadsheetGrid } from "@/lib/domain/types";
+import type { AnswerCell, CellAddress, CellValue, SpreadsheetGrid } from "@/lib/domain/types";
 import { cn } from "@/lib/utils";
 import { EditableCell } from "./editable-cell";
+
+const normalizeText = (text: string) => formatCellInput(parseCellInput(text));
+
+function cellTypeLabel(value: CellValue): string {
+  if (value === null) return "vazia";
+  if (typeof value === "object") return "fórmula";
+  if (typeof value === "number") return "número";
+  if (typeof value === "boolean") return "lógico";
+  return "texto";
+}
+
+/**
+ * Input com rascunho local: enquanto o professor digita, o texto fica como está
+ * (ex.: "'" ou "1,"); fora do foco mostra o valor tipado formatado.
+ */
+function TypedInput({
+  cellValue,
+  onText,
+  ...props
+}: Omit<ComponentProps<"input">, "value" | "onChange"> & {
+  cellValue: CellValue | undefined;
+  onText: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      {...props}
+      value={draft ?? formatCellInput(cellValue)}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onText(e.target.value);
+      }}
+      onBlur={(e) => {
+        setDraft(null);
+        props.onBlur?.(e);
+      }}
+    />
+  );
+}
 
 export interface GridEditorValue {
   grid: SpreadsheetGrid;
@@ -47,9 +88,10 @@ export function GridEditor({ grid, answers, onChange, invalid = [] }: GridEditor
   const containerRef = useRef<HTMLDivElement>(null);
   const lookup = (a: string) => grid.cells[a]?.value;
 
-  const setCell = (address: CellAddress, value: string) => {
+  const setCell = (address: CellAddress, text: string) => {
     const cells = { ...grid.cells };
-    if (value === "") delete cells[address];
+    const value = parseCellInput(text);
+    if (value === null) delete cells[address];
     else cells[address] = { value, locked: cells[address]?.locked ?? true };
     onChange({ grid: { ...grid, cells }, answers });
   };
@@ -152,7 +194,9 @@ export function GridEditor({ grid, answers, onChange, invalid = [] }: GridEditor
           />
         </div>
         <p className="text-muted-foreground text-xs">
-          Use as setas ou Enter para navegar. Até {MAX_ROWS} linhas e {MAX_COLS} colunas.
+          Use as setas ou Enter para navegar. Até {MAX_ROWS} linhas e {MAX_COLS} colunas. Números,
+          TRUE/FALSE e fórmulas (=) são reconhecidos; comece com apóstrofo (&apos;10) para guardar
+          como texto.
         </p>
       </div>
 
@@ -189,7 +233,8 @@ export function GridEditor({ grid, answers, onChange, invalid = [] }: GridEditor
                         <EditableCell
                           data-testid={`cell-${address}`}
                           aria-label={`Célula ${address}${cell?.locked ? " (bloqueada para o aluno)" : ""}`}
-                          value={cell?.value ?? ""}
+                          value={formatCellInput(cell?.value)}
+                          format={normalizeText}
                           onValueChange={(v) => setCell(address, v)}
                           onFocus={() => setSelected(address)}
                           onNavigate={(key) => navigate("cell", address, key)}
@@ -236,13 +281,13 @@ export function GridEditor({ grid, answers, onChange, invalid = [] }: GridEditor
                             "outline-destructive outline-2 -outline-offset-2",
                         )}
                       >
-                        <input
+                        <TypedInput
                           data-testid={`answer-cell-${address}`}
                           aria-label={`Gabarito ${address}`}
                           aria-invalid={invalid.includes(address) || undefined}
                           className="h-full w-full bg-transparent px-1.5 text-sm outline-none focus:ring-2 focus:ring-inset"
-                          value={answer?.expected ?? ""}
-                          onChange={(e) => setAnswer(address, e.target.value)}
+                          cellValue={answer?.expected}
+                          onText={(text) => setAnswer(address, text)}
                           onFocus={() => setSelected(address)}
                           onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
                             if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "Enter") {
@@ -274,7 +319,8 @@ export function GridEditor({ grid, answers, onChange, invalid = [] }: GridEditor
         {inside && selectedCell ? (
           <>
             <span className="text-muted-foreground">
-              Mostra: {displayValue(selectedCell.value, lookup) || "—"}
+              Mostra: {displayValue(selectedCell.value, lookup) || "—"} ·{" "}
+              {cellTypeLabel(selectedCell.value)}
             </span>
             <CheckboxField
               label="Bloqueada para o aluno"

@@ -1,5 +1,6 @@
 "use client";
 
+import { formatCellInput } from "@/lib/domain/grid";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -179,7 +180,7 @@ export function StudentDetailPage({ id }: { id: string }) {
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {Object.entries(a.submitted)
-                        .map(([cell, v]) => `${cell}: ${v}`)
+                        .map(([cell, v]) => `${cell}: ${formatCellInput(v)}`)
                         .join("; ")}
                     </TableCell>
                     <TableCell>

@@ -5,9 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LevelBadge, DifficultyBadge } from "@/components/common/badges";
-import { columnLabel, toAddress } from "@/lib/domain/grid";
+import {
+  columnLabel,
+  formatCellInput,
+  isEmptyCell,
+  parseCellInput,
+  toAddress,
+} from "@/lib/domain/grid";
 import { displayValue, sameValue } from "@/lib/domain/formula";
-import type { ExerciseContent } from "@/lib/domain/types";
+import type { CellValue, ExerciseContent } from "@/lib/domain/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,27 +25,33 @@ export function ExercisePreview({ exercise }: { exercise: ExerciseContent }) {
   const id = useId();
   const answerCells = Object.keys(exercise.answers);
   const [selected, setSelected] = useState(answerCells[0] ?? "A1");
-  const [entries, setEntries] = useState<Record<string, string>>({});
+  const [entries, setEntries] = useState<Record<string, CellValue>>({});
   const [draft, setDraft] = useState("");
   const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null);
 
-  const lookup = (a: string) => entries[a] ?? exercise.grid.cells[a]?.value;
+  const lookup = (a: string) => (a in entries ? entries[a] : exercise.grid.cells[a]?.value);
   const locked = (a: string) => exercise.grid.cells[a]?.locked ?? false;
 
   function select(address: string) {
     setSelected(address);
     setDraft(
-      entries[address] ?? (locked(address) ? "" : (exercise.grid.cells[address]?.value ?? "")),
+      formatCellInput(
+        address in entries
+          ? entries[address]
+          : locked(address)
+            ? null
+            : exercise.grid.cells[address]?.value,
+      ),
     );
   }
 
   function submit() {
-    const next = { ...entries, [selected]: draft };
+    const next = { ...entries, [selected]: parseCellInput(draft) };
     setEntries(next);
-    const look = (a: string) => next[a] ?? exercise.grid.cells[a]?.value;
+    const look = (a: string) => (a in next ? next[a] : exercise.grid.cells[a]?.value);
     const wrong = answerCells.filter(
       (a) =>
-        !next[a] ||
+        isEmptyCell(next[a]) ||
         !sameValue(next[a], exercise.answers[a].expected, look, exercise.answers[a].tolerance ?? 0),
     );
     setResult(
@@ -116,7 +128,7 @@ export function ExercisePreview({ exercise }: { exercise: ExerciseContent }) {
                 </th>
                 {Array.from({ length: exercise.grid.cols }, (_, c) => {
                   const a = toAddress(r, c);
-                  const raw = lookup(a) ?? "";
+                  const raw = lookup(a);
                   return (
                     <td
                       key={a}

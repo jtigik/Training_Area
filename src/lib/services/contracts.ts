@@ -9,6 +9,8 @@
  * Convenções: JSON; datas ISO 8601 UTC; enums iguais aos do Prisma; erros no
  * envelope `{ error: { code, message, details? } }` (code em UPPER_SNAKE) com status HTTP adequado
  * (401 sem sessão, 403 papel sem permissão, 404, 409 conflito, 422 regra).
+ * Células (grade e gabarito): `number | string | boolean | null | { f: "=...", v? }`.
+ * Fórmula só em `{ f }`; string iniciada por "=" é texto; 10 ≠ "10" (TC-036-02).
  * Multi-tenant: o servidor resolve `tenantId` pela sessão. Nenhum
  * endpoint de /api/admin ou /api/professor aceita tenantId do cliente.
  *

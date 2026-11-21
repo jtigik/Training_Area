@@ -7,6 +7,8 @@ interface EditableCellProps extends Omit<ComponentProps<"div">, "onChange" | "ch
   value: string;
   onValueChange: (value: string) => void;
   onNavigate?: (key: string) => void;
+  /** Normaliza o texto ao sair da célula (ex.: "true" → "TRUE"). */
+  format?: (text: string) => string;
 }
 
 /**
@@ -17,6 +19,7 @@ export function EditableCell({
   value,
   onValueChange,
   onNavigate,
+  format,
   className,
   onKeyDown,
   ...props
@@ -54,6 +57,8 @@ export function EditableCell({
       onBlur={(e) => {
         const text = e.currentTarget.textContent ?? "";
         if (text !== value) onValueChange(text);
+        const shown = format ? format(text) : text;
+        if (shown !== text) e.currentTarget.textContent = shown;
       }}
       onPaste={(e) => {
         e.preventDefault();

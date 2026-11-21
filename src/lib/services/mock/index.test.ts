@@ -7,8 +7,8 @@ const content = {
   title: "T",
   statement: "E",
   difficulty: "EASY" as const,
-  grid: { rows: 2, cols: 2, cells: { A1: { value: "2", locked: true } } },
-  answers: { B1: { kind: "FORMULA" as const, expected: "=A1*2" } },
+  grid: { rows: 2, cols: 2, cells: { A1: { value: 2, locked: true } } },
+  answers: { B1: { kind: "FORMULA" as const, expected: { f: "=A1*2" } } },
   hint: null,
 };
 

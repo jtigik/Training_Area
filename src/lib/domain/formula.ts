@@ -1,4 +1,5 @@
-import { parseAddress, toAddress } from "./grid";
+import { isFormulaCell, parseAddress, toAddress } from "./grid";
+import type { CellValue as GridValue } from "./types";
 
 /**
  * Avaliador mínimo de fórmulas para a PRÉ-VISUALIZAÇÃO do professor.
@@ -6,8 +7,10 @@ import { parseAddress, toAddress } from "./grid";
  * números, referências (A1), intervalos (A1:B3), + - * / ^, parênteses, comparação
  * e as funções mais comuns em pt-BR e inglês.
  */
+/** Resultado de uma avaliação (escalar; célula vazia = ""). */
 export type CellValue = number | string | boolean;
-export type Lookup = (address: string) => string | undefined;
+/** Conteúdo tipado de uma célula da grade (ver domain/types). */
+export type Lookup = (address: string) => GridValue | undefined;
 
 export class FormulaError extends Error {}
 
@@ -37,11 +40,11 @@ function truthy(v: CellValue | undefined) {
   return typeof v === "string" ? v !== "" : Boolean(v);
 }
 
-function literal(raw: string | undefined): CellValue {
-  const text = (raw ?? "").trim();
-  if (text === "") return "";
-  const n = Number(text.replace(",", "."));
-  return Number.isFinite(n) ? n : text;
+/** Valor de célula literal: tipos preservados (o texto "10" continua texto). */
+function literal(raw: GridValue | undefined): CellValue {
+  if (raw === null || raw === undefined) return "";
+  if (isFormulaCell(raw)) return raw.v ?? "";
+  return raw;
 }
 
 type Token = { t: "num" | "str" | "ref" | "fn" | "op" | "(" | ")" | "sep"; v: string };
@@ -81,7 +84,7 @@ export function evaluateFormula(formula: string, lookup: Lookup, depth = 0): Cel
 
   const cell = (address: string): CellValue => {
     const raw = lookup(address);
-    if (raw?.trim().startsWith("=")) return evaluateFormula(raw, lookup, depth + 1);
+    if (isFormulaCell(raw)) return evaluateFormula(raw.f, lookup, depth + 1);
     return literal(raw);
   };
   const range = (ref: string): CellValue[] => {
@@ -182,23 +185,48 @@ export function evaluateFormula(formula: string, lookup: Lookup, depth = 0): Cel
   return result;
 }
 
-/** Valor que a célula exibiria (fórmula avaliada ou o texto digitado). */
-export function displayValue(raw: string, lookup: Lookup): string {
-  if (!raw.trim().startsWith("=")) return raw;
+/** Avalia uma célula tipada: fórmula é calculada, literal é devolvido como está. */
+export function evaluateCell(value: GridValue | undefined, lookup: Lookup): CellValue {
+  if (isFormulaCell(value)) return evaluateFormula(value.f, lookup);
+  return literal(value);
+}
+
+function format(v: CellValue): string {
+  if (typeof v === "boolean") return v ? "VERDADEIRO" : "FALSO";
+  return typeof v === "number" ? String(Math.round(v * 1e10) / 1e10) : v;
+}
+
+/** Valor que a célula exibiria (fórmula avaliada ou o literal formatado). */
+export function displayValue(value: GridValue | undefined, lookup: Lookup): string {
   try {
-    const v = evaluateFormula(raw, lookup);
-    if (typeof v === "boolean") return v ? "VERDADEIRO" : "FALSO";
-    return typeof v === "number" ? String(Math.round(v * 1e10) / 1e10) : v;
+    return format(evaluateCell(value, lookup));
   } catch (e) {
     return e instanceof FormulaError ? e.message : "#ERRO!";
   }
 }
 
-/** Compara o valor de duas entradas (com tolerância numérica). */
-export function sameValue(a: string, b: string, lookup: Lookup, tolerance = 0): boolean {
-  const va = literal(displayValue(a, lookup));
-  const vb = literal(displayValue(b, lookup));
+/**
+ * Compara o valor de duas células (com tolerância numérica). Tipos contam:
+ * o número 10 não é igual ao texto "10" (TC-036-02). Texto compara sem
+ * diferenciar maiúsculas; erro de fórmula nunca é igual.
+ */
+export function sameValue(
+  a: GridValue | undefined,
+  b: GridValue | undefined,
+  lookup: Lookup,
+  tolerance = 0,
+): boolean {
+  let va: CellValue;
+  let vb: CellValue;
+  try {
+    va = evaluateCell(a, lookup);
+    vb = evaluateCell(b, lookup);
+  } catch {
+    return false;
+  }
   if (typeof va === "number" && typeof vb === "number")
     return Math.abs(va - vb) <= tolerance + 1e-9;
-  return String(va).trim().toLowerCase() === String(vb).trim().toLowerCase();
+  if (typeof va !== typeof vb) return false;
+  if (typeof va === "string") return va.trim().toLowerCase() === String(vb).trim().toLowerCase();
+  return va === vb;
 }

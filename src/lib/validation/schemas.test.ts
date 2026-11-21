@@ -118,3 +118,16 @@ describe("schemas", () => {
     expect(validateXlsxFile({ name: "a.xlsx", size: 10, type: "text/csv" })).toMatch(/não parece/);
   });
 });
+
+describe("cellValueSchema", () => {
+  it("aceita os tipos combinados e recusa fórmula sem =", async () => {
+    const { cellValueSchema, answerCellSchema } = await import("./schemas");
+    for (const v of [10, "10", "=texto", true, null, { f: "=A1*2" }, { f: "=A1", v: 3 }])
+      expect(cellValueSchema.safeParse(v).success).toBe(true);
+    expect(cellValueSchema.safeParse({ f: "SOMA(A1)" }).success).toBe(false);
+    expect(answerCellSchema.safeParse({ kind: "FORMULA", expected: "=SOMA(A1)" }).success).toBe(
+      false,
+    );
+    expect(answerCellSchema.safeParse({ kind: "VALUE", expected: 10 }).success).toBe(true);
+  });
+});

@@ -83,16 +83,14 @@ describe("http: importação .xlsx", () => {
     ];
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(
-            JSON.stringify({
-              error: { code: "IMPORT_INVALID", message: "Inválido", details: { errors } },
-            }),
-            { status: 422 },
-          ),
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { code: "IMPORT_INVALID", message: "Inválido", details: { errors } },
+          }),
+          { status: 422 },
         ),
+      ),
     );
     await expect(
       createHttpServices().exercises.importXlsx("s", new File(["x"], "a.xlsx")),

@@ -98,20 +98,37 @@ export interface ContentSection {
 /** Endereço de célula estilo planilha, ex.: "A1", "C12". */
 export type CellAddress = string;
 
-/** Célula da planilha inicial. `value` pode ser número, texto ou fórmula ("=..."). */
+/** Valor literal de célula (JSON nativo). `null` = vazia. */
+export type CellScalar = number | string | boolean | null;
+
+/** Célula com fórmula. `f` sempre começa com "="; `v` é o resultado em cache, quando houver. */
+export interface FormulaCell {
+  f: string;
+  v?: CellScalar;
+}
+
+/**
+ * Conteúdo de célula combinado com BE1/BE2/FE1: `number | string | boolean | null | { f, v? }`.
+ * Fórmula só existe em `{ f }`; uma string que começa com "=" é texto literal.
+ * O número 10 e o texto "10" são diferentes (QA TC-036-02).
+ */
+export type CellValue = CellScalar | FormulaCell;
+
+/** Célula da planilha inicial. */
 export interface GridCell {
-  value: string;
+  value: CellValue;
   /** Célula bloqueada para o aluno (dados/enunciado). */
   locked: boolean;
 }
 
+/** Derivado de `expected`: FORMULA quando é `{ f }`, VALUE caso contrário. */
 export type AnswerKind = "VALUE" | "FORMULA";
 
 /** Célula de gabarito (resultado esperado). Nunca enviada ao aluno. */
 export interface AnswerCell {
   kind: AnswerKind;
-  /** Valor esperado (ex.: "150") ou fórmula esperada (ex.: "=SOMA(A1:A3)"). */
-  expected: string;
+  /** Valor esperado tipado (ex.: 150, "Aprovado", true) ou fórmula esperada ({ f: "=SOMA(A1:A3)" }). */
+  expected: CellValue;
   /** Tolerância numérica absoluta para comparação por valor. */
   tolerance?: number;
 }
@@ -257,8 +274,8 @@ export interface Attempt {
   difficulty: Difficulty;
   /** Tentativa do nível à qual pertence (1 = primeira vez; 2+ = refazendo). */
   levelAttempt: number;
-  /** Fórmula ou valores enviados, por célula. */
-  submitted: Record<CellAddress, string>;
+  /** Fórmula ou valores enviados, por célula (tipados). */
+  submitted: Record<CellAddress, CellValue>;
   correct: boolean;
   /** 1, 2, 3… por (aluno, exercício). */
   attemptNumber: number;

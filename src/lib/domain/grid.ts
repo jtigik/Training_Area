@@ -1,4 +1,11 @@
-import type { AnswerCell, CellAddress, SpreadsheetGrid } from "./types";
+import type {
+  AnswerCell,
+  CellAddress,
+  CellScalar,
+  CellValue,
+  FormulaCell,
+  SpreadsheetGrid,
+} from "./types";
 
 export const MAX_ROWS = 50;
 export const MAX_COLS = 26;
@@ -27,18 +34,65 @@ export function isInsideGrid(address: CellAddress, grid: Pick<SpreadsheetGrid, "
   return !!pos && pos.row < grid.rows && pos.col < grid.cols;
 }
 
-export function isFormula(value: string): boolean {
-  return value.trim().startsWith("=") && value.trim().length > 1;
+export function isFormulaCell(value: CellValue | undefined): value is FormulaCell {
+  return typeof value === "object" && value !== null && typeof value.f === "string";
 }
 
-/** Interpreta o texto digitado no gabarito: "=..." é fórmula; o resto, valor. */
+/** Célula sem conteúdo (null, ausente ou texto vazio). */
+export function isEmptyCell(value: CellValue | undefined): boolean {
+  return (
+    value === null || value === undefined || (typeof value === "string" && value.trim() === "")
+  );
+}
+
+const NUMBER_RE = /^[-+]?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:[eE][-+]?\d+)?$/;
+const TRUE_RE = /^(true|verdadeiro)$/i;
+const FALSE_RE = /^(false|falso)$/i;
+
+/**
+ * Texto digitado no editor → célula tipada:
+ * vazio → null; `'texto` → string sem o apóstrofo (força texto, como no Excel);
+ * `=...` → `{ f }`; número (aceita vírgula decimal) → number; TRUE/FALSE
+ * (ou VERDADEIRO/FALSO) → boolean; o resto → string.
+ */
+export function parseCellInput(text: string): CellValue {
+  if (text.startsWith("'")) return text.slice(1);
+  const t = text.trim();
+  if (t === "") return null;
+  if (t.startsWith("=") && t.length > 1) return { f: t };
+  if (NUMBER_RE.test(t)) return Number(t.replace(",", "."));
+  if (TRUE_RE.test(t)) return true;
+  if (FALSE_RE.test(t)) return false;
+  return text;
+}
+
+/** Célula tipada → texto do editor (inverso de `parseCellInput`). */
+export function formatCellInput(value: CellValue | undefined): string {
+  if (value === null || value === undefined) return "";
+  if (isFormulaCell(value)) return value.f;
+  if (typeof value === "number") return String(value);
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  // Texto que seria lido como outro tipo ganha apóstrofo para continuar texto.
+  if (value === "") return "";
+  const parsed = parseCellInput(value);
+  return parsed === value ? value : `'${value}`;
+}
+
+/** Interpreta o texto digitado no gabarito: "=..." é fórmula; o resto, valor tipado. */
 export function inferAnswer(text: string, previous?: AnswerCell): AnswerCell | null {
-  const expected = text.trim();
-  if (expected === "") return null;
-  const kind = isFormula(expected) ? "FORMULA" : "VALUE";
-  return kind === "VALUE"
-    ? { kind, expected: text, tolerance: previous?.tolerance ?? 0 }
-    : { kind, expected: text };
+  const expected = parseCellInput(text);
+  if (isEmptyCell(expected)) return null;
+  return isFormulaCell(expected)
+    ? { kind: "FORMULA", expected }
+    : { kind: "VALUE", expected, tolerance: previous?.tolerance ?? 0 };
+}
+
+/** Normaliza um valor literal vindo de fora (ex.: formulário) para CellScalar. */
+export function toScalar(value: unknown): CellScalar {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
+    return value;
+  return String(value);
 }
 
 export function createEmptyGrid(rows = 10, cols = 6): SpreadsheetGrid {
@@ -50,7 +104,7 @@ export function normalizeGrid(grid: SpreadsheetGrid): SpreadsheetGrid {
   const cells: SpreadsheetGrid["cells"] = {};
   for (const [addr, cell] of Object.entries(grid.cells)) {
     if (!isInsideGrid(addr, grid)) continue;
-    if (cell.value.trim() === "" && !cell.locked) continue;
+    if (isEmptyCell(cell.value) && !cell.locked) continue;
     cells[addr] = { value: cell.value, locked: cell.locked };
   }
   return { rows: grid.rows, cols: grid.cols, cells };
@@ -80,10 +134,13 @@ export function validateAnswers(
       issues.push({ address, message: `${address} está fora da grade.` });
       continue;
     }
-    const expected = answer.expected.trim();
-    if (expected === "") {
+    const expected = answer.expected;
+    if (isEmptyCell(expected)) {
       issues.push({ address, message: `${address}: informe o resultado esperado.` });
-    } else if (answer.kind === "FORMULA" && !isFormula(expected)) {
+    } else if (
+      (answer.kind === "FORMULA") !== isFormulaCell(expected) ||
+      (isFormulaCell(expected) && !/^=.+/.test(expected.f.trim()))
+    ) {
       issues.push({ address, message: `${address}: a fórmula esperada deve começar com "=".` });
     }
     if (

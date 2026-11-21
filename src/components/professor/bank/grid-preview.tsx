@@ -1,4 +1,4 @@
-import { columnLabel, toAddress } from "@/lib/domain/grid";
+import { columnLabel, formatCellInput, toAddress } from "@/lib/domain/grid";
 import type { AnswerCell, CellAddress, SpreadsheetGrid } from "@/lib/domain/types";
 import { cn } from "@/lib/utils";
 
@@ -49,7 +49,7 @@ export function GridPreview({
                       answer && "bg-grid-target border-grid-target-border font-mono",
                     )}
                   >
-                    {answer ? answer.expected : (grid.cells[a]?.value ?? "")}
+                    {formatCellInput(answer ? answer.expected : grid.cells[a]?.value)}
                   </td>
                 );
               })}
