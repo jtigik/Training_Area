@@ -1,31 +1,524 @@
-// Schema inicial do Training Area (Sprint 1).
+// Modelo de dados do Training Area.
 // Prisma 7: o cliente é gerado em src/generated/prisma (não versionado)
 // e a conexão é configurada em prisma.config.ts.
+//
+// Convenções: modelos em PascalCase, campos em camelCase, tabelas/colunas em
+// snake_case (@@map/@map). Valores de enum são códigos estáveis; rótulos pt-BR
+// ficam em src/lib/domain.ts e src/lib/roles.ts.
+//
+// MULTI-TENANT: toda entidade de domínio tem `tenantId` (instituição).
+//   - Obrigatório em quase tudo. Consultas SEMPRE filtram por tenantId da sessão
+//     (src/server/auth/tenant.ts). Só SUPER_ADMIN atravessa tenants.
+//   - Exceções com tenantId NULO:
+//       * User com papel SUPER_ADMIN (CHECK users_tenant_matches_role);
+//       * Exercise/ContentSection GLOBAIS (banco inicial da plataforma):
+//         tenantId nulo  <=>  isGlobal = true (CHECK *_global_matches_tenant).
+//         Globais são lidos por todas as instituições e só o SUPER_ADMIN escreve.
+//   - Tabelas do Better Auth (sessions/accounts/verifications) não têm tenantId:
+//     o tenant vem do usuário dono da sessão.
+//
+// Restrições CHECK ficam no SQL das migrações (o Prisma não as modela).
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
   provider = "postgresql"
 }
 
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// SUPER_ADMIN: plataforma (sem tenant). INSTITUTION_ADMIN: admin da instituição.
 enum Role {
-  STUDENT
-  TEACHER
-  ADMIN
+  SUPER_ADMIN
+  INSTITUTION_ADMIN
+  PROFESSOR
+  ALUNO
 }
 
-model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String?  @map("password_hash")
-  role         Role     @default(STUDENT)
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+/// Níveis: Fundamental, Profissional, Avançado, Dashboard.
+enum KnowledgeLevel {
+  FUNDAMENTAL
+  PROFESSIONAL
+  ADVANCED
+  DASHBOARD
+}
 
+/// Muito fácil, Fácil, Médio, Difícil, Muito difícil.
+enum Difficulty {
+  VERY_EASY
+  EASY
+  MEDIUM
+  HARD
+  VERY_HARD
+}
+
+enum PublicationStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// Conceito formal do nível. ND e ED permitem refazer o nível.
+enum GradeConcept {
+  ND
+  ED
+  D
+  PD
+}
+
+enum LevelAttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+/// Feedback gerado por IA; o aluno só vê APPROVED.
+enum FeedbackStatus {
+  DRAFT
+  APPROVED
+  REJECTED
+}
+
+// ---------------------------------------------------------------------------
+// Instituições (tenants)
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id               String   @id @default(cuid())
+  name             String
+  /// Identificador legível e único (ex.: "escola-exemplo").
+  slug             String   @unique
+  /// Domínios de e-mail da instituição (ex.: ["escola.edu.br"]). Usados para
+  /// vincular um novo login Google/Microsoft ao tenant quando autoJoinByDomain.
+  emailDomains     String[] @map("email_domains")
+  /// Novo usuário com e-mail de um dos domínios entra como ALUNO automaticamente.
+  autoJoinByDomain Boolean  @default(false) @map("auto_join_by_domain")
+  locale           String   @default("pt-BR")
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  users            User[]
+  invitations      Invitation[]
+  classrooms       Classroom[]
+  classroomMembers ClassroomMember[]
+  contentSections  ContentSection[]
+  exerciseSets     ExerciseSet[]
+  levels           Level[]
+  exercises        Exercise[]
+  quotas           ExerciseQuota[]
+  levelAttempts    LevelAttempt[]
+  exerciseAttempts ExerciseAttempt[]
+  feedbacks        Feedback[]
+
+  @@map("tenants")
+}
+
+// ---------------------------------------------------------------------------
+// Identidade e autenticação (Better Auth: user/session/account/verification)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String   @id @default(cuid())
+  /// Nulo apenas para SUPER_ADMIN (CHECK no banco).
+  tenantId      String?  @map("tenant_id")
+  /// Único na plataforma: uma pessoa pertence a uma instituição (premissa).
+  email         String   @unique
+  name          String
+  emailVerified Boolean  @default(false) @map("email_verified")
+  image         String?
+  role          Role     @default(ALUNO)
+  /// Usuário desativado não autentica e tem as sessões encerradas (TA-006).
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant               Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  sessions             Session[]
+  accounts             Account[]
+  invitationsSent      Invitation[]      @relation("InvitationInviter")
+  classroomMemberships ClassroomMember[]
+  classroomsTaught     Classroom[]       @relation("ClassroomTeacher")
+  authoredSections     ContentSection[]  @relation("SectionAuthor")
+  authoredSets         ExerciseSet[]     @relation("ExerciseSetAuthor")
+  authoredExercises    Exercise[]        @relation("ExerciseAuthor")
+  quotas               ExerciseQuota[]   @relation("QuotaStudent")
+  levelAttempts        LevelAttempt[]    @relation("LevelAttemptStudent")
+  gradedLevelAttempts  LevelAttempt[]    @relation("LevelAttemptGrader")
+  exerciseAttempts     ExerciseAttempt[]
+  feedbacks            Feedback[]        @relation("FeedbackStudent")
+  reviewedFeedbacks    Feedback[]        @relation("FeedbackReviewer")
+
+  @@index([tenantId, role])
   @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Contas por provedor: "google", "microsoft" e, só em dev/teste, "credential"
+/// (e-mail e senha; hash scrypt do Better Auth em `password`).
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String    @map("user_id")
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+/// Convite para entrar numa instituição com um papel (TA-007). No primeiro
+/// login OAuth com este e-mail, o usuário é criado no tenant/papel do convite.
+model Invitation {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  email       String
+  role        Role
+  invitedById String?   @map("invited_by_id")
+  expiresAt   DateTime  @map("expires_at")
+  acceptedAt  DateTime? @map("accepted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy User?  @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  /// Um convite pendente por e-mail na instituição.
+  @@unique([tenantId, email], where: { acceptedAt: null })
+  @@index([email])
+  @@map("invitations")
+}
+
+// ---------------------------------------------------------------------------
+// Turmas
+// ---------------------------------------------------------------------------
+
+model Classroom {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  /// Código de convite, único na instituição.
+  code      String?
+  teacherId String?  @map("teacher_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teacher User?             @relation("ClassroomTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+  members ClassroomMember[]
+  quotas  ExerciseQuota[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, teacherId])
+  @@map("classrooms")
+}
+
+model ClassroomMember {
+  tenantId    String   @map("tenant_id")
+  classroomId String   @map("classroom_id")
+  userId      String   @map("user_id")
+  joinedAt    DateTime @default(now()) @map("joined_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([classroomId, userId])
+  @@index([tenantId, userId])
+  @@map("classroom_members")
+}
+
+// ---------------------------------------------------------------------------
+// Conteúdo (E3)
+// ---------------------------------------------------------------------------
+
+model ContentSection {
+  id          String            @id @default(cuid())
+  /// Nulo = conteúdo GLOBAL da plataforma (isGlobal = true).
+  tenantId    String?           @map("tenant_id")
+  isGlobal    Boolean           @default(false) @map("is_global")
+  title       String
+  slug        String
+  /// Corpo em Markdown.
+  body        String
+  /// Nulo = conteúdo transversal (TA-012).
+  level       KnowledgeLevel?
+  position    Int               @default(0)
+  status      PublicationStatus @default(DRAFT)
+  publishedAt DateTime?         @map("published_at")
+  archivedAt  DateTime?         @map("archived_at")
+  authorId    String?           @map("author_id")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  author User?   @relation("SectionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, slug])
+  /// Slug único também entre os globais (NULL não colide em índice único).
+  @@unique([slug], map: "content_sections_global_slug_key", where: { tenantId: null })
+  @@index([tenantId, status, level, position])
+  @@map("content_sections")
+}
+
+// ---------------------------------------------------------------------------
+// Exercícios (E4)
+// ---------------------------------------------------------------------------
+
+/// Banco de exercícios. tenantId nulo = exercício GLOBAL (banco inicial), usável
+/// por todas as instituições; só SUPER_ADMIN cria/edita globais.
+model Exercise {
+  id             String            @id @default(cuid())
+  tenantId       String?           @map("tenant_id")
+  isGlobal       Boolean           @default(false) @map("is_global")
+  title          String
+  /// Enunciado em Markdown.
+  statement      String
+  /// Grade inicial: { cells: { "A1": { value?: string|number|boolean, formula?: string, locked?: boolean } } }.
+  initialSheet   Json              @map("initial_sheet")
+  /// Gabarito: [{ cell: "B4", value?: ..., formula?: "=SOMA(B1:B3)", tolerance?: number }].
+  /// Pelo menos uma célula (TA-016). Nunca enviado ao aluno.
+  expectedResult Json              @map("expected_result")
+  hint           String?
+  level          KnowledgeLevel
+  difficulty     Difficulty
+  status         PublicationStatus @default(DRAFT)
+  authorId       String?           @map("author_id")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  tenant   Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  author   User?             @relation("ExerciseAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  attempts ExerciseAttempt[]
+
+  @@index([tenantId, status, level, difficulty])
+  @@index([level, difficulty], map: "exercises_global_pool_idx", where: { tenantId: null })
+  @@map("exercises")
+}
+
+/// Conjunto/trilha de uma instituição.
+model ExerciseSet {
+  id           String            @id @default(cuid())
+  tenantId     String            @map("tenant_id")
+  name         String
+  description  String?
+  /// Dificuldades participantes (TA-015).
+  difficulties Difficulty[]
+  status       PublicationStatus @default(DRAFT)
+  publishedAt  DateTime?         @map("published_at")
+  authorId     String?           @map("author_id")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  author User?   @relation("ExerciseSetAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  levels Level[]
+
+  @@index([tenantId, status])
+  @@map("exercise_sets")
+}
+
+/// Nível participante de um conjunto (TA-014). Pool de exercícios do nível:
+/// exercícios PUBLISHED com o mesmo `knowledgeLevel`, de dificuldade incluída no
+/// conjunto, cujo tenantId é o do conjunto OU nulo (globais).
+model Level {
+  id             String         @id @default(cuid())
+  tenantId       String         @map("tenant_id")
+  setId          String         @map("set_id")
+  knowledgeLevel KnowledgeLevel @map("knowledge_level")
+  position       Int            @default(0)
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  set           ExerciseSet     @relation(fields: [setId], references: [id], onDelete: Cascade)
+  quotas        ExerciseQuota[]
+  levelAttempts LevelAttempt[]
+
+  @@unique([setId, knowledgeLevel])
+  @@index([tenantId])
+  @@map("levels")
+}
+
+/// Quantidade de exercícios do nível (TA-015/TA-020). Escopo: padrão do nível
+/// (classroomId e studentId nulos), por turma ou por aluno (no máximo um — CHECK).
+/// `difficulty` nulo = vale para o nível inteiro. Precedência: aluno > turma >
+/// padrão; nível+dificuldade > nível (src/lib/quota.ts).
+/// `scopeKey` = "<escopo>|<dificuldade>" (ex. "default|*", "classroom:<id>|EASY")
+/// existe para a unicidade; gere com buildQuotaScopeKey() — CHECK garante coerência.
+model ExerciseQuota {
+  id          String      @id @default(cuid())
+  tenantId    String      @map("tenant_id")
+  levelId     String      @map("level_id")
+  difficulty  Difficulty?
+  classroomId String?     @map("classroom_id")
+  studentId   String?     @map("student_id")
+  scopeKey    String      @map("scope_key")
+  /// Maior que zero (CHECK).
+  quantity    Int
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  level     Level      @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  classroom Classroom? @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  student   User?      @relation("QuotaStudent", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([levelId, scopeKey])
+  @@index([tenantId])
+  @@index([classroomId])
+  @@index([studentId])
+  @@map("exercise_quotas")
+}
+
+// ---------------------------------------------------------------------------
+// Prática, conceito e feedback (E5–E7)
+// ---------------------------------------------------------------------------
+
+/// Tentativa do aluno em um NÍVEL, com conceito formal (ND/ED/D/PD).
+/// Refazer: nova tentativa (attemptNumber + 1) só se a anterior terminou com
+/// ND ou ED (canRetryLevel em src/lib/grading.ts).
+model LevelAttempt {
+  id             String             @id @default(cuid())
+  tenantId       String             @map("tenant_id")
+  studentId      String             @map("student_id")
+  levelId        String             @map("level_id")
+  /// 1, 2, 3...
+  attemptNumber  Int                @map("attempt_number")
+  status         LevelAttemptStatus @default(IN_PROGRESS)
+  /// Nulo até a conclusão/avaliação.
+  concept        GradeConcept?
+  /// Snapshot da cota resolvida ao iniciar.
+  requiredCount  Int?               @map("required_count")
+  completedCount Int                @default(0) @map("completed_count")
+  correctCount   Int                @default(0) @map("correct_count")
+  startedAt      DateTime           @default(now()) @map("started_at")
+  completedAt    DateTime?          @map("completed_at")
+  gradedAt       DateTime?          @map("graded_at")
+  /// Professor que atribuiu/confirmou o conceito (nulo = automático).
+  gradedById     String?            @map("graded_by_id")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  student          User              @relation("LevelAttemptStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  level            Level             @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  gradedBy         User?             @relation("LevelAttemptGrader", fields: [gradedById], references: [id], onDelete: SetNull)
+  exerciseAttempts ExerciseAttempt[]
+  feedback         Feedback?
+
+  @@unique([studentId, levelId, attemptNumber])
+  /// No máximo uma tentativa em andamento por aluno e nível.
+  @@unique([studentId, levelId], map: "level_attempts_one_in_progress_key", where: { status: "IN_PROGRESS" })
+  @@index([tenantId, levelId, status])
+  @@map("level_attempts")
+}
+
+/// Envio de resposta a um exercício dentro de uma LevelAttempt (testes locais
+/// na grade não geram registro — TA-029).
+model ExerciseAttempt {
+  id              String     @id @default(cuid())
+  tenantId        String     @map("tenant_id")
+  studentId       String     @map("student_id")
+  levelAttemptId  String     @map("level_attempt_id")
+  exerciseId      String     @map("exercise_id")
+  /// Denormalizado para filtros (TA-030).
+  difficulty      Difficulty
+  /// Células enviadas: { "B4": { formula?: "=SOMA(B1:B3)", value?: 42 } }.
+  submission      Json
+  /// Correção oficial (servidor).
+  isCorrect       Boolean    @map("is_correct")
+  /// Correção do cliente; divergência é registrada (TA-022).
+  clientIsCorrect Boolean?   @map("client_is_correct")
+  /// Classificação do erro (ex.: WRONG_FUNCTION, WRONG_RANGE).
+  errorType       String?    @map("error_type")
+  /// 1, 2, 3... por (tentativa de nível, exercício).
+  attemptNumber   Int        @map("attempt_number")
+  createdAt       DateTime   @default(now()) @map("created_at")
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  student      User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  levelAttempt LevelAttempt @relation(fields: [levelAttemptId], references: [id], onDelete: Cascade)
+  exercise     Exercise     @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+
+  @@unique([levelAttemptId, exerciseId, attemptNumber])
+  @@index([tenantId, studentId, createdAt])
+  @@index([exerciseId])
+  @@map("exercise_attempts")
+}
+
+/// Feedback de uma tentativa de nível, gerado por IA e validado pelo professor.
+/// O aluno só lê APPROVED (getApprovedFeedbackForStudent). Texto exibido =
+/// editedText ?? aiText. aiText é imutável após a geração.
+model Feedback {
+  id              String         @id @default(cuid())
+  tenantId        String         @map("tenant_id")
+  studentId       String         @map("student_id")
+  levelAttemptId  String         @unique @map("level_attempt_id")
+  status          FeedbackStatus @default(DRAFT)
+  aiText          String         @map("ai_text")
+  /// Edição do professor (nula = aprovado sem edição).
+  editedText      String?        @map("edited_text")
+  /// Modelo/versão do prompt usados na geração (auditoria).
+  aiModel         String?        @map("ai_model")
+  promptVersion   String?        @map("prompt_version")
+  /// Métricas de entrada (taxa de acerto, dificuldades, erros frequentes...).
+  metrics         Json
+  reviewedById    String?        @map("reviewed_by_id")
+  reviewedAt      DateTime?      @map("reviewed_at")
+  rejectionReason String?        @map("rejection_reason")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  student      User         @relation("FeedbackStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  levelAttempt LevelAttempt @relation(fields: [levelAttemptId], references: [id], onDelete: Cascade)
+  reviewedBy   User?        @relation("FeedbackReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([studentId, status])
+  @@map("feedbacks")
 }
