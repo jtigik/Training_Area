@@ -1,9 +1,11 @@
 import { gradeSubmission } from "@/lib/formula/check";
 import type { StudentApi } from "../client";
-import { SESSION_COOKIE } from "../session";
+import { MOCK_SESSION_COOKIE } from "../session";
 import {
   ApiError,
+  bestOf,
   DIFFICULTY_LABELS,
+  isPassingConcept,
   LEVEL_LABELS,
   type AttemptResult,
   type Concept,
@@ -42,9 +44,13 @@ export interface MockState {
   completedAt: Partial<Record<KnowledgeLevel, string>>;
   /** Attempts archived by "Refazer nível". */
   archived?: AttemptLog[];
+  /** Current run per level (starts at 1). */
+  runs?: Partial<Record<KnowledgeLevel, number>>;
+  /** Best concept per level across runs (the one that counts). */
+  best?: Partial<Record<KnowledgeLevel, Concept>>;
 }
 
-const STORAGE_KEY = "ta.mock.v2";
+const STORAGE_KEY = "ta.mock.v3";
 const LATENCY_MS = process.env.NODE_ENV === "test" ? 0 : 250;
 
 const emptyState = (): MockState => ({ userId: null, attempts: [], completedAt: {} });
@@ -77,8 +83,8 @@ function setSessionCookie(value: string | null) {
   if (typeof document === "undefined") return;
   // Mock only. The real backend sets an httpOnly, Secure, SameSite cookie (TA-033).
   document.cookie = value
-    ? `${SESSION_COOKIE}=${value}; path=/; SameSite=Lax`
-    : `${SESSION_COOKIE}=; path=/; Max-Age=0; SameSite=Lax`;
+    ? `${MOCK_SESSION_COOKIE}=${value}; path=/; SameSite=Lax`
+    : `${MOCK_SESSION_COOKIE}=; path=/; Max-Age=0; SameSite=Lax`;
 }
 
 function requireUser(state: MockState): SessionUser {
@@ -90,12 +96,12 @@ function requireUser(state: MockState): SessionUser {
 /** Dev/test helper: sign in as a given mock user (e.g. the teacher, to see the 403 state). */
 export function mockSignInAs(userId: string) {
   save({ ...load(), userId });
-  setSessionCookie(`mock.${MOCK_USERS.find((u) => u.id === userId)?.role ?? "STUDENT"}.${userId}`);
+  setSessionCookie(`mock.${MOCK_USERS.find((u) => u.id === userId)?.role ?? "ALUNO"}.${userId}`);
 }
 
 function requireStudent(state: MockState): SessionUser {
   const user = requireUser(state);
-  if (user.role !== "STUDENT") {
+  if (user.role !== "ALUNO") {
     throw new ApiError(403, "FORBIDDEN", "Esta área é exclusiva para alunos.");
   }
   return user;
@@ -125,11 +131,17 @@ function progressFor(state: MockState, level: KnowledgeLevel): LevelProgress {
 
 const MOCK_ORDER = MOCK_LEVELS.map((l) => l.level);
 
+const runOf = (state: MockState, level: KnowledgeLevel) => state.runs?.[level] ?? 1;
+const bestConceptOf = (state: MockState, level: KnowledgeLevel) => state.best?.[level] ?? null;
+
+/** PO rule: the next level unlocks only when the previous level's BEST concept is D or PD. */
 function levelStatus(state: MockState, level: KnowledgeLevel): LevelStatus {
   const index = MOCK_ORDER.indexOf(level);
+  if (index > 0 && !isPassingConcept(bestConceptOf(state, MOCK_ORDER[index - 1]))) return "LOCKED";
   if (state.completedAt[level]) return "COMPLETED";
-  if (index > 0 && !state.completedAt[MOCK_ORDER[index - 1]]) return "LOCKED";
-  return progressFor(state, level).done > 0 ? "IN_PROGRESS" : "NOT_STARTED";
+  return progressFor(state, level).done > 0 || runOf(state, level) > 1
+    ? "IN_PROGRESS"
+    : "NOT_STARTED";
 }
 
 function buildTrail(state: MockState): Trail {
@@ -142,6 +154,8 @@ function buildTrail(state: MockState): Trail {
       progress: progressFor(state, def.level),
       completedAt: state.completedAt[def.level] ?? null,
       concept: state.completedAt[def.level] ? scoreOf(state, def.level).concept : null,
+      bestConcept: bestConceptOf(state, def.level),
+      run: runOf(state, def.level),
       sections: MOCK_SECTIONS.filter((s) => s.level === def.level).map(summary),
       exercises:
         status === "LOCKED"
@@ -159,7 +173,7 @@ function buildTrail(state: MockState): Trail {
     };
   });
   return {
-    set: { id: "set-piloto", name: "Excel do zero ao dashboard (piloto)" },
+    set: { id: "set-piloto", name: "Excel do zero ao avançado (piloto)" },
     levels,
     generalSections: MOCK_SECTIONS.filter((s) => s.level === null).map(summary),
   };
@@ -171,7 +185,11 @@ function summary({ id, title, order, level, readMinutes }: (typeof MOCK_SECTIONS
 
 function requireUnlocked(state: MockState, level: KnowledgeLevel) {
   if (levelStatus(state, level) === "LOCKED") {
-    throw new ApiError(403, "LEVEL_LOCKED", "Conclua o nível anterior para liberar este conteúdo.");
+    throw new ApiError(
+      403,
+      "LEVEL_LOCKED",
+      "Alcance o conceito D ou PD no nível anterior para liberar este conteúdo.",
+    );
   }
 }
 
@@ -257,6 +275,8 @@ function buildFeedback(state: MockState, level: KnowledgeLevel): LevelFeedback {
     level,
     completedAt,
     concept,
+    bestConcept: bestOf(bestConceptOf(state, level), concept) ?? concept,
+    run: runOf(state, level),
     status: published ? "PUBLISHED" : "IN_REVIEW",
     score: { correct, total, percent },
     attempts: items.reduce((n, i) => n + i.attempts, 0),
@@ -281,7 +301,7 @@ function buildFeedback(state: MockState, level: KnowledgeLevel): LevelFeedback {
     nextLevel: next
       ? {
           level: next.level,
-          unlocked: true,
+          unlocked: isPassingConcept(bestOf(bestConceptOf(state, level), concept)),
           exerciseCount: next.required,
           summary: next.description,
         }
@@ -360,22 +380,39 @@ export const mockApi: StudentApi = {
     requireStudent(state);
     const e = getMockExercise(state, id);
     // "Server-side" grading against the original sheet (locked cells can't be tampered with).
+    if (attemptsOf(state, id).length > 0) {
+      throw new ApiError(409, "ALREADY_SUBMITTED", "Você já enviou a resposta deste exercício.");
+    }
     const result = gradeSubmission(e.sheet.cells, e.targetCell, submission, e.expected, e.options);
-    const countable = result.code !== "EMPTY_SUBMISSION";
-    const next: MockState = countable
-      ? {
-          ...state,
-          attempts: [
-            ...state.attempts,
-            { exerciseId: id, submission, correct: result.correct, at: new Date().toISOString() },
-          ],
-        }
-      : state;
+    // Not recorded as attempts (Backend 2: 422, the UI blocks them before sending).
+    if (result.code === "EMPTY_SUBMISSION" || result.code === "LIMIT_EXCEEDED") {
+      throw new ApiError(
+        422,
+        result.code,
+        result.code === "EMPTY_SUBMISSION"
+          ? "Digite uma fórmula antes de enviar."
+          : "A fórmula ou a planilha excede os limites permitidos.",
+      );
+    }
+    const next: MockState = {
+      ...state,
+      attempts: [
+        ...state.attempts,
+        { exerciseId: id, submission, correct: result.correct, at: new Date().toISOString() },
+      ],
+    };
     const progress = progressFor(next, e.level);
     let levelCompleted = false;
     if (!next.completedAt[e.level] && progress.done >= progress.required) {
       next.completedAt = { ...next.completedAt, [e.level]: new Date().toISOString() };
       levelCompleted = true;
+    }
+    let concepts: { concept: Concept; bestConcept: Concept } | null = null;
+    if (levelCompleted) {
+      const { concept } = scoreOf(next, e.level);
+      const best = bestOf(bestConceptOf(next, e.level), concept)!;
+      next.best = { ...next.best, [e.level]: best };
+      concepts = { concept, bestConcept: best };
     }
     save(next);
     const actual = result.actual;
@@ -393,6 +430,19 @@ export const mockApi: StudentApi = {
       levelProgress: progress,
       levelStatus: levelStatus(next, e.level),
       levelCompleted,
+      ...(concepts ?? {}),
+    };
+  },
+
+  async getLoginOptions() {
+    await delay();
+    return {
+      providers: [
+        { id: "google", label: "Google" },
+        { id: "microsoft", label: "Microsoft" },
+      ],
+      emailPassword: false,
+      oauthMode: "mock",
     };
   },
 
@@ -405,15 +455,15 @@ export const mockApi: StudentApi = {
     await delay();
     const state = load();
     requireStudent(state);
-    if (!state.completedAt[level]) {
-      throw new ApiError(409, "LEVEL_NOT_COMPLETED", "Este nível ainda não foi concluído.");
+    if (levelStatus(state, level) === "LOCKED") {
+      throw new ApiError(403, "LEVEL_LOCKED", "Este nível está bloqueado.");
     }
-    const { concept } = scoreOf(state, level);
-    if (concept !== "ND" && concept !== "ED") {
+    const best = bestConceptOf(state, level);
+    if (!state.completedAt[level] || isPassingConcept(best)) {
       throw new ApiError(
         409,
-        "RETAKE_NOT_ALLOWED",
-        `Só é possível refazer níveis com conceito ND ou ED (${LEVEL_LABELS[level]}: ${concept}).`,
+        "LEVEL_NOT_REDOABLE",
+        `Só é possível refazer níveis concluídos com conceito ND ou ED (${LEVEL_LABELS[level]}).`,
       );
     }
     const ids = new Set(levelDef(level).exerciseIds);
@@ -422,6 +472,7 @@ export const mockApi: StudentApi = {
     save({
       ...state,
       completedAt,
+      runs: { ...state.runs, [level]: runOf(state, level) + 1 },
       attempts: state.attempts.filter((a) => !ids.has(a.exerciseId)),
       archived: [...(state.archived ?? []), ...state.attempts.filter((a) => ids.has(a.exerciseId))],
     });

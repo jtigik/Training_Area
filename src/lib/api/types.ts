@@ -11,26 +11,37 @@
  */
 import type { CellInput } from "@/lib/formula/engine";
 
+/**
+ * Base path of the student API (Backend 2). Backend 1's RBAC protects /api/aluno/*
+ * for ALUNO users, so every student endpoint lives under it.
+ */
+export const STUDENT_API = "/api/aluno";
+
 // ---------- Shared enums (mirror Prisma) ----------
-export type Role = "STUDENT" | "TEACHER" | "ADMIN";
-export type KnowledgeLevel = "FUNDAMENTAL" | "PROFESSIONAL" | "ADVANCED" | "DASHBOARD";
+/** Mirrors Backend 1's Prisma Role (src/lib/roles.ts on feat/auth-modelo). */
+export type Role = "SUPER_ADMIN" | "INSTITUTION_ADMIN" | "PROFESSOR" | "ALUNO";
+/** Level enum as the backend may send it (DASHBOARD exists in the schema but is v1.1). */
+export type ApiKnowledgeLevel = "FUNDAMENTAL" | "PROFESSIONAL" | "ADVANCED" | "DASHBOARD";
+/**
+ * Levels of the MVP. DASHBOARD moved to v1.1 and must not appear anywhere in the
+ * student UI (not even as "em breve"): the API client drops it (see isMvpLevel).
+ */
+export type KnowledgeLevel = Exclude<ApiKnowledgeLevel, "DASHBOARD">;
 export type Difficulty = "VERY_EASY" | "EASY" | "MEDIUM" | "HARD" | "VERY_HARD";
 /** Prisma LevelProgressStatus + LOCKED (derived: previous level not completed). */
 export type LevelStatus = "LOCKED" | "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
 export type ExerciseStatus = "NOT_STARTED" | "CORRECT" | "INCORRECT";
 
-export const LEVEL_ORDER: KnowledgeLevel[] = [
-  "FUNDAMENTAL",
-  "PROFESSIONAL",
-  "ADVANCED",
-  "DASHBOARD",
-];
+export const LEVEL_ORDER: KnowledgeLevel[] = ["FUNDAMENTAL", "PROFESSIONAL", "ADVANCED"];
+
+export function isMvpLevel(level: unknown): level is KnowledgeLevel {
+  return typeof level === "string" && (LEVEL_ORDER as string[]).includes(level);
+}
 
 export const LEVEL_LABELS: Record<KnowledgeLevel, string> = {
   FUNDAMENTAL: "Fundamental",
   PROFESSIONAL: "Profissional",
   ADVANCED: "Avançado",
-  DASHBOARD: "Dashboard",
 };
 
 /** URL segment for each level (pt-BR, as in the wireframes). */
@@ -38,7 +49,6 @@ export const LEVEL_SLUGS: Record<KnowledgeLevel, string> = {
   FUNDAMENTAL: "fundamental",
   PROFESSIONAL: "profissional",
   ADVANCED: "avancado",
-  DASHBOARD: "dashboard",
 };
 
 export function levelFromSlug(slug: string): KnowledgeLevel | null {
@@ -83,12 +93,22 @@ export const CONCEPT_LABELS: Record<Concept, string> = {
   PD: "Plenamente desenvolvido",
 };
 
+/** "Refazer nível" is offered (unlimited) while the BEST concept is ND or ED. */
 export function canRetake(concept: Concept | null | undefined): boolean {
   return concept === "ND" || concept === "ED";
 }
 
-/** Levels released in the MVP. DASHBOARD moved to v1.1 and is shown as "Em breve". */
-export const COMING_SOON_LEVELS: KnowledgeLevel[] = ["DASHBOARD"];
+/** Concepts that unlock the next level (PO rule): ND/ED keep it locked. */
+export function isPassingConcept(concept: Concept | null | undefined): boolean {
+  return concept === "D" || concept === "PD";
+}
+
+const CONCEPT_RANK: Record<Concept, number> = { ND: 0, ED: 1, D: 2, PD: 3 };
+export function bestOf(a: Concept | null, b: Concept | null): Concept | null {
+  if (!a) return b;
+  if (!b) return a;
+  return CONCEPT_RANK[b] > CONCEPT_RANK[a] ? b : a;
+}
 
 export const EXERCISE_STATUS_LABELS: Record<ExerciseStatus, string> = {
   NOT_STARTED: "Não iniciado",
@@ -113,33 +133,49 @@ export const AUTH_PROVIDER_LABELS: Record<AuthProvider, string> = {
 export type LoginStart =
   { kind: "redirect"; url: string } | { kind: "signed-in"; user: SessionUser };
 
-/** Tenant (instituição) of the user — the system is multi-tenant. */
-export interface Institution {
-  id: string;
-  name: string;
+/** GET /api/login-options (public) -> enabled providers (Backend 1). */
+export interface LoginOptions {
+  providers: { id: AuthProvider; label: string }[];
+  /** Dev/test only; the student UI never shows an e-mail/password form. */
+  emailPassword: boolean;
+  oauthMode: string;
 }
 
-/** GET /api/auth/get-session -> 200 { user, session } | 200 null when signed out */
+/** Tenant (instituição) of the user — the system is multi-tenant. */
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/**
+ * GET /api/me -> 200 { user: SessionUser } | 401 (Backend 1).
+ * `tenantId` and `tenant` are null only for SUPER_ADMIN (Backend 1 8d3b381: /api/me and
+ * get-session both include `tenant`).
+ */
 export interface SessionUser {
   id: string;
   name: string;
   email: string;
   role: Role;
-  institution: Institution;
+  tenantId: string | null;
+  tenant: Tenant | null;
 }
 
-/** Home of each role after login (design/wireframes/login.html). */
+/** Home of each role after login — routes agreed with QA/FE2 (wt-qa e2e/support/routes.ts). */
 export const ROLE_HOME: Record<Role, string> = {
-  STUDENT: "/aluno",
-  TEACHER: "/professor/resultados",
-  ADMIN: "/admin/usuarios",
+  ALUNO: "/aluno",
+  PROFESSOR: "/professor/resultados",
+  INSTITUTION_ADMIN: "/admin/usuarios",
+  SUPER_ADMIN: "/superadmin/instituicoes",
 };
 
-/** Route prefixes each role may access (used to validate ?voltar=). */
+/** Route prefixes each role may access (used to validate ?callbackUrl=). */
 export const ROLE_PREFIXES: Record<Role, string[]> = {
-  STUDENT: ["/aluno"],
-  TEACHER: ["/professor"],
-  ADMIN: ["/admin"],
+  ALUNO: ["/aluno"],
+  PROFESSOR: ["/professor"],
+  INSTITUTION_ADMIN: ["/admin"],
+  SUPER_ADMIN: ["/superadmin"],
 };
 
 /** POST /api/auth/sign-out -> 200 */
@@ -154,7 +190,7 @@ export interface SectionSummary {
   readMinutes?: number;
 }
 
-/** GET /api/student/sections/:id -> 200 Section */
+/** GET {STUDENT_API}/sections/:id -> 200 Section */
 export interface Section extends SectionSummary {
   /** Markdown body (TA-011) */
   body: string;
@@ -185,13 +221,17 @@ export interface TrailLevel {
   /** At most `progress.required` items (TA-020). Empty when LOCKED. */
   exercises: ExerciseSummary[];
   completedAt: string | null;
-  /** Set once the level is COMPLETED. */
+  /** Concept of the current run, set once it is COMPLETED. */
   concept: Concept | null;
+  /** Best concept across all runs; this is the one that counts (and unlocks the next level). */
+  bestConcept: Concept | null;
+  /** Current run, starting at 1 ("Refazer nível" starts a new one). */
+  run: number;
 }
 
-/** POST /api/student/levels/:level/redo -> 200 TrailLevel (only when concept is ND or ED; 409 otherwise) */
+/** POST {STUDENT_API}/levels/:level/redo -> 200 TrailLevel of the new run | 409 LEVEL_NOT_REDOABLE | 403 LEVEL_LOCKED */
 
-/** GET /api/student/trail -> 200 Trail | 200 { set: null } when nothing is published */
+/** GET {STUDENT_API}/trail -> 200 Trail | 200 { set: null } when nothing is published */
 export interface Trail {
   set: { id: string; name: string } | null;
   levels: TrailLevel[];
@@ -200,7 +240,7 @@ export interface Trail {
 }
 
 // ---------- Backend 2: exercises & attempts ----------
-/** GET /api/student/exercises/:id -> 200 Exercise (never includes the answer key) */
+/** GET {STUDENT_API}/exercises/:id -> 200 Exercise (never includes the answer key) */
 export interface Exercise {
   id: string;
   level: KnowledgeLevel;
@@ -215,6 +255,7 @@ export interface Exercise {
   /** Content section recommended for this exercise, if any. */
   relatedSection: { id: string; title: string } | null;
   status: ExerciseStatus;
+  /** 0 or 1: the final submission is unique per exercise in each run (409 ALREADY_SUBMITTED). */
   attempts: number;
   /** Last submitted formula, to restore the cell when reopening. */
   lastSubmission: string | null;
@@ -222,7 +263,7 @@ export interface Exercise {
   position: { index: number; total: number; nextExerciseId: string | null };
 }
 
-/** POST /api/student/exercises/:id/attempts body: AttemptRequest -> 201 AttemptResult */
+/** POST {STUDENT_API}/exercises/:id/attempts body: AttemptRequest -> 201 AttemptResult */
 export interface AttemptRequest {
   /** Content typed in the target cell, e.g. "=SOMA(B2:B6)". */
   submission: string;
@@ -244,6 +285,8 @@ export type FeedbackCode =
   | "PARSE_ERROR"
   | "EMPTY_SUBMISSION"
   | "LIMIT_EXCEEDED"
+  | "INPUT_INSENSITIVE"
+  | "VOLATILE_FUNCTION"
   | "INVALID_EXERCISE";
 
 export interface AttemptResult {
@@ -259,10 +302,13 @@ export interface AttemptResult {
   levelStatus: LevelStatus;
   /** True when this attempt completed the level (TA-025). */
   levelCompleted: boolean;
+  /** Present when levelCompleted. */
+  concept?: Concept;
+  bestConcept?: Concept;
 }
 
 /**
- * GET /api/student/levels/:level/feedback -> 200 LevelFeedback | 404 if level not completed.
+ * GET {STUDENT_API}/levels/:level/feedback -> 200 LevelFeedback | 404 if level not completed.
  * The personalised text is AI-generated and only visible after the teacher approves it:
  * while status is IN_REVIEW, `message` is null (score/summary are still returned).
  */
@@ -271,7 +317,11 @@ export type FeedbackStatus = "IN_REVIEW" | "PUBLISHED";
 export interface LevelFeedback {
   level: KnowledgeLevel;
   completedAt: string;
+  /** Concept of this (latest) run. */
   concept: Concept;
+  /** Best concept across runs (the one that counts). */
+  bestConcept: Concept;
+  run: number;
   status: FeedbackStatus;
   score: { correct: number; total: number; percent: number };
   /** Total submitted attempts in the level. */

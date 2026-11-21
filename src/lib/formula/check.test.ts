@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gradeSubmission, valueMatches } from "./check";
+import { gradeSubmission, valueMatches, volatileFunctions } from "./check";
 
 const sheet = { A1: 10, A2: 20, A3: 30, B1: "Aprovado" };
 
@@ -59,5 +59,19 @@ describe("gradeSubmission – limits", () => {
     const long = "=A1+A2+A3" + "+0".repeat(1000);
     const r = gradeSubmission({ A1: 10, A2: 20, A3: 30 }, "A4", long, 60);
     expect(r).toMatchObject({ correct: false, code: "LIMIT_EXCEEDED" });
+  });
+});
+
+describe("volatile functions", () => {
+  it("detects RAND/NOW/TODAY and their pt-BR names", () => {
+    expect(volatileFunctions("=ALEATÓRIO()*0+60")).toEqual(["RAND"]);
+    expect(volatileFunctions("=ALEATÓRIOENTRE(1;2)+HOJE()")).toEqual(["RANDBETWEEN", "TODAY"]);
+    expect(volatileFunctions("=agora()")).toEqual(["NOW"]);
+    expect(volatileFunctions("=SOMA(A1:A3)")).toEqual([]);
+    expect(volatileFunctions("HOJE")).toEqual([]);
+  });
+  it("grades answers with volatile functions as VOLATILE_FUNCTION", () => {
+    const r = gradeSubmission({ A1: 10, A2: 20, A3: 30 }, "A4", "=SOMA(A1:A3)+HOJE()*0", 60);
+    expect(r).toMatchObject({ correct: false, code: "VOLATILE_FUNCTION" });
   });
 });

@@ -14,8 +14,12 @@ describe("mock student API", () => {
     const start = await login();
     expect(start.kind).toBe("signed-in");
     const me = await mockApi.me();
-    expect(me).toMatchObject({ role: "STUDENT", institution: { name: "Instituto Exemplo" } });
-    expect(document.cookie).toContain("better-auth.session_token=mock.STUDENT.");
+    expect(me).toMatchObject({
+      role: "ALUNO",
+      tenantId: "inst-exemplo",
+      tenant: { name: "Instituto Exemplo" },
+    });
+    expect(document.cookie).toContain("better-auth.session_token=mock.ALUNO.");
   });
 
   it("forbids the student API for other roles", async () => {
@@ -26,7 +30,7 @@ describe("mock student API", () => {
   it("requires a session", async () => {
     await expect(mockApi.getTrail()).rejects.toMatchObject({ status: 401 });
     await login();
-    expect((await mockApi.me()).role).toBe("STUDENT");
+    expect((await mockApi.me()).role).toBe("ALUNO");
     await mockApi.logout();
     await expect(mockApi.me()).rejects.toMatchObject({ status: 401 });
   });
@@ -34,7 +38,7 @@ describe("mock student API", () => {
   it("starts with the first level open and the others locked", async () => {
     await login();
     const trail = await mockApi.getTrail();
-    // Dashboard is v1.1 ("em breve") and is not part of the trail.
+    // Dashboard is v1.1 and is not part of the MVP at all.
     expect(trail.levels.map((l) => l.level)).toEqual(["FUNDAMENTAL", "PROFESSIONAL", "ADVANCED"]);
     expect(trail.levels.map((l) => l.status)).toEqual(["NOT_STARTED", "LOCKED", "LOCKED"]);
     expect(trail.levels[1].exercises).toEqual([]);
@@ -53,10 +57,13 @@ describe("mock student API", () => {
     const wrong = await mockApi.submitAttempt("ex-soma", { submission: "=SOMA(B2:B5)" });
     expect(wrong).toMatchObject({ correct: false, feedbackCode: "WRONG_VALUE" });
     expect(wrong.hint).toBeTruthy();
+    // The final submission is unique per exercise.
+    await expect(
+      mockApi.submitAttempt("ex-soma", { submission: "=SOMA(B2:B6)" }),
+    ).rejects.toMatchObject({ status: 409, code: "ALREADY_SUBMITTED" });
 
     const answers: Record<string, string> = {
       "e2e-soma-basica": "=soma(a1:a3)",
-      "ex-soma": "=SOMA(B2:B6)",
       "ex-media": "=MÉDIA(B2:B5)",
       "ex-maximo": "=MÁXIMO(B2:B8)",
       "ex-minimo": "=MIN(B2:B8)",
@@ -66,40 +73,102 @@ describe("mock student API", () => {
       last = await mockApi.submitAttempt(id, { submission });
       expect(last.correct).toBe(true);
     }
-    expect(last).toMatchObject({ levelCompleted: true, levelStatus: "COMPLETED" });
+    // 4/5 = 80% -> D, which unlocks the next level.
+    expect(last).toMatchObject({
+      levelCompleted: true,
+      levelStatus: "COMPLETED",
+      concept: "D",
+      bestConcept: "D",
+    });
 
     const trail = await mockApi.getTrail();
     expect(trail.levels[1].status).toBe("NOT_STARTED");
 
     mockConfig.reviewDelayMs = 60_000;
     const inReview = await mockApi.getLevelFeedback("FUNDAMENTAL");
-    expect(inReview).toMatchObject({ status: "IN_REVIEW", message: null, concept: "PD" });
-    expect(inReview.score).toEqual({ correct: 5, total: 5, percent: 100 });
-    expect(inReview.attempts).toBe(6);
+    expect(inReview).toMatchObject({
+      status: "IN_REVIEW",
+      message: null,
+      concept: "D",
+      bestConcept: "D",
+      run: 1,
+    });
+    expect(inReview.score).toEqual({ correct: 4, total: 5, percent: 80 });
+    expect(inReview.attempts).toBe(5);
 
     mockConfig.reviewDelayMs = 0;
     const published = await mockApi.getLevelFeedback("FUNDAMENTAL");
     expect(published.status).toBe("PUBLISHED");
-    expect(published.message?.paragraphs[0]).toContain("100%");
+    expect(published.message?.paragraphs[0]).toContain("80%");
     expect(published.message?.toReview[0]).toContain("Total de vendas da semana");
-    expect(published.nextLevel?.level).toBe("PROFESSIONAL");
+    expect(published.nextLevel).toMatchObject({ level: "PROFESSIONAL", unlocked: true });
 
-    // PD cannot be retaken.
+    // D cannot be redone.
+    await expect(mockApi.retakeLevel("FUNDAMENTAL")).rejects.toMatchObject({
+      status: 409,
+      code: "LEVEL_NOT_REDOABLE",
+    });
+  });
+
+  it("ND/ED locks the next level; redo is unlimited and the best concept counts", async () => {
+    await login();
+    const ids = ["e2e-soma-basica", "ex-soma", "ex-media", "ex-maximo", "ex-minimo"];
+    const good: Record<string, string> = {
+      "e2e-soma-basica": "=SOMA(A1:A3)",
+      "ex-soma": "=SOMA(B2:B6)",
+      "ex-media": "=MÉDIA(B2:B5)",
+      "ex-maximo": "=MÁXIMO(B2:B8)",
+      "ex-minimo": "=MÍNIMO(B2:B8)",
+    };
+    // Run 1: 3/5 = 60% -> ED.
+    for (const [i, id] of ids.entries()) {
+      await mockApi.submitAttempt(id, { submission: i < 3 ? good[id] : "=A1" });
+    }
+    let trail = await mockApi.getTrail();
+    expect(trail.levels[0]).toMatchObject({
+      status: "COMPLETED",
+      concept: "ED",
+      bestConcept: "ED",
+      run: 1,
+    });
+    expect(trail.levels[1].status).toBe("LOCKED");
+    expect((await mockApi.getLevelFeedback("FUNDAMENTAL")).nextLevel?.unlocked).toBe(false);
+
+    // Run 2: 0/5 -> ND, but the best concept stays ED and the next level stays locked.
+    let level = await mockApi.retakeLevel("FUNDAMENTAL");
+    expect(level).toMatchObject({ status: "IN_PROGRESS", concept: null, run: 2 });
+    expect(level.progress.done).toBe(0);
+    for (const id of ids) await mockApi.submitAttempt(id, { submission: "=A1" });
+    trail = await mockApi.getTrail();
+    expect(trail.levels[0]).toMatchObject({ concept: "ND", bestConcept: "ED", run: 2 });
+    expect(trail.levels[1].status).toBe("LOCKED");
+
+    // Run 3: 5/5 -> PD unlocks the next level; no more redo.
+    level = await mockApi.retakeLevel("FUNDAMENTAL");
+    expect(level.run).toBe(3);
+    for (const id of ids) await mockApi.submitAttempt(id, { submission: good[id] });
+    trail = await mockApi.getTrail();
+    expect(trail.levels[0]).toMatchObject({ concept: "PD", bestConcept: "PD" });
+    expect(trail.levels[1].status).toBe("NOT_STARTED");
     await expect(mockApi.retakeLevel("FUNDAMENTAL")).rejects.toMatchObject({ status: 409 });
   });
 
-  it("lets the student redo a level completed with ND/ED", async () => {
+  it("rejects empty and over-limit answers without counting an attempt", async () => {
     await login();
-    for (const id of ["e2e-soma-basica", "ex-soma", "ex-media", "ex-maximo", "ex-minimo"]) {
-      await mockApi.submitAttempt(id, { submission: "=A1" });
-    }
-    let trail = await mockApi.getTrail();
-    expect(trail.levels[0]).toMatchObject({ status: "COMPLETED", concept: "ND" });
-    const level = await mockApi.retakeLevel("FUNDAMENTAL");
-    expect(level).toMatchObject({ status: "NOT_STARTED", concept: null });
-    expect(level.progress.done).toBe(0);
-    trail = await mockApi.getTrail();
-    expect(trail.levels[1].status).toBe("LOCKED");
+    await expect(mockApi.submitAttempt("ex-soma", { submission: "   " })).rejects.toMatchObject({
+      status: 422,
+      code: "EMPTY_SUBMISSION",
+    });
+    await expect(
+      mockApi.submitAttempt("ex-soma", { submission: "=B2" + "+0".repeat(1001) }),
+    ).rejects.toMatchObject({ status: 422, code: "LIMIT_EXCEEDED" });
+    const exercise = await mockApi.getExercise("ex-soma");
+    expect(exercise).toMatchObject({ attempts: 0, status: "NOT_STARTED" });
+  });
+
+  it("lists Google and Microsoft as login options", async () => {
+    const opts = await mockApi.getLoginOptions();
+    expect(opts.providers.map((p) => p.id)).toEqual(["google", "microsoft"]);
   });
 
   it("has an answer key that its own grader accepts for every exercise (sanity check)", async () => {

@@ -5,6 +5,7 @@ import type {
   KnowledgeLevel,
   AuthProvider,
   LevelFeedback,
+  LoginOptions,
   LoginStart,
   Section,
   SessionUser,
@@ -14,6 +15,8 @@ import type {
 
 /** Everything the student area needs from the backend. */
 export interface StudentApi {
+  /** Enabled login providers (GET /api/login-options). */
+  getLoginOptions(): Promise<LoginOptions>;
   /** Start Google/Microsoft sign-in; `callbackURL` is where the user lands afterwards. */
   startLogin(provider: AuthProvider, callbackURL: string): Promise<LoginStart>;
   /** Current user, or throws ApiError(401). */

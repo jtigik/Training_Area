@@ -4,7 +4,11 @@ import type { Difficulty, KnowledgeLevel, Section, SessionUser } from "../types"
 
 /** Mock-only data. In production the answer keys never leave the server. */
 
-export const MOCK_INSTITUTION = { id: "inst-exemplo", name: "Instituto Exemplo" };
+export const MOCK_TENANT = {
+  id: "inst-exemplo",
+  name: "Instituto Exemplo",
+  slug: "instituto-exemplo",
+};
 
 /** Mock accounts. The mock "Google/Microsoft" sign-in logs in as the first one (the student). */
 export const MOCK_USERS: SessionUser[] = [
@@ -12,15 +16,17 @@ export const MOCK_USERS: SessionUser[] = [
     id: "u-aluno",
     name: "Ana Souza",
     email: "ana.souza@exemplo.edu.br",
-    role: "STUDENT",
-    institution: MOCK_INSTITUTION,
+    role: "ALUNO",
+    tenantId: MOCK_TENANT.id,
+    tenant: MOCK_TENANT,
   },
   {
     id: "u-prof",
     name: "Paulo Lima",
     email: "paulo.lima@exemplo.edu.br",
-    role: "TEACHER",
-    institution: MOCK_INSTITUTION,
+    role: "PROFESSOR",
+    tenantId: MOCK_TENANT.id,
+    tenant: MOCK_TENANT,
   },
 ];
 

@@ -1,5 +1,5 @@
+import { normalizeFormula, referencedFunctions } from "./translate";
 import { SheetEngine, unsupportedFunctions, type CellMap, type EvaluatedValue } from "./engine";
-import { normalizeFormula } from "./translate";
 
 /** Answer key as stored by Backend 2 (value only; formula keys are resolved server-side). */
 export type ExpectedValue = number | string | boolean;
@@ -21,7 +21,8 @@ export type GradeCode =
   | "FORMULA_ERROR"
   | "PARSE_ERROR"
   | "EMPTY_SUBMISSION"
-  | "LIMIT_EXCEEDED";
+  | "LIMIT_EXCEEDED"
+  | "VOLATILE_FUNCTION";
 
 export interface GradeResult {
   correct: boolean;
@@ -53,6 +54,21 @@ function sameType(actual: EvaluatedValue, expected: ExpectedValue): boolean {
   return actual.kind === map[typeof expected as "number" | "string" | "boolean"];
 }
 
+/**
+ * Functions whose result changes on every recalculation (pt-BR: ALEATÓRIO,
+ * ALEATÓRIOENTRE, AGORA, HOJE). Backend 2 grades answers using them as
+ * VOLATILE_FUNCTION (incorrect).
+ */
+export const VOLATILE_FUNCTIONS = new Set(["RAND", "RANDBETWEEN", "RANDARRAY", "NOW", "TODAY"]);
+
+/** Volatile functions used in `formula` (canonical names), for a local warning before submit. */
+export function volatileFunctions(formula: string): string[] {
+  if (!formula.trim().startsWith("=")) return [];
+  return [...new Set(referencedFunctions(normalizeFormula(formula)))].filter((n) =>
+    VOLATILE_FUNCTIONS.has(n),
+  );
+}
+
 /** Backend 2 DEFAULT_LIMITS.maxFormulaLength. */
 export const MAX_FORMULA_LENGTH = 2000;
 
@@ -81,6 +97,9 @@ export function gradeSubmission(
   }
   if (isFormula && unsupportedFunctions(text).length > 0) {
     return { correct: false, code: "UNSUPPORTED_FUNCTION", actual: { kind: "empty" } };
+  }
+  if (isFormula && volatileFunctions(text).length > 0) {
+    return { correct: false, code: "VOLATILE_FUNCTION", actual: { kind: "empty" } };
   }
   const engine = new SheetEngine(sheet);
   try {
