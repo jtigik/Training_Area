@@ -41,12 +41,12 @@ enum Role {
   ALUNO
 }
 
-/// Níveis do MVP: Fundamental, Profissional, Avançado.
-/// Dashboard foi para a v1.1: volta como novo valor (ALTER TYPE ... ADD VALUE).
+/// Níveis: Fundamental, Profissional, Avançado, Dashboard.
 enum KnowledgeLevel {
   FUNDAMENTAL
   PROFESSIONAL
   ADVANCED
+  DASHBOARD
 }
 
 /// Muito fácil, Fácil, Médio, Difícil, Muito difícil.

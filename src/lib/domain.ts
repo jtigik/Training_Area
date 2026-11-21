@@ -2,14 +2,14 @@
  * Enums de domínio (espelham o schema Prisma) e rótulos pt-BR.
  * Arquivo puro: pode ser usado no cliente e no servidor.
  */
-/** Níveis do MVP. Dashboard ficou para a v1.1. */
-export const KNOWLEDGE_LEVELS = ["FUNDAMENTAL", "PROFESSIONAL", "ADVANCED"] as const;
+export const KNOWLEDGE_LEVELS = ["FUNDAMENTAL", "PROFESSIONAL", "ADVANCED", "DASHBOARD"] as const;
 export type KnowledgeLevel = (typeof KNOWLEDGE_LEVELS)[number];
 
 export const KNOWLEDGE_LEVEL_LABELS: Record<KnowledgeLevel, string> = {
   FUNDAMENTAL: "Fundamental",
   PROFESSIONAL: "Profissional",
   ADVANCED: "Avançado",
+  DASHBOARD: "Dashboard",
 };
 
 export const DIFFICULTIES = ["VERY_EASY", "EASY", "MEDIUM", "HARD", "VERY_HARD"] as const;
