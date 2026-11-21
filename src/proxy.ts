@@ -7,6 +7,7 @@ import {
   isApiPath,
   isNonMvpLevelPath,
   LOGIN_PATH,
+  matchesPrefix,
 } from "@/lib/authz/route-rules";
 import { getSession } from "@/server/auth/session";
 
@@ -15,7 +16,8 @@ import { getSession } from "@/server/auth/session";
  * proxy no Next 16) e aplica ROUTE_RULES:
  * - anônimo em página protegida → redireciona para /login?callbackUrl=...
  * - anônimo em API protegida    → 401 JSON
- * - papel insuficiente          → 403 (JSON na API, texto na página)
+ * - papel de outra área         → API: 403 FORBIDDEN (envelope padrão);
+ *                                  página: redireciona para a home do próprio papel
  * O isolamento por instituição NÃO está na URL: route handlers e server actions
  * continuam obrigados a chamar requireTenant()/requireRole().
  */
@@ -56,6 +58,10 @@ export async function proxy(request: NextRequest) {
       new ApiError(403, API_ERROR_CODES.FORBIDDEN, "Acesso negado").toBody(),
       { status: 403 },
     );
+  }
+  // Página de outra área: manda para a home do próprio papel (decisão do PO).
+  if (decision.home && !matchesPrefix(pathname, decision.home)) {
+    return NextResponse.redirect(new URL(decision.home, request.url));
   }
   return new NextResponse("403 — Acesso negado", {
     status: 403,

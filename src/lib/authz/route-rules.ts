@@ -1,4 +1,4 @@
-import { type Role } from "@/lib/roles";
+import { isRole, ROLE_HOME, type Role } from "@/lib/roles";
 
 /**
  * Regras de autorização por rota (TA-003). Arquivo puro e testável; usado por
@@ -6,6 +6,12 @@ import { type Role } from "@/lib/roles";
  * actions DEVEM revalidar com requireRole()/requireTenant()
  * (src/server/auth/session.ts e tenant.ts) — inclusive o isolamento por tenant,
  * que não aparece na URL.
+ *
+ * Áreas por papel (decisão do PO, 21/11 03:26): cada área é exclusiva de um
+ * papel — /aluno → ALUNO, /professor → PROFESSOR, /admin → INSTITUTION_ADMIN,
+ * /super-admin → SUPER_ADMIN (páginas e /api/<área>). PROFESSOR não tem
+ * "modo prévia" do aluno no MVP. Exceções explícitas (SUPER_ADMIN agindo numa
+ * instituição) vêm ANTES do prefixo da área.
  *
  * Avaliadas em ordem; a primeira que casar vence. Sem regra = público.
  *  - "public": qualquer um
@@ -29,14 +35,19 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { prefix: "/super-admin", access: ["SUPER_ADMIN"] },
   { prefix: "/api/super-admin", access: ["SUPER_ADMIN"] },
 
-  { prefix: "/admin", access: ["INSTITUTION_ADMIN", "SUPER_ADMIN"] },
-  { prefix: "/api/admin", access: ["INSTITUTION_ADMIN", "SUPER_ADMIN"] },
+  // Exceções: SUPER_ADMIN configura faixas e convida o 1º admin de uma
+  // instituição (informando tenantId). Os handlers revalidam com requireTenant.
+  { prefix: "/api/admin/grading-config", access: ["INSTITUTION_ADMIN", "SUPER_ADMIN"] },
+  { prefix: "/api/admin/invitations", access: ["INSTITUTION_ADMIN", "SUPER_ADMIN"] },
 
-  { prefix: "/professor", access: ["PROFESSOR", "INSTITUTION_ADMIN"] },
-  { prefix: "/api/professor", access: ["PROFESSOR", "INSTITUTION_ADMIN"] },
+  { prefix: "/admin", access: ["INSTITUTION_ADMIN"] },
+  { prefix: "/api/admin", access: ["INSTITUTION_ADMIN"] },
 
-  { prefix: "/aluno", access: "tenant-member" },
-  { prefix: "/api/aluno", access: "tenant-member" },
+  { prefix: "/professor", access: ["PROFESSOR"] },
+  { prefix: "/api/professor", access: ["PROFESSOR"] },
+
+  { prefix: "/aluno", access: ["ALUNO"] },
+  { prefix: "/api/aluno", access: ["ALUNO"] },
 
   { prefix: "/api/me", access: "authenticated" },
 ];
@@ -62,7 +73,11 @@ export function findRouteRule(
   return rules.find((rule) => matchesPrefix(pathname, rule.prefix));
 }
 
-export type AuthzDecision = { type: "allow" } | { type: "unauthenticated" } | { type: "forbidden" };
+export type AuthzDecision =
+  | { type: "allow" }
+  | { type: "unauthenticated" }
+  /** `home`: área do próprio papel (páginas redirecionam para lá; API responde 403). */
+  | { type: "forbidden"; home: string | null };
 
 export interface AuthzSubject {
   role: unknown;
@@ -82,13 +97,19 @@ export function authorizeRoute(
   // Usuário desativado é tratado como anônimo (TA-006).
   if (!user || user.active === false) return { type: "unauthenticated" };
   if (rule.access === "authenticated") return { type: "allow" };
+  const forbidden = { type: "forbidden", home: homeForRole(user.role) } as const;
   if (rule.access === "tenant-member") {
-    return user.tenantId && user.role !== "SUPER_ADMIN" ? { type: "allow" } : { type: "forbidden" };
+    return user.tenantId && user.role !== "SUPER_ADMIN" ? { type: "allow" } : forbidden;
   }
+  if (!(rule.access as readonly unknown[]).includes(user.role)) return forbidden;
+  // Papel de instituição sem instituição (dado inconsistente) não entra.
+  if (user.role !== "SUPER_ADMIN" && user.tenantId === null) return forbidden;
+  return { type: "allow" };
+}
 
-  return (rule.access as readonly unknown[]).includes(user.role)
-    ? { type: "allow" }
-    : { type: "forbidden" };
+/** Página inicial do papel, ou null para papel desconhecido. */
+export function homeForRole(role: unknown): string | null {
+  return isRole(role) ? ROLE_HOME[role] : null;
 }
 
 export function isApiPath(pathname: string): boolean {

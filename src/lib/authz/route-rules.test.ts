@@ -50,30 +50,63 @@ describe("authorizeRoute", () => {
     expect(authorizeRoute("/aluno", { ...aluno, active: false }).type).toBe("unauthenticated");
   });
 
-  it("/super-admin só SUPER_ADMIN", () => {
-    expect(authorizeRoute("/super-admin", superAdmin).type).toBe("allow");
-    expect(authorizeRoute("/super-admin", instAdmin).type).toBe("forbidden");
-    expect(authorizeRoute("/api/super-admin/tenants", aluno).type).toBe("forbidden");
+  // Matriz papel × área (decisão do PO 03:26): página e API.
+  const USERS = {
+    SUPER_ADMIN: superAdmin,
+    INSTITUTION_ADMIN: instAdmin,
+    PROFESSOR: professor,
+    ALUNO: aluno,
+  };
+  const AREAS = [
+    { owner: "ALUNO", page: "/aluno/niveis/fundamental", api: "/api/aluno/feedbacks" },
+    {
+      owner: "PROFESSOR",
+      page: "/professor/resultados",
+      api: "/api/professor/level-attempts/1/concept",
+    },
+    { owner: "INSTITUTION_ADMIN", page: "/admin/usuarios", api: "/api/admin/users/1/role" },
+    { owner: "SUPER_ADMIN", page: "/super-admin/instituicoes", api: "/api/super-admin/metrics" },
+  ] as const;
+  const HOME = {
+    SUPER_ADMIN: "/super-admin",
+    INSTITUTION_ADMIN: "/admin",
+    PROFESSOR: "/professor",
+    ALUNO: "/aluno",
+  } as const;
+
+  for (const area of AREAS) {
+    for (const [role, user] of Object.entries(USERS) as [
+      keyof typeof USERS,
+      (typeof USERS)[keyof typeof USERS],
+    ][]) {
+      const allowed = role === area.owner;
+      it(`${role} em ${area.page} e ${area.api} → ${allowed ? "allow" : `forbidden (home ${HOME[role]})`}`, () => {
+        for (const path of [area.page, area.api]) {
+          const decision = authorizeRoute(path, user);
+          if (allowed) expect(decision).toEqual({ type: "allow" });
+          else expect(decision).toEqual({ type: "forbidden", home: HOME[role] });
+        }
+      });
+    }
+  }
+
+  it("PROFESSOR não tem prévia do aluno", () => {
+    expect(authorizeRoute("/aluno", professor).type).toBe("forbidden");
+    expect(authorizeRoute("/api/aluno/sets/x/progress", professor).type).toBe("forbidden");
   });
 
-  it("/admin: INSTITUTION_ADMIN e SUPER_ADMIN", () => {
-    expect(authorizeRoute("/admin/usuarios", instAdmin).type).toBe("allow");
-    expect(authorizeRoute("/admin", superAdmin).type).toBe("allow");
-    expect(authorizeRoute("/admin", professor).type).toBe("forbidden");
-    expect(authorizeRoute("/api/admin/users/1/role", aluno).type).toBe("forbidden");
+  it("exceções do SUPER_ADMIN dentro da instituição: grading-config e invitations", () => {
+    for (const p of ["/api/admin/grading-config", "/api/admin/invitations"]) {
+      expect(authorizeRoute(p, superAdmin).type).toBe("allow");
+      expect(authorizeRoute(p, instAdmin).type).toBe("allow");
+      expect(authorizeRoute(p, professor).type).toBe("forbidden");
+      expect(authorizeRoute(p, aluno).type).toBe("forbidden");
+    }
+    expect(authorizeRoute("/api/admin/users/1", superAdmin).type).toBe("forbidden");
+    expect(authorizeRoute("/admin", superAdmin).type).toBe("forbidden");
   });
 
-  it("/professor: PROFESSOR e INSTITUTION_ADMIN", () => {
-    expect(authorizeRoute("/professor", professor).type).toBe("allow");
-    expect(authorizeRoute("/professor", instAdmin).type).toBe("allow");
-    expect(authorizeRoute("/professor", aluno).type).toBe("forbidden");
-    expect(authorizeRoute("/api/professor/resultados", aluno).type).toBe("forbidden");
-  });
-
-  it("/aluno: qualquer membro de instituição, não SUPER_ADMIN", () => {
-    expect(authorizeRoute("/aluno", aluno).type).toBe("allow");
-    expect(authorizeRoute("/aluno", professor).type).toBe("allow");
-    expect(authorizeRoute("/aluno", superAdmin).type).toBe("forbidden");
+  it("papel de instituição sem tenantId não entra", () => {
     expect(authorizeRoute("/aluno", { role: "ALUNO", tenantId: null }).type).toBe("forbidden");
   });
 
@@ -83,7 +116,10 @@ describe("authorizeRoute", () => {
   });
 
   it("papel desconhecido não passa em rota com papéis", () => {
-    expect(authorizeRoute("/admin", { role: "ADMIN", tenantId: "t1" }).type).toBe("forbidden");
+    expect(authorizeRoute("/admin", { role: "ADMIN", tenantId: "t1" })).toEqual({
+      type: "forbidden",
+      home: null,
+    });
   });
 });
 
@@ -96,8 +132,12 @@ describe("findRouteRule", () => {
 describe("matcher da proxy", () => {
   it("cobre todos os prefixos protegidos", () => {
     const source = readFileSync(path.join(process.cwd(), "src/proxy.ts"), "utf8");
+    const matchers = [...source.matchAll(/"(\/[^"]*?)(\/:path\*)?"/g)].map((m) => m[1]);
     for (const prefix of PROTECTED_PREFIXES) {
-      expect(source, `matcher sem ${prefix}`).toMatch(new RegExp(`"${prefix}(/:path\\*)?"`));
+      expect(
+        matchers.some((m) => matchesPrefix(prefix, m)),
+        `matcher sem ${prefix}`,
+      ).toBe(true);
     }
   });
 });

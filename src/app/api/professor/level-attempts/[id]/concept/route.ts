@@ -13,7 +13,7 @@ export async function PATCH(
   ctx: RouteContext<"/api/professor/level-attempts/[id]/concept">,
 ) {
   try {
-    const tenantCtx = await requireTenant(["PROFESSOR", "INSTITUTION_ADMIN"], {
+    const tenantCtx = await requireTenant(["PROFESSOR"], {
       headers: request.headers,
     });
     const parsed = conceptOverrideSchema.safeParse(await request.json().catch(() => null));

@@ -100,19 +100,22 @@ Callback: `${BETTER_AUTH_URL}/api/auth/callback/{id}`. As regras de vínculo val
 
 **Papéis:** `SUPER_ADMIN` (plataforma, sem instituição), `INSTITUTION_ADMIN`, `PROFESSOR`, `ALUNO`.
 
-| Rota                               | Acesso                                            |
-| ---------------------------------- | ------------------------------------------------- |
-| `/super-admin`, `/api/super-admin` | SUPER_ADMIN                                       |
-| `/admin`, `/api/admin`             | INSTITUTION_ADMIN, SUPER_ADMIN                    |
-| `/professor`, `/api/professor`     | PROFESSOR, INSTITUTION_ADMIN                      |
-| `/aluno`, `/api/aluno`             | qualquer usuário de instituição (não SUPER_ADMIN) |
-| `/api/me`                          | qualquer sessão                                   |
+Cada área é exclusiva de um papel (sem "prévia do aluno" para PROFESSOR no MVP):
 
-As regras ficam em `src/lib/authz/route-rules.ts` e são aplicadas por `src/proxy.ts` (página sem sessão → `/login?callbackUrl=…`; API sem sessão → 401; papel insuficiente → 403). **A proxy não basta:** todo route handler e server action deve chamar:
+| Rota                                                  | Acesso                         |
+| ----------------------------------------------------- | ------------------------------ |
+| `/super-admin`, `/api/super-admin`                    | SUPER_ADMIN                    |
+| `/api/admin/grading-config`, `/api/admin/invitations` | INSTITUTION_ADMIN, SUPER_ADMIN |
+| `/admin`, `/api/admin` (demais)                       | INSTITUTION_ADMIN              |
+| `/professor`, `/api/professor`                        | PROFESSOR                      |
+| `/aluno`, `/api/aluno`                                | ALUNO                          |
+| `/api/me`                                             | qualquer sessão                |
+
+As regras ficam em `src/lib/authz/route-rules.ts` e são aplicadas por `src/proxy.ts`: página sem sessão → `/login?callbackUrl=…`; API sem sessão → 401 `UNAUTHENTICATED`; **página de outra área → redireciona para a home do próprio papel** (ALUNO → `/aluno`, PROFESSOR → `/professor`, INSTITUTION_ADMIN → `/admin`, SUPER_ADMIN → `/super-admin`); **API de outra área → 403 `FORBIDDEN`** no envelope padrão. Nível fora do MVP em `/aluno/niveis/:nivel` → 404. **A proxy não basta:** todo route handler e server action deve chamar:
 
 ```ts
 import { requireTenant } from "@/server/auth/tenant";
-const { tenantId, user } = await requireTenant(["PROFESSOR", "INSTITUTION_ADMIN"]);
+const { tenantId, user } = await requireTenant(["PROFESSOR"]);
 await prisma.exerciseSet.findMany({ where: { tenantId } }); // sempre filtre pelo tenant
 ```
 
