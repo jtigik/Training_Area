@@ -181,4 +181,10 @@ Em 21/11/2026, `npm audit` reporta **3 vulnerabilidades altas**, todas na mesma 
 
 ## Licença
 
-MIT — veja [LICENSE](LICENSE).
+Copyright (C) 2026 Jeferson Tigik
+
+Este projeto é software livre, distribuído sob a **GNU General Public License v3.0 only** (`GPL-3.0-only`). O texto integral, sem modificações, está em [LICENSE](LICENSE).
+
+Você pode redistribuir e/ou modificar o projeto nos termos da GPL-3.0. Ele é distribuído na esperança de ser útil, mas **sem nenhuma garantia**, nem mesmo a garantia implícita de comerciabilidade ou adequação a um propósito específico.
+
+**Por que GPL-3.0:** a grade de prática vai usar o [HyperFormula](https://hyperformula.handsontable.com/), que é distribuído sob GPL-3.0 (ou licença comercial). Para usá-lo sem licença comercial, o projeto passou de MIT para GPL-3.0-only. Novas dependências precisam ter licença compatível com a GPL-3.0.
