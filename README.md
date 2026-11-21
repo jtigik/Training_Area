@@ -96,7 +96,7 @@ Contrato do provedor falso (para cada `{id}` em `google`, `microsoft`):
 | `POST {base}/{id}/token`    | form: `grant_type=authorization_code`, `code`, `code_verifier`, `redirect_uri`, `client_id`, `client_secret`      | JSON `{ "access_token", "token_type": "Bearer", "expires_in" }` (sem `id_token`)                     |
 | `GET {base}/{id}/userinfo`  | `Authorization: Bearer <access_token>`                                                                            | JSON `{ "sub", "email", "email_verified": true, "name", "picture" }` (`id` aceito no lugar de `sub`) |
 
-Callback: `${BETTER_AUTH_URL}/api/auth/callback/{id}`. As regras de vínculo valem igual: e-mail de usuário existente (ex.: seed) é vinculado à conta (provedores confiáveis); e-mail novo precisa de convite pendente ou domínio da instituição com `autoJoinByDomain`; sem vínculo o callback responde 403.
+Callback: `${BETTER_AUTH_URL}/api/auth/callback/{id}`. As regras de vínculo valem igual: e-mail de usuário existente (ex.: seed) é vinculado à conta (provedores confiáveis); e-mail novo precisa de convite pendente ou domínio da instituição com `autoJoinByDomain`; sem vínculo o callback **redireciona** para `/login?error=ACCOUNT_NOT_REGISTERED` (mensagem: "Sua conta não está cadastrada nesta instituição. Fale com seu professor ou administrador."). Outros erros do callback (provedor negou, state expirado, conta desativada `ACCOUNT_DISABLED`) também voltam para `/login?error=<código>` (`onAPIError.errorURL`). A tela usa `authErrorMessage(code)` de `src/lib/auth-errors.ts`; chamadas JSON em `/api/*` continuam 401/403.
 
 **Papéis:** `SUPER_ADMIN` (plataforma, sem instituição), `INSTITUTION_ADMIN`, `PROFESSOR`, `ALUNO`.
 

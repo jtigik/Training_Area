@@ -40,5 +40,4 @@ export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
 
 /** Mensagem genérica (não revela se a conta existe — TA-001). */
 export const GENERIC_SIGN_IN_ERROR = "Não foi possível entrar com esta conta";
-export const NO_TENANT_SIGN_IN_ERROR =
-  "Sua conta não está vinculada a nenhuma instituição. Peça um convite ao administrador.";
+export { ACCOUNT_NOT_REGISTERED_MESSAGE as NO_TENANT_SIGN_IN_ERROR } from "@/lib/auth-errors";

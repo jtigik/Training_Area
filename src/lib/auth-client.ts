@@ -21,7 +21,7 @@ export type LoginProviderId = "google" | "microsoft";
 
 /** Inicia o login social; funciona nos modos nativo e mock. */
 export function signInWithProvider(provider: LoginProviderId, callbackURL = "/") {
-  return authClient.signIn.social({ provider, callbackURL });
+  return authClient.signIn.social({ provider, callbackURL, errorCallbackURL: "/login" });
 }
 
 export const authClient = createAuthClient({

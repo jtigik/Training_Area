@@ -6,6 +6,7 @@ import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { customSession, genericOAuth } from "better-auth/plugins";
 
+import { AUTH_ERROR_CODES } from "@/lib/auth-errors";
 import { ROLES } from "@/lib/roles";
 import {
   GENERIC_SIGN_IN_ERROR,
@@ -19,6 +20,7 @@ import { getTenantSummary } from "@/server/auth/tenant-summary";
 import { prisma } from "@/server/db";
 import { forTenant } from "@/server/tenant-db";
 
+export const LOGIN_ERROR_URL = "/login";
 const SEVEN_DAYS = 60 * 60 * 24 * 7;
 const ONE_DAY = 60 * 60 * 24;
 
@@ -89,6 +91,9 @@ const authOptions = {
       trustedProviders: ["google", "microsoft"],
     },
   },
+  // Erros no callback OAuth (conta não cadastrada, state expirado, provedor
+  // negou...) voltam para a tela de login com ?error=<código> (src/lib/auth-errors.ts).
+  onAPIError: { errorURL: LOGIN_ERROR_URL },
   session: {
     expiresIn: SEVEN_DAYS,
     updateAge: ONE_DAY,
@@ -126,7 +131,13 @@ const authOptions = {
             domainTenants,
           );
           if (!decision) {
-            throw new APIError("FORBIDDEN", { message: NO_TENANT_SIGN_IN_ERROR });
+            // Com `code`, o callback OAuth redireciona para
+            // /login?error=ACCOUNT_NOT_REGISTERED (onAPIError.errorURL); fora do
+            // callback continua 403 JSON.
+            throw new APIError("FORBIDDEN", {
+              message: NO_TENANT_SIGN_IN_ERROR,
+              code: AUTH_ERROR_CODES.ACCOUNT_NOT_REGISTERED,
+            });
           }
           return {
             data: {
@@ -157,7 +168,10 @@ const authOptions = {
           });
           const tenantOk = user?.role === "SUPER_ADMIN" || user?.tenant?.active === true;
           if (!user?.active || !tenantOk) {
-            throw new APIError("UNAUTHORIZED", { message: GENERIC_SIGN_IN_ERROR });
+            throw new APIError("UNAUTHORIZED", {
+              message: GENERIC_SIGN_IN_ERROR,
+              code: AUTH_ERROR_CODES.ACCOUNT_DISABLED,
+            });
           }
         },
       },
