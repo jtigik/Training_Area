@@ -126,4 +126,41 @@ describe("http: importação .xlsx", () => {
     expect((init.body as FormData).get("file")).toBeInstanceOf(File);
     vi.unstubAllGlobals();
   });
+
+  it("users.create convida e troca de papel usa /role (BE1)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            invitation: {
+              id: "inv-1",
+              email: "a@x.br",
+              role: "PROFESSOR",
+              expiresAt: "2026-12-01",
+            },
+          }),
+          { status: 201 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ user: { id: "u-1", role: "INSTITUTION_ADMIN" } }), {
+          status: 200,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const s = createHttpServices();
+    const u = await s.users.create({ name: "Ana", email: "a@x.br", role: "PROFESSOR" });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/admin/invitations");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      email: "a@x.br",
+      role: "PROFESSOR",
+    });
+    expect(u).toMatchObject({ id: "inv-1", name: "Ana", active: false });
+    const r = await s.users.update("u-1", { role: "INSTITUTION_ADMIN" });
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/admin/users/u-1/role");
+    expect(fetchMock.mock.calls[1][1].method).toBe("PATCH");
+    expect(r.role).toBe("INSTITUTION_ADMIN");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

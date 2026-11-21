@@ -19,8 +19,10 @@
  *   POST   /api/super-admin/institutions     body CreateInstitutionInput → 201 Institution | 409 SLUG_IN_USE
  *   PATCH  /api/super-admin/institutions/:id body UpdateInstitutionInput → Institution
  *   GET    /api/admin/users?search=&role=&active=&page=&pageSize=   → Page<User>
- *   POST   /api/admin/users                 body CreateUserInput     → 201 User | 409 EMAIL_IN_USE
- *   PATCH  /api/admin/users/:id             body UpdateUserInput     → User | 409 LAST_ADMIN
+ *   POST   /api/admin/invitations           body { email, role, expiresInDays? } → 201 { invitation } | 409 EMAIL_IN_USE/PENDING_INVITATION
+ *          (users.create no adaptador HTTP; o convite aparece como usuário inativo até o aceite)
+ *   PATCH  /api/admin/users/:id/role        body { role }            → { user } | 409 LAST_ADMIN
+ *   PATCH  /api/admin/users/:id             body { name?, email?, active? } → User (ainda não existe no BE1)
  *   GET    /api/admin/config                                         → InstitutionSettings
  *   PUT    /api/admin/config                body UpdateSettingsInput → InstitutionSettings (inclui conceptThresholds { ED, D, PD }; 422 se não ED ≤ D ≤ PD)
  *   GET    /api/professor/feedback-templates?setId=  (sem setId = padrão) → FeedbackTemplate

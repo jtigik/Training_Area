@@ -1,4 +1,28 @@
+import type { User } from "@/lib/domain/types";
 import { ApiError, type ApiErrorBody, type Services } from "./contracts";
+
+/** Resposta de POST /api/admin/invitations (BE1). */
+export interface InvitationDto {
+  id: string;
+  email: string;
+  role: User["role"];
+  expiresAt: string;
+}
+
+/** Convite pendente exibido como usuário inativo até o aceite. */
+export function invitationToUser(inv: InvitationDto, name: string): User {
+  const now = new Date().toISOString();
+  return {
+    id: inv.id,
+    tenantId: null,
+    name,
+    email: inv.email,
+    role: inv.role,
+    active: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -68,8 +92,28 @@ export function createHttpServices(): Services {
     },
     users: {
       list: (q) => get("/api/admin/users", { ...q }),
-      create: (i) => request("POST", "/api/admin/users", i),
-      update: (id, i) => request("PATCH", `/api/admin/users/${id}`, i),
+      create: async (i) => {
+        // BE1 (TA-007): criar usuário = convidar. `name` é preenchido no aceite.
+        const { invitation } = await request<{ invitation: InvitationDto }>(
+          "POST",
+          "/api/admin/invitations",
+          { email: i.email, role: i.role },
+        );
+        return invitationToUser(invitation, i.name);
+      },
+      update: async (id, i) => {
+        const { role, ...rest } = i;
+        let user: User | undefined;
+        if (role !== undefined) {
+          // BE1 (TA-002): PATCH /api/admin/users/:id/role { role } → { user }
+          user = (await request<{ user: User }>("PATCH", `/api/admin/users/${id}/role`, { role }))
+            .user;
+        }
+        if (Object.keys(rest).length > 0 || !user) {
+          user = await request<User>("PATCH", `/api/admin/users/${id}`, rest);
+        }
+        return user;
+      },
     },
     settings: {
       get: () => get("/api/admin/config"),
