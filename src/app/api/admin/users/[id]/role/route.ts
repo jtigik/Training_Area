@@ -8,7 +8,7 @@ import { changeUserRole } from "@/server/users/roles";
  * PATCH { role } — altera o papel de um usuário da instituição (TA-002).
  * Só INSTITUTION_ADMIN, no próprio tenant. SUPER_ADMIN não vê nem altera
  * usuários dentro das instituições (só métricas agregadas — decisão do PO).
- * Erros: 404 NOT_FOUND, 409 LAST_ADMIN, 400 VALIDATION_ERROR.
+ * Erros: 404 NOT_FOUND, 409 LAST_ADMIN, 422 VALIDATION_ERROR.
  */
 export async function PATCH(request: Request, ctx: RouteContext<"/api/admin/users/[id]/role">) {
   try {

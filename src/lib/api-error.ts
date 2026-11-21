@@ -82,12 +82,15 @@ export function toValidationIssues(
   }));
 }
 
-/** 400 VALIDATION_ERROR com details: ValidationIssue[]. */
+/**
+ * 422 VALIDATION_ERROR com details: ValidationIssue[] (decisão do PO/QA: erro de
+ * validação de corpo/parâmetros é 422 em todas as rotas, não 400).
+ */
 export function validationError(
   issues: readonly { path: readonly PropertyKey[]; message: string; code?: string }[],
   message = "Dados inválidos",
 ): Response {
-  return apiError(400, API_ERROR_CODES.VALIDATION_ERROR, message, toValidationIssues(issues));
+  return apiError(422, API_ERROR_CODES.VALIDATION_ERROR, message, toValidationIssues(issues));
 }
 
 /** Type guard para o cliente: `if (isApiErrorBody(json)) show(json.error.message)`. */

@@ -21,7 +21,7 @@ describe("formato de erro { error: { code, message, details? } }", () => {
       .safeParse({ email: "x" });
     expect(parsed.success).toBe(false);
     const res = validationError(parsed.error!.issues);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     const body = await res.json();
     expect(body.error.code).toBe("VALIDATION_ERROR");
     expect(body.error.details).toEqual([

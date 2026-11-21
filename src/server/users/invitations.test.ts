@@ -22,6 +22,18 @@ describe("invitationConflict (e-mail único na plataforma)", () => {
     );
   });
 
+  it("conta desativada: USER_INACTIVE só na mesma instituição", () => {
+    expect(invitationConflict({ tenantId: "t1", active: false }, null, "t1", now)).toBe(
+      "USER_INACTIVE",
+    );
+    expect(invitationConflict({ tenantId: "t2", active: false }, null, "t1", now)).toBe(
+      "EMAIL_IN_USE",
+    );
+    expect(invitationConflict({ tenantId: "t1", active: true }, null, "t1", now)).toBe(
+      "EMAIL_IN_USE",
+    );
+  });
+
   it("permite renovar na mesma instituição ou substituir convite expirado", () => {
     expect(invitationConflict(null, { tenantId: "t1", expiresAt: future }, "t1", now)).toBeNull();
     expect(invitationConflict(null, { tenantId: "t2", expiresAt: past }, "t1", now)).toBeNull();
