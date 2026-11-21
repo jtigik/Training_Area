@@ -67,3 +67,14 @@ describe.skipIf(!enabled)("forTenant (banco real)", () => {
     expect(count).toBe(1);
   });
 });
+
+describe.skipIf(!enabled)("listLevelPool (banco real)", () => {
+  it("o nível demo enxerga os exercícios globais publicados", async () => {
+    const { forTenant } = await import("@/server/tenant-db");
+    const { listLevelPool } = await import("@/server/content/pool");
+    const pool = await listLevelPool(forTenant("tenant-escola-demo"), "demo-level-fundamental");
+    expect(pool?.length).toBeGreaterThan(0);
+    expect(pool?.every((e) => e.level === "FUNDAMENTAL")).toBe(true);
+    expect(await listLevelPool(forTenant("outro-tenant"), "demo-level-fundamental")).toBeNull();
+  });
+});

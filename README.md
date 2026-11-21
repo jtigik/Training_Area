@@ -169,6 +169,11 @@ O seed também cria 5 exercícios e 1 seção de conteúdo **globais** e a "Tril
 
 Restrições que o Prisma não modela (CHECKs) estão no SQL da migração `*_multitenant_auth_core_model`.
 
+**Pool do nível (MVP):** um Level sorteia exercícios PUBLICADOS do tenant + globais com o
+mesmo `knowledgeLevel` e uma das `difficulties` do ExerciseSet, até a cota resolvida por
+`resolveQuota` (aluno > turma > padrão). Sem exercícios fixos (v1.1). Helpers:
+`levelPoolWhere`/`drawFromPool` (`src/lib/pool.ts`) e `listLevelPool(db, levelId)`.
+
 ## Estrutura de pastas
 
 ```
