@@ -215,9 +215,29 @@ export interface ExerciseSet {
   quantities: QuantityRule[];
   overrides: QuantityOverride[];
   status: ExerciseSetStatus;
+  /** Última publicação (a cópia publicada fica em SetExercise). `null` = nunca publicado. */
+  publishedAt: IsoDateTime | null;
   authorId: string | null;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
+}
+
+/** Versão dos exercícios de um conjunto: rascunho (editável) ou cópia publicada. */
+export type SetExercisesVersion = "draft" | "published";
+
+/**
+ * Cópia imutável de um exercício no conjunto publicado (BE2 `SetExercise`).
+ * Publicar copia os exercícios PUBLISHED do rascunho; editar o rascunho não
+ * muda o que os alunos veem até a próxima publicação.
+ */
+export interface SetExercise extends ExerciseContent {
+  id: string;
+  tenantId: string;
+  setId: string;
+  /** Exercício de origem no rascunho. */
+  exerciseId: string;
+  position: number;
+  publishedAt: IsoDateTime;
 }
 
 export interface Classroom {

@@ -17,7 +17,13 @@ import type {
 import { ApiError, type Services } from "../contracts";
 import { buildImportReport, parseXlsx, type XlsxImportResult } from "../../xlsx/import";
 import { validateXlsxFile } from "../../validation/schemas";
-import { createSeed, DEFAULT_BANDS, MOCK_INSTITUTION_ID, type MockDb } from "./seed";
+import {
+  createSeed,
+  DEFAULT_BANDS,
+  MOCK_INSTITUTION_ID,
+  snapshotSetExercises,
+  type MockDb,
+} from "./seed";
 
 export interface MockOptions {
   /** Latência artificial em ms (0 nos testes). */
@@ -357,6 +363,7 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
             ...input,
             overrides: input.overrides.map((o) => ({ ...o, id: newId("ov") })),
             status: "DRAFT",
+            publishedAt: null,
             authorId: actor,
             createdAt: now(),
             updatedAt: now(),
@@ -400,7 +407,12 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
               { issues },
             );
           }
-          return Object.assign(set, { status: "PUBLISHED", updatedAt: now() });
+          const publishedAt = now();
+          db.setExercises = [
+            ...(db.setExercises ?? []).filter((x) => x.setId !== set.id),
+            ...snapshotSetExercises(set, db.exercises, publishedAt),
+          ];
+          return Object.assign(set, { status: "PUBLISHED", publishedAt, updatedAt: publishedAt });
         }),
       unpublish: (id) =>
         delay(() => Object.assign(findSet(id), { status: "DRAFT", updatedAt: now() })),
@@ -408,6 +420,13 @@ export function createMockServices(options: MockOptions = {}): Services & { db: 
 
     exercises: {
       listBySet: (setId) => delay(() => mine(db.exercises).filter((e) => e.setId === setId)),
+      listPublished: (setId) =>
+        delay(() => {
+          findSet(setId);
+          return mine(db.setExercises ?? [])
+            .filter((x) => x.setId === setId)
+            .sort((a, b) => a.position - b.position);
+        }),
       get: (id) => delay(() => findExercise(id)),
       create: (setId, input) =>
         delay(() => {

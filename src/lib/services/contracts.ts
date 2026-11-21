@@ -47,9 +47,10 @@
  *   GET    /api/professor/sets/:id                                     → ExerciseSet
  *   POST   /api/professor/sets                body ExerciseSetInput    → 201 ExerciseSet (DRAFT)
  *   PATCH  /api/professor/sets/:id            body Partial<ExerciseSetInput> → ExerciseSet | 409 LEVEL_HAS_PROGRESS
- *   POST   /api/professor/sets/:id/publish                             → ExerciseSet | 422 PUBLISH_BLOCKED { issues }
+ *   POST   /api/professor/sets/:id/publish                             → ExerciseSet (copia os exercícios PUBLISHED para SetExercise; publishedAt) | 422 PUBLISH_BLOCKED { issues }
  *   POST   /api/professor/sets/:id/unpublish                           → ExerciseSet
- *   GET    /api/professor/sets/:id/exercises                           → Exercise[]
+ *   GET    /api/professor/sets/:id/exercises?version=draft             → Exercise[] (rascunho, padrão)
+ *   GET    /api/professor/sets/:id/exercises?version=published         → SetExercise[] (cópia feita ao publicar; [] se nunca publicado)
  *   GET    /api/professor/exercises/:id                                → Exercise
  *   POST   /api/professor/sets/:id/exercises  body ExerciseInput       → 201 Exercise | 422 LEVEL_NOT_IN_SET | INVALID_ANSWER_KEY
  *   PATCH  /api/professor/exercises/:id       body Partial<ExerciseInput> → Exercise
@@ -96,6 +97,7 @@ import type {
   ReviewFeedback,
   ReviewStatus,
   Role,
+  SetExercise,
   SectionStatus,
   User,
 } from "../domain/types";
@@ -244,7 +246,10 @@ export interface ImportCreated {
 }
 
 export interface ExercisesService {
+  /** Rascunho (editável) do conjunto. */
   listBySet(setId: string): Promise<Exercise[]>;
+  /** Cópia publicada (o que os alunos recebem). */
+  listPublished(setId: string): Promise<SetExercise[]>;
   get(id: string): Promise<Exercise>;
   create(setId: string, input: ExerciseInput): Promise<Exercise>;
   update(id: string, input: Partial<ExerciseInput>): Promise<Exercise>;

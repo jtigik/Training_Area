@@ -18,8 +18,7 @@ import { describe, expect, it } from "vitest";
 
 import { gradeSubmission, validateExercise, type ExerciseDefinition } from "./index";
 
-const DATASET_DIR =
-  process.env.DATASET_DIR ?? path.join(__dirname, "__fixtures__/qa-dataset");
+const DATASET_DIR = process.env.DATASET_DIR ?? path.join(__dirname, "__fixtures__/qa-dataset");
 
 const OPEN_PRODUCT_DIVERGENCES: Record<string, string> = {
   "F-125": "Q-F9",
@@ -68,30 +67,24 @@ function verdictOf(r: { correct: boolean }) {
 
 function matchesOracle(c: FormulaCase) {
   const r = grade(c);
-  const codeOk =
-    !c.expected_feedback_code || c.expected_feedback_code === r.feedbackCode;
+  const codeOk = !c.expected_feedback_code || c.expected_feedback_code === r.feedbackCode;
   return verdictOf(r) === c.expected_verdict && codeOk;
 }
 
 const expectedInvalidContexts = new Set(["EX-RAND", "EX-ERRGAB"]);
-const matching = formulas.filter(
-  (c) => !KNOWN_DEFECTS[c.id] && !OPEN_PRODUCT_DIVERGENCES[c.id],
-);
+const matching = formulas.filter((c) => !KNOWN_DEFECTS[c.id] && !OPEN_PRODUCT_DIVERGENCES[c.id]);
 const defects = formulas.filter((c) => KNOWN_DEFECTS[c.id]);
 const openQuestions = formulas.filter((c) => OPEN_PRODUCT_DIVERGENCES[c.id]);
 
 describe("dataset QA — contextos", () => {
-  it.each(contexts.map((c) => [c.id, c]))(
-    "%s é validado de acordo com o oráculo",
-    (_id, c) => {
-      const v = validateExercise((c as Context).definition);
-      if (expectedInvalidContexts.has((c as Context).id)) {
-        expect(v.valid).toBe(false);
-      } else {
-        expect(v.valid, v.errors.map((e) => e.code).join("|")).toBe(true);
-      }
-    },
-  );
+  it.each(contexts.map((c) => [c.id, c]))("%s é validado de acordo com o oráculo", (_id, c) => {
+    const v = validateExercise((c as Context).definition);
+    if (expectedInvalidContexts.has((c as Context).id)) {
+      expect(v.valid).toBe(false);
+    } else {
+      expect(v.valid, v.errors.map((e) => e.code).join("|")).toBe(true);
+    }
+  });
 });
 
 describe("dataset QA — casos alinhados ao oráculo", () => {

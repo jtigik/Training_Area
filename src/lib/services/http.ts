@@ -94,7 +94,9 @@ export function createHttpServices(): Services {
       unpublish: (id) => request("POST", `/api/professor/sets/${id}/unpublish`),
     },
     exercises: {
-      listBySet: (setId) => get(`/api/professor/sets/${setId}/exercises`),
+      listBySet: (setId) => get(`/api/professor/sets/${setId}/exercises`, { version: "draft" }),
+      listPublished: (setId) =>
+        get(`/api/professor/sets/${setId}/exercises`, { version: "published" }),
       get: (id) => get(`/api/professor/exercises/${id}`),
       create: (setId, i) => request("POST", `/api/professor/sets/${setId}/exercises`, i),
       update: (id, i) => request("PATCH", `/api/professor/exercises/${id}`, i),

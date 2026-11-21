@@ -332,3 +332,18 @@ describe("mock: resultados e refazer nível", () => {
     expect(d.attempts[0]).not.toHaveProperty("tenantId");
   });
 });
+
+describe("mock: conjunto publicado guarda cópia (SetExercise)", () => {
+  it("publicar copia os exercícios; editar o rascunho não muda a cópia", async () => {
+    const s = createMockServices({ db: createSeed() });
+    const before = await s.exercises.listPublished("set-1");
+    expect(before.length).toBeGreaterThan(0);
+    const [first] = before;
+    await s.exercises.update(first.exerciseId, { title: "Título novo no rascunho" });
+    expect((await s.exercises.listPublished("set-1"))[0].title).toBe(first.title);
+    await s.sets.unpublish("set-1");
+    const set = await s.sets.publish("set-1");
+    expect(set.publishedAt).not.toBeNull();
+    expect((await s.exercises.listPublished("set-1"))[0].title).toBe("Título novo no rascunho");
+  });
+});

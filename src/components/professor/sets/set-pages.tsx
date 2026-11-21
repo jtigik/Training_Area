@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResource } from "@/hooks/use-resource";
-import { getPublishIssues } from "@/lib/domain/rules";
+import { formatDateTimeBR, getPublishIssues } from "@/lib/domain/rules";
 import { LEVEL_LABELS } from "@/lib/domain/labels";
 import type { ExerciseSet } from "@/lib/domain/types";
 import { errorMessage } from "@/lib/errors";
@@ -124,6 +124,10 @@ export function NewSetPage() {
 export function EditSetPage({ id }: { id: string }) {
   const set = useResource(() => getServices().sets.get(id), `set:${id}`);
   const exercises = useResource(() => getServices().exercises.listBySet(id), `set-exercises:${id}`);
+  const published = useResource(
+    () => getServices().exercises.listPublished(id),
+    `set-published:${id}`,
+  );
   const people = usePeople();
   const [message, setMessage] = useState<{ kind: "ok" | "erro"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -144,6 +148,7 @@ export function EditSetPage({ id }: { id: string }) {
           ? await getServices().sets.unpublish(id)
           : await getServices().sets.publish(id);
       set.setData(next);
+      published.reload();
       setMessage({
         kind: "ok",
         text:
@@ -183,6 +188,13 @@ export function EditSetPage({ id }: { id: string }) {
         }
       />
       <StatusMessage message={message} />
+      {current.publishedAt && published.data ? (
+        <p className="text-muted-foreground mb-4 text-sm" data-testid="published-version">
+          Versão publicada em {formatDateTimeBR(current.publishedAt)}: {published.data.length}{" "}
+          {published.data.length === 1 ? "exercício" : "exercícios"}. Os alunos recebem essa cópia;
+          mudanças no rascunho só valem depois de publicar de novo.
+        </p>
+      ) : null}
       {current.status !== "PUBLISHED" && issues.length > 0 ? (
         <div
           id="publish-issues"

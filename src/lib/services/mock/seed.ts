@@ -1,5 +1,6 @@
 import { parseCellInput } from "../../domain/grid";
 import type {
+  SetExercise,
   Attempt,
   BankExercise,
   Classroom,
@@ -25,6 +26,8 @@ export interface MockDb {
   sections: ContentSection[];
   sets: ExerciseSet[];
   exercises: Exercise[];
+  /** Cópias publicadas dos exercícios (BE2 SetExercise). */
+  setExercises: SetExercise[];
   bank: BankExercise[];
   /** Templates por instituição; `setId = null` = padrão da instituição. */
   feedback: (FeedbackTemplate & { tenantId: string })[];
@@ -34,7 +37,7 @@ export interface MockDb {
   classrooms: Classroom[];
 }
 
-export const MOCK_DB_VERSION = 4;
+export const MOCK_DB_VERSION = 5;
 /** Instituição da sessão simulada (professor e admin da instituição). */
 export const MOCK_INSTITUTION_ID = "inst-1";
 
@@ -266,6 +269,7 @@ export function createSeed(): MockDb {
         { id: "ov-1", targetType: "STUDENT", targetId: "u-al3", level: "FUNDAMENTAL", quantity: 1 },
       ],
       status: "PUBLISHED",
+      publishedAt: T0,
       authorId: "u-prof",
       createdAt: T0,
       updatedAt: T0,
@@ -627,6 +631,7 @@ export function createSeed(): MockDb {
     sections,
     sets,
     exercises,
+    setExercises: snapshotSetExercises(sets[0], exercises, T0),
     bank,
     feedback: [],
     reviews,
@@ -641,4 +646,29 @@ export function createSeed(): MockDb {
       },
     ],
   };
+}
+
+/** Copia os exercícios PUBLISHED do rascunho para a versão publicada do conjunto. */
+export function snapshotSetExercises(
+  set: ExerciseSet,
+  exercises: Exercise[],
+  publishedAt: string,
+): SetExercise[] {
+  return exercises
+    .filter((e) => e.setId === set.id && e.status === "PUBLISHED")
+    .map((e, position) => ({
+      id: `sx-${set.id}-${e.id}`,
+      tenantId: e.tenantId,
+      setId: set.id,
+      exerciseId: e.id,
+      position,
+      publishedAt,
+      title: e.title,
+      statement: e.statement,
+      level: e.level,
+      difficulty: e.difficulty,
+      grid: structuredClone(e.grid),
+      answers: structuredClone(e.answers),
+      hint: e.hint,
+    }));
 }
